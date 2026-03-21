@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIMStore } from '@/lib/stores/im';
 import * as mm from '@/lib/api/mm';
-import { ArrowLeft, Send, MoreHorizontal, Pencil, Trash2, Smile, Users, Hash } from 'lucide-react';
+import { ArrowLeft, Send, MoreHorizontal, Pencil, Trash2, Smile, Users, Hash, Reply, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
@@ -18,7 +18,9 @@ export function MessageArea({ channelId }: { channelId: string }) {
   const [editText, setEditText] = useState('');
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
   const [emojiPickerPostId, setEmojiPickerPostId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<mm.MMPost | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
 
   const channel = channels.find(c => c.id === channelId);
@@ -106,15 +108,24 @@ export function MessageArea({ channelId }: { channelId: string }) {
     if (!text || sending) return;
     setSending(true);
     try {
-      const post = await mm.createPost(channelId, text);
+      const post = await mm.createPost(channelId, text, replyTo?.id);
       addMessage(post);
       setInput('');
+      setReplyTo(null);
     } catch (e) {
       console.error('Send failed:', e);
     } finally {
       setSending(false);
     }
   };
+
+  // Auto-resize textarea
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 128) + 'px';
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -164,8 +175,23 @@ export function MessageArea({ channelId }: { channelId: string }) {
             const showHeader = !prevPost || prevPost.user_id !== post.user_id ||
               (post.create_at - prevPost.create_at > 300_000); // 5min gap
 
+            // Date separator
+            const showDateSep = !prevPost || !isSameDay(prevPost.create_at, post.create_at);
+
+            // Reply parent
+            const replyParent = post.root_id ? channelMessages.find(m => m.id === post.root_id) : null;
+            const replyUser = replyParent ? users[replyParent.user_id] : null;
+
             return (
-              <div key={post.id} className={cn('group relative', showHeader ? 'mt-3' : '')}>
+              <div key={post.id}>
+                {showDateSep && (
+                  <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 border-t border-border" />
+                    <span className="text-[10px] text-muted-foreground font-medium">{formatDateSep(post.create_at)}</span>
+                    <div className="flex-1 border-t border-border" />
+                  </div>
+                )}
+              <div className={cn('group relative', showHeader ? 'mt-3' : '')}>
                 {showHeader && (
                   <div className="flex items-center gap-2 mb-0.5">
                     <img
@@ -182,6 +208,18 @@ export function MessageArea({ channelId }: { channelId: string }) {
                     {post.update_at > post.create_at && (
                       <span className="text-[10px] text-muted-foreground/60">(已编辑)</span>
                     )}
+                  </div>
+                )}
+                {/* Reply indicator */}
+                {replyParent && (
+                  <div className="pl-10 flex items-center gap-1.5 mb-0.5">
+                    <div className="w-4 h-3 border-l-2 border-t-2 border-muted-foreground/30 rounded-tl" />
+                    <span className="text-[10px] text-muted-foreground">
+                      回复 {replyUser?.nickname || replyUser?.username || '...'}:
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/60 truncate max-w-[200px]">
+                      {replyParent.message.slice(0, 50)}
+                    </span>
                   </div>
                 )}
                 <div className={cn('text-sm text-foreground/90', 'pl-10')}>
@@ -208,6 +246,13 @@ export function MessageArea({ channelId }: { channelId: string }) {
                 {/* Hover action bar */}
                 {editingPostId !== post.id && (
                   <div className="absolute right-2 top-0 hidden group-hover:flex items-center gap-0.5 bg-card border border-border rounded-lg shadow-sm px-1 py-0.5">
+                    <button
+                      onClick={() => { setReplyTo(post); textareaRef.current?.focus(); }}
+                      className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+                      title="回复"
+                    >
+                      <Reply className="h-3.5 w-3.5" />
+                    </button>
                     <button
                       onClick={() => setEmojiPickerPostId(emojiPickerPostId === post.id ? null : post.id)}
                       className="p-1 text-muted-foreground hover:text-foreground rounded transition-colors"
@@ -250,6 +295,7 @@ export function MessageArea({ channelId }: { channelId: string }) {
                   </div>
                 )}
               </div>
+              </div>
             );
           })}
           <div ref={bottomRef} />
@@ -258,12 +304,25 @@ export function MessageArea({ channelId }: { channelId: string }) {
 
       {/* Input */}
       <div className="px-3 py-2 border-t border-border bg-card shrink-0">
+        {/* Reply preview */}
+        {replyTo && (
+          <div className="flex items-center gap-2 px-3 py-1.5 mb-1 bg-accent/30 rounded-t-lg text-xs">
+            <Reply className="h-3 w-3 text-sidebar-primary shrink-0" />
+            <span className="text-muted-foreground">回复</span>
+            <span className="text-foreground font-medium">{users[replyTo.user_id]?.nickname || users[replyTo.user_id]?.username || '...'}</span>
+            <span className="text-muted-foreground truncate flex-1">{replyTo.message.slice(0, 60)}</span>
+            <button onClick={() => setReplyTo(null)} className="text-muted-foreground hover:text-foreground shrink-0">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2 bg-muted rounded-lg px-3 py-2">
           <textarea
+            ref={textareaRef}
             value={input}
-            onChange={e => setInput(e.target.value)}
+            onChange={e => { setInput(e.target.value); autoResize(); }}
             onKeyDown={handleKeyDown}
-            placeholder="输入消息..."
+            placeholder={replyTo ? '回复消息...' : '输入消息... (Shift+Enter 换行)'}
             rows={1}
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none max-h-32"
             style={{ minHeight: '20px' }}
@@ -390,6 +449,22 @@ function InlineLine({ text }: { text: string }) {
     tokens.push(text.slice(lastIndex));
   }
   return <>{tokens.length > 0 ? tokens : text}</>;
+}
+
+function isSameDay(ts1: number, ts2: number): boolean {
+  const d1 = new Date(ts1);
+  const d2 = new Date(ts2);
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+}
+
+function formatDateSep(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  if (isSameDay(ts, now.getTime())) return '今天';
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (isSameDay(ts, yesterday.getTime())) return '昨天';
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
 function formatTime(ts: number): string {
