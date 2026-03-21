@@ -453,16 +453,12 @@ function TableViewer({ tableId, onBack }: { tableId: string; onBack: () => void 
                               </button>
                             </div>
                           ) : (
-                            <span
-                              className={cn(
-                                'text-xs block truncate max-w-[200px]',
-                                col.primary_key ? 'text-muted-foreground' : 'text-foreground cursor-pointer hover:text-sidebar-primary'
-                              )}
+                            <CellDisplay
+                              value={val}
+                              colType={col.type}
+                              isPK={col.primary_key}
                               onClick={col.primary_key ? undefined : () => startEdit(rowId, col.title, val)}
-                              title={val != null ? String(val) : ''}
-                            >
-                              {val != null ? String(val) : <span className="text-muted-foreground/50">—</span>}
-                            </span>
+                            />
                           )}
                         </td>
                       );
@@ -826,6 +822,87 @@ function CreateTablePanel({ onClose, onCreated }: {
 // ════════════════════════════════════════════════════════════════
 // Helpers
 // ════════════════════════════════════════════════════════════════
+
+function CellDisplay({ value, colType, isPK, onClick }: {
+  value: unknown;
+  colType: string;
+  isPK: boolean;
+  onClick?: () => void;
+}) {
+  if (value == null || value === '') {
+    return <span className="text-xs text-muted-foreground/50">—</span>;
+  }
+  const str = String(value);
+
+  // Checkbox
+  if (colType === 'Checkbox') {
+    return (
+      <span className={cn('text-xs', isPK ? 'text-muted-foreground' : 'cursor-pointer')} onClick={onClick}>
+        {value ? '✅' : '⬜'}
+      </span>
+    );
+  }
+
+  // URL
+  if (colType === 'URL') {
+    return (
+      <a href={str} target="_blank" rel="noopener noreferrer"
+        className="text-xs text-sidebar-primary hover:underline truncate block max-w-[200px]"
+        title={str}
+      >
+        {str.replace(/^https?:\/\//, '').slice(0, 40)}
+      </a>
+    );
+  }
+
+  // Email
+  if (colType === 'Email') {
+    return (
+      <a href={`mailto:${str}`} className="text-xs text-sidebar-primary hover:underline truncate block max-w-[200px]">
+        {str}
+      </a>
+    );
+  }
+
+  // Date / DateTime
+  if (colType === 'Date' || colType === 'DateTime') {
+    const d = new Date(str);
+    const formatted = isNaN(d.getTime()) ? str : d.toLocaleDateString('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      ...(colType === 'DateTime' ? { hour: '2-digit', minute: '2-digit' } : {}),
+    });
+    return (
+      <span className={cn('text-xs', isPK ? 'text-muted-foreground' : 'text-foreground cursor-pointer hover:text-sidebar-primary')}
+        onClick={onClick} title={str}>
+        {formatted}
+      </span>
+    );
+  }
+
+  // Number / Decimal
+  if (colType === 'Number' || colType === 'Decimal') {
+    return (
+      <span className={cn('text-xs tabular-nums', isPK ? 'text-muted-foreground' : 'text-foreground cursor-pointer hover:text-sidebar-primary')}
+        onClick={onClick} title={str}>
+        {str}
+      </span>
+    );
+  }
+
+  // Default: text
+  return (
+    <span
+      className={cn(
+        'text-xs block truncate max-w-[200px]',
+        isPK ? 'text-muted-foreground' : 'text-foreground cursor-pointer hover:text-sidebar-primary'
+      )}
+      onClick={onClick}
+      title={str}
+    >
+      {str}
+    </span>
+  );
+}
 
 function formatDate(isoStr: string): string {
   const d = new Date(isoStr);

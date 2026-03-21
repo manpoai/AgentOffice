@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as gw from '@/lib/api/gateway';
-import { CheckSquare, Circle, Clock, Loader2, CheckCircle2, XCircle, X, ArrowUp, ArrowDown, Plus, Calendar, User, GripVertical } from 'lucide-react';
+import { CheckSquare, Circle, Clock, Loader2, CheckCircle2, XCircle, X, ArrowUp, ArrowDown, Plus, Calendar, User, GripVertical, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useState, useCallback, useMemo } from 'react';
@@ -51,6 +51,7 @@ export default function TasksPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<TaskFilters>({ status: new Set(), priority: new Set(), assignee: '' });
   const queryClient = useQueryClient();
 
@@ -70,19 +71,25 @@ export default function TasksPage() {
 
   const refreshTasks = () => queryClient.invalidateQueries({ queryKey: ['tasks'] });
 
-  // Apply filters
+  // Apply filters + search
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
     return tasks.filter(t => {
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = t.title.toLowerCase().includes(q);
+        const matchDesc = (t.description || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc) return false;
+      }
       if (filters.status.size > 0 && !filters.status.has(getTaskStatus(t))) return false;
       if (filters.priority.size > 0 && !filters.priority.has(t.priority || 'none')) return false;
       if (filters.assignee && !(t.assignees || []).some(a => a.includes(filters.assignee))) return false;
       return true;
     });
-  }, [tasks, filters]);
+  }, [tasks, filters, searchQuery]);
 
-  const hasActiveFilters = filters.status.size > 0 || filters.priority.size > 0 || filters.assignee;
-  const clearFilters = () => setFilters({ status: new Set(), priority: new Set(), assignee: '' });
+  const hasActiveFilters = filters.status.size > 0 || filters.priority.size > 0 || filters.assignee || searchQuery;
+  const clearFilters = () => { setFilters({ status: new Set(), priority: new Set(), assignee: '' }); setSearchQuery(''); };
 
   return (
     <div className="flex h-full flex-col md:flex-row">
@@ -101,6 +108,20 @@ export default function TasksPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="搜索任务..."
+                  className="bg-muted rounded-lg pl-7 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none w-36 focus:w-48 transition-all"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className={cn(

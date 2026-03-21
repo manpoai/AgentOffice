@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { useIMStore } from '@/lib/stores/im';
 import * as mm from '@/lib/api/mm';
-import { Hash, Lock, User, Users } from 'lucide-react';
+import { Hash, Lock, User, Users, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -18,6 +19,7 @@ function channelIcon(type: string) {
 
 export function ChannelList() {
   const { channels, activeChannelId, setActiveChannel, users, channelMembers, setMobileView, myUserId } = useIMStore();
+  const [search, setSearch] = useState('');
 
   function getDisplayName(ch: typeof channels[0]) {
     if (ch.type === 'D' && ch.name) {
@@ -43,15 +45,34 @@ export function ChannelList() {
     setMobileView('messages');
   };
 
+  // Filter by search
+  const filtered = search
+    ? channels.filter(c => getDisplayName(c).toLowerCase().includes(search.toLowerCase()))
+    : channels;
+
   // Group channels
-  const publicChannels = channels.filter(c => c.type === 'O');
-  const privateChannels = channels.filter(c => c.type === 'P');
-  const dmChannels = channels.filter(c => c.type === 'D' || c.type === 'G');
+  const publicChannels = filtered.filter(c => c.type === 'O');
+  const privateChannels = filtered.filter(c => c.type === 'P');
+  const dmChannels = filtered.filter(c => c.type === 'D' || c.type === 'G');
 
   return (
     <>
-      <div className="p-3 border-b border-border">
+      <div className="p-3 border-b border-border space-y-2">
         <h2 className="text-sm font-semibold text-foreground">频道</h2>
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="搜索频道..."
+            className="w-full bg-muted rounded-lg pl-7 pr-7 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
       <ScrollArea className="flex-1">
         <div className="py-1">

@@ -39,6 +39,11 @@ export function MessageArea({ channelId }: { channelId: string }) {
     }
   }, [postList, channelId, setMessages, setUsers, users]);
 
+  // Mark channel as viewed (clears unread)
+  useEffect(() => {
+    mm.viewChannel(channelId).catch(() => {});
+  }, [channelId]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -114,7 +119,7 @@ export function MessageArea({ channelId }: { channelId: string }) {
                   </div>
                 )}
                 <div className={cn('text-sm text-foreground/90', showHeader ? 'pl-10' : 'pl-10')}>
-                  <MessageContent text={post.message} />
+                  <MessageContent text={post.message} files={post.metadata?.files} />
                 </div>
               </div>
             );
@@ -148,11 +153,49 @@ export function MessageArea({ channelId }: { channelId: string }) {
   );
 }
 
-function MessageContent({ text }: { text: string }) {
-  // Simple: render code blocks and plain text
+function MessageContent({ text, files }: { text: string; files?: mm.MMFileInfo[] }) {
+  return (
+    <>
+      {text && <MarkdownText text={text} />}
+      {files && files.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-1">
+          {files.map(f => (
+            <a
+              key={f.id}
+              href={`/api/mm/files/${f.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-muted text-xs text-foreground/80 hover:bg-accent transition-colors"
+            >
+              <span className="text-muted-foreground">{getFileIcon(f.extension)}</span>
+              <span className="truncate max-w-[150px]">{f.name}</span>
+              <span className="text-muted-foreground text-[10px]">{formatFileSize(f.size)}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function getFileIcon(ext: string): string {
+  if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return '🖼';
+  if (['pdf'].includes(ext)) return '📄';
+  if (['doc','docx','xls','xlsx','ppt','pptx'].includes(ext)) return '📎';
+  if (['zip','tar','gz','rar'].includes(ext)) return '📦';
+  return '📁';
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function MarkdownText({ text }: { text: string }) {
   if (!text) return null;
 
-  // Split by code blocks
+  // Split by code blocks first
   const parts = text.split(/(```[\s\S]*?```)/g);
   return (
     <>
@@ -165,13 +208,13 @@ function MessageContent({ text }: { text: string }) {
             </pre>
           );
         }
-        // Render line breaks
+        // Render lines with inline formatting
         return (
           <span key={i}>
             {part.split('\n').map((line, j) => (
               <span key={j}>
                 {j > 0 && <br />}
-                {line}
+                <InlineLine text={line} />
               </span>
             ))}
           </span>
@@ -179,6 +222,46 @@ function MessageContent({ text }: { text: string }) {
       })}
     </>
   );
+}
+
+function InlineLine({ text }: { text: string }) {
+  // Parse inline markdown: **bold**, *italic*, `code`, [link](url), ~~strike~~
+  const tokens: React.ReactNode[] = [];
+  // Combined regex for inline elements
+  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|~~(.+?)~~|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>]+))/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Push text before match
+    if (match.index > lastIndex) {
+      tokens.push(text.slice(lastIndex, match.index));
+    }
+    if (match[2]) {
+      // **bold**
+      tokens.push(<strong key={match.index} className="font-semibold">{match[2]}</strong>);
+    } else if (match[3]) {
+      // *italic*
+      tokens.push(<em key={match.index}>{match[3]}</em>);
+    } else if (match[4]) {
+      // ~~strikethrough~~
+      tokens.push(<del key={match.index} className="text-muted-foreground">{match[4]}</del>);
+    } else if (match[5]) {
+      // `inline code`
+      tokens.push(<code key={match.index} className="bg-background rounded px-1 py-0.5 text-xs font-mono">{match[5]}</code>);
+    } else if (match[6] && match[7]) {
+      // [text](url)
+      tokens.push(<a key={match.index} href={match[7]} target="_blank" rel="noopener noreferrer" className="text-sidebar-primary hover:underline">{match[6]}</a>);
+    } else if (match[8]) {
+      // bare URL
+      tokens.push(<a key={match.index} href={match[8]} target="_blank" rel="noopener noreferrer" className="text-sidebar-primary hover:underline">{match[8]}</a>);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    tokens.push(text.slice(lastIndex));
+  }
+  return <>{tokens.length > 0 ? tokens : text}</>;
 }
 
 function formatTime(ts: number): string {
