@@ -137,11 +137,12 @@ function createToolbarDOM(): HTMLDivElement {
   const el = document.createElement('div');
   el.className = 'floating-toolbar';
   el.style.cssText = `
-    position: absolute; z-index: 100; display: none;
+    position: fixed; z-index: 1000; display: none;
     background: hsl(240 6% 14%); border: 1px solid hsl(240 4% 20%);
-    border-radius: 8px; padding: 2px; gap: 1px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    border-radius: 8px; padding: 3px 4px; gap: 1px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
     display: none; flex-direction: row; align-items: center;
+    backdrop-filter: blur(8px);
   `;
   return el;
 }
@@ -170,17 +171,24 @@ function renderToolbar(el: HTMLDivElement, view: EditorView) {
     const isSmallText = action.icon.length <= 2 && !['B','I','U','S'].includes(action.icon);
     btn.style.cssText = `
       min-width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-      border: none; border-radius: 4px; cursor: pointer;
+      border: none; border-radius: 5px; cursor: pointer;
       font-size: ${isSmallText ? '11px' : '13px'};
       font-weight: ${action.icon === 'B' ? '700' : isSmallText ? '600' : '500'};
       font-style: ${action.icon === 'I' ? 'italic' : 'normal'};
       text-decoration: ${action.icon === 'U' ? 'underline' : action.icon === 'S' ? 'line-through' : 'none'};
-      color: ${active ? '#e4e4e7' : '#a1a1aa'};
-      background: ${active ? 'hsl(240 4% 22%)' : 'transparent'};
-      padding: 0 4px;
+      color: ${active ? '#fff' : '#a1a1aa'};
+      background: ${active ? 'hsl(220 80% 50%)' : 'transparent'};
+      padding: 0 5px;
+      transition: all 0.1s;
     `;
     btn.title = action.label;
     btn.textContent = action.icon;
+    btn.onmouseenter = () => {
+      if (!active) { btn.style.background = 'hsl(240 4% 20%)'; btn.style.color = '#e4e4e7'; }
+    };
+    btn.onmouseleave = () => {
+      if (!active) { btn.style.background = 'transparent'; btn.style.color = '#a1a1aa'; }
+    };
     btn.onmousedown = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -204,15 +212,17 @@ export function floatingToolbarPlugin(): Plugin {
 
     const start = view.coordsAtPos(from);
     const end = view.coordsAtPos(to);
-    const editorRect = view.dom.closest('.outline-editor')?.getBoundingClientRect() || view.dom.getBoundingClientRect();
 
-    // Center above the selection
-    const midX = (start.left + end.left) / 2 - editorRect.left;
-    const top = start.top - editorRect.top - 40;
+    // Use viewport coordinates (fixed positioning)
+    const midX = (start.left + end.left) / 2;
+    const top = start.top - 44; // above the selection
 
     toolbarEl.style.display = 'flex';
-    toolbarEl.style.left = `${Math.max(4, midX - 200)}px`;
-    toolbarEl.style.top = `${Math.max(4, top)}px`;
+    // Measure toolbar width for centering
+    const toolbarWidth = toolbarEl.offsetWidth || 400;
+    const leftPos = Math.max(8, Math.min(midX - toolbarWidth / 2, window.innerWidth - toolbarWidth - 8));
+    toolbarEl.style.left = `${leftPos}px`;
+    toolbarEl.style.top = `${Math.max(8, top)}px`;
     isShown = true;
   }
 
@@ -226,11 +236,7 @@ export function floatingToolbarPlugin(): Plugin {
     key: floatingToolbarKey,
     view(editorView) {
       toolbarEl = createToolbarDOM();
-      const container = editorView.dom.closest('.outline-editor');
-      if (container) {
-        (container as HTMLElement).style.position = 'relative';
-        container.appendChild(toolbarEl);
-      }
+      document.body.appendChild(toolbarEl);
       return {
         update(view, prevState) {
           const { state } = view;
