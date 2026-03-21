@@ -7,7 +7,8 @@ import {
   ArrowLeft, Table2, MoreHorizontal, Type, Hash, Calendar, CheckSquare,
   Link, Mail, AlignLeft, Pencil, Star, Phone, Clock, DollarSign,
   Percent, List, Tags, Braces, Paperclip, User, Sigma, Link2, Search, GitBranch,
-  LayoutGrid, Filter, ArrowUpDown, ChevronDown,
+  LayoutGrid, Filter, ArrowUpDown, ChevronDown, Columns, GalleryHorizontalEnd,
+  FileText, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as nc from '@/lib/api/nocodb';
@@ -91,6 +92,18 @@ const FILTER_OPS = [
   { value: 'isnot', label: '不为空' },
 ];
 
+// ── View type config ──
+const VIEW_TYPES = [
+  { type: 'grid', typeNum: 3, label: '表格', icon: LayoutGrid },
+  { type: 'kanban', typeNum: 4, label: '看板', icon: Columns },
+  { type: 'gallery', typeNum: 2, label: '画廊', icon: GalleryHorizontalEnd },
+  { type: 'form', typeNum: 1, label: '表单', icon: FileText },
+] as const;
+
+function getViewIcon(typeNum: number) {
+  return VIEW_TYPES.find(v => v.typeNum === typeNum)?.icon || LayoutGrid;
+}
+
 // ── Main component ──
 
 interface TableEditorProps {
@@ -131,6 +144,7 @@ export function TableEditor({ tableId, onBack, onDeleted }: TableEditorProps) {
   const [viewTitleValue, setViewTitleValue] = useState('');
   const [showCreateView, setShowCreateView] = useState(false);
   const [newViewTitle, setNewViewTitle] = useState('');
+  const [newViewType, setNewViewType] = useState('grid');
   // Filter & Sort state
   const [showFilters, setShowFilters] = useState(false);
   const [showSorts, setShowSorts] = useState(false);
@@ -222,8 +236,9 @@ export function TableEditor({ tableId, onBack, onDeleted }: TableEditorProps) {
   const handleCreateView = async () => {
     if (!newViewTitle.trim()) return;
     try {
-      const view = await nc.createView(tableId, newViewTitle.trim());
+      const view = await nc.createView(tableId, newViewTitle.trim(), newViewType);
       setNewViewTitle('');
+      setNewViewType('grid');
       setShowCreateView(false);
       refreshMeta();
       setActiveViewId(view.view_id);
@@ -621,7 +636,7 @@ export function TableEditor({ tableId, onBack, onDeleted }: TableEditorProps) {
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 )}
               >
-                <LayoutGrid className="h-3 w-3" />
+                {(() => { const VIcon = getViewIcon(v.type); return <VIcon className="h-3 w-3" />; })()}
                 {v.title}
               </button>
             )}
@@ -658,16 +673,33 @@ export function TableEditor({ tableId, onBack, onDeleted }: TableEditorProps) {
         ))}
         {showCreateView ? (
           <div className="flex items-center gap-1 ml-1">
+            <div className="flex items-center gap-0.5 bg-muted rounded px-1">
+              {VIEW_TYPES.map(vt => {
+                const VTIcon = vt.icon;
+                return (
+                  <button
+                    key={vt.type}
+                    onClick={() => setNewViewType(vt.type)}
+                    title={vt.label}
+                    className={cn('p-1 rounded transition-colors',
+                      newViewType === vt.type ? 'text-sidebar-primary bg-background' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <VTIcon className="h-3 w-3" />
+                  </button>
+                );
+              })}
+            </div>
             <input
               value={newViewTitle}
               onChange={e => setNewViewTitle(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleCreateView(); if (e.key === 'Escape') { setShowCreateView(false); setNewViewTitle(''); } }}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreateView(); if (e.key === 'Escape') { setShowCreateView(false); setNewViewTitle(''); setNewViewType('grid'); } }}
               placeholder="视图名称"
               className="px-2 py-1 text-xs bg-muted rounded text-foreground placeholder:text-muted-foreground outline-none w-28"
               autoFocus
             />
             <button onClick={handleCreateView} className="p-0.5 text-sidebar-primary hover:opacity-80"><Plus className="h-3.5 w-3.5" /></button>
-            <button onClick={() => { setShowCreateView(false); setNewViewTitle(''); }} className="p-0.5 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+            <button onClick={() => { setShowCreateView(false); setNewViewTitle(''); setNewViewType('grid'); }} className="p-0.5 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
           </div>
         ) : (
           <button onClick={() => setShowCreateView(true)} className="ml-1 p-1 text-muted-foreground hover:text-foreground" title="添加视图">
@@ -771,7 +803,51 @@ export function TableEditor({ tableId, onBack, onDeleted }: TableEditorProps) {
         </div>
       )}
 
-      {/* Table */}
+      {/* Content area — view type determines rendering */}
+      {(() => {
+        const activeView = views.find(v => v.view_id === activeViewId);
+        const viewType = activeView?.type || 3;
+        // Kanban view
+        if (viewType === 4) return (
+          <KanbanView
+            rows={rows}
+            columns={displayCols}
+            activeView={activeView!}
+            isLoading={isLoading}
+            onUpdateRow={async (rowId, fields) => { await nc.updateRow(tableId, rowId, fields); refresh(); }}
+            onAddRow={handleAddRow}
+            tableId={tableId}
+            refreshMeta={refreshMeta}
+          />
+        );
+        // Gallery view
+        if (viewType === 2) return (
+          <GalleryView
+            rows={rows}
+            columns={displayCols}
+            isLoading={isLoading}
+            onAddRow={handleAddRow}
+          />
+        );
+        // Form view
+        if (viewType === 1) return (
+          <FormView
+            columns={displayCols.filter(c => !c.primary_key && !READONLY_TYPES.has(c.type))}
+            tableId={tableId}
+            onSubmit={async (data) => { await nc.insertRow(tableId, data); refresh(); }}
+          />
+        );
+        // Calendar view (frontend-only, NocoDB doesn't support it)
+        if (viewType === 5) return (
+          <CalendarView
+            rows={rows}
+            columns={displayCols}
+            isLoading={isLoading}
+          />
+        );
+        // Grid view (default)
+        return null;
+      })() || (
       <div className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="p-4 space-y-2">
@@ -1035,6 +1111,7 @@ export function TableEditor({ tableId, onBack, onDeleted }: TableEditorProps) {
           </table>
         )}
       </div>
+      )}
 
       {/* Add column panel */}
       {showAddCol && (
@@ -1471,5 +1548,392 @@ function CellDisplay({ value, col }: { value: unknown; col: nc.NCColumn }) {
     <span className={cn('text-xs py-1.5 block truncate max-w-[300px]', isPK ? 'text-muted-foreground' : 'text-foreground')} title={str}>
       {str}
     </span>
+  );
+}
+
+// ── Kanban View ──
+
+function KanbanView({ rows, columns, activeView, isLoading, onUpdateRow, onAddRow, tableId, refreshMeta }: {
+  rows: Record<string, unknown>[];
+  columns: nc.NCColumn[];
+  activeView: nc.NCView;
+  isLoading: boolean;
+  onUpdateRow: (rowId: number, fields: Record<string, unknown>) => Promise<void>;
+  onAddRow: () => void;
+  tableId: string;
+  refreshMeta: () => void;
+}) {
+  const [grpColPicker, setGrpColPicker] = useState(false);
+  const grpColId = activeView.fk_grp_col_id;
+  const grpCol = columns.find(c => c.column_id === grpColId);
+  const titleCol = columns.find(c => c.primary_key) || columns[0];
+
+  // If no grouping column set, show picker
+  if (!grpCol) {
+    const selectCols = columns.filter(c => c.type === 'SingleSelect');
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="bg-card border border-border rounded-xl p-6 max-w-sm text-center space-y-3">
+          <Columns className="h-8 w-8 mx-auto text-muted-foreground" />
+          <h3 className="text-sm font-semibold text-foreground">选择分组字段</h3>
+          <p className="text-xs text-muted-foreground">看板视图需要一个单选字段来分组卡片</p>
+          {selectCols.length > 0 ? (
+            <div className="space-y-1">
+              {selectCols.map(c => (
+                <button
+                  key={c.column_id}
+                  onClick={async () => {
+                    await nc.updateKanbanConfig(activeView.view_id, { fk_grp_col_id: c.column_id });
+                    refreshMeta();
+                  }}
+                  className="w-full px-3 py-2 text-xs bg-muted hover:bg-accent rounded-lg text-foreground"
+                >
+                  {c.title}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground/60">没有单选字段，请先添加一个 SingleSelect 列</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Group rows by the select column value
+  const options = grpCol.options || [];
+  const groups: Record<string, Record<string, unknown>[]> = {};
+  const uncategorized: Record<string, unknown>[] = [];
+
+  for (const opt of options) {
+    groups[opt.title] = [];
+  }
+  for (const row of rows) {
+    const val = row[grpCol.title] as string;
+    if (val && groups[val]) {
+      groups[val].push(row);
+    } else {
+      uncategorized.push(row);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex gap-4 p-4 overflow-x-auto">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="w-64 shrink-0 space-y-2">
+            <div className="h-6 rounded bg-muted/50 animate-pulse" />
+            <div className="h-24 rounded bg-muted/30 animate-pulse" />
+            <div className="h-24 rounded bg-muted/30 animate-pulse" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const getOptColor = (title: string) => {
+    const opt = options.find(o => o.title === title);
+    return opt?.color || SELECT_COLORS[options.indexOf(opt!) % SELECT_COLORS.length] || SELECT_COLORS[0];
+  };
+
+  return (
+    <div className="flex-1 flex gap-3 p-3 overflow-x-auto">
+      {[...options.map(o => o.title), ...(uncategorized.length ? ['__uncategorized__'] : [])].map(groupKey => {
+        const isUncat = groupKey === '__uncategorized__';
+        const groupRows = isUncat ? uncategorized : (groups[groupKey] || []);
+        return (
+          <div key={groupKey} className="w-64 shrink-0 flex flex-col bg-muted/20 rounded-lg">
+            <div className="px-3 py-2 flex items-center gap-2 border-b border-border">
+              {!isUncat && (
+                <span
+                  className="px-2 py-0.5 rounded text-[11px] font-medium"
+                  style={{ backgroundColor: getOptColor(groupKey), color: '#1a1a2e' }}
+                >
+                  {groupKey}
+                </span>
+              )}
+              {isUncat && <span className="text-xs text-muted-foreground">未分类</span>}
+              <span className="text-[10px] text-muted-foreground ml-auto">{groupRows.length}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              {groupRows.map((row, i) => {
+                const rowId = row.Id as number;
+                return (
+                  <div
+                    key={rowId ?? i}
+                    className="bg-card border border-border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow space-y-1.5"
+                  >
+                    <div className="text-xs font-medium text-foreground truncate">
+                      {titleCol ? String(row[titleCol.title] ?? '') : `#${rowId}`}
+                    </div>
+                    {columns.filter(c => c !== titleCol && c !== grpCol && !c.primary_key && c.title !== 'created_by').slice(0, 3).map(c => {
+                      const val = row[c.title];
+                      if (val == null || val === '') return null;
+                      return (
+                        <div key={c.column_id} className="flex items-start gap-1">
+                          <span className="text-[10px] text-muted-foreground shrink-0">{c.title}:</span>
+                          <span className="text-[10px] text-foreground/80 truncate">{String(val)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Gallery View ──
+
+function GalleryView({ rows, columns, isLoading, onAddRow }: {
+  rows: Record<string, unknown>[];
+  columns: nc.NCColumn[];
+  isLoading: boolean;
+  onAddRow: () => void;
+}) {
+  const titleCol = columns.find(c => c.primary_key) || columns[0];
+  const detailCols = columns.filter(c => c !== titleCol && c.title !== 'created_by' && !READONLY_TYPES.has(c.type)).slice(0, 4);
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-4">
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="h-40 rounded-lg bg-muted/50 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-auto p-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        {rows.map((row, i) => {
+          const rowId = row.Id as number;
+          return (
+            <div
+              key={rowId ?? i}
+              className="bg-card border border-border rounded-lg p-4 hover:shadow-lg transition-shadow space-y-2"
+            >
+              <div className="text-sm font-semibold text-foreground truncate">
+                {titleCol ? String(row[titleCol.title] ?? '') : `#${rowId}`}
+              </div>
+              {detailCols.map(c => {
+                const val = row[c.title];
+                if (val == null || val === '') return null;
+                const ColIcon = getColIcon(c.type);
+                return (
+                  <div key={c.column_id} className="flex items-start gap-1.5">
+                    <ColIcon className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-[10px] text-muted-foreground">{c.title}</div>
+                      <div className="text-xs text-foreground/80 truncate max-w-[200px]">{String(val)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        <button
+          onClick={onAddRow}
+          className="border-2 border-dashed border-border rounded-lg p-4 flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+        >
+          <Plus className="h-5 w-5 mr-1" /> 新增
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Form View ──
+
+function FormView({ columns, tableId, onSubmit }: {
+  columns: nc.NCColumn[];
+  tableId: string;
+  onSubmit: (data: Record<string, unknown>) => Promise<void>;
+}) {
+  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await onSubmit(formData);
+      setFormData({});
+      setSubmitted(true);
+      setTimeout(() => setSubmitted(false), 2000);
+    } catch {}
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="flex-1 overflow-auto flex justify-center py-8">
+      <div className="w-full max-w-lg space-y-4 px-4">
+        <h3 className="text-lg font-semibold text-foreground">新增记录</h3>
+        {columns.map(col => {
+          const ColIcon = getColIcon(col.type);
+          return (
+            <div key={col.column_id} className="space-y-1">
+              <label className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <ColIcon className="h-3 w-3" />
+                {col.title}
+                {col.required && <span className="text-destructive">*</span>}
+              </label>
+              {col.type === 'LongText' ? (
+                <textarea
+                  value={formData[col.title] || ''}
+                  onChange={e => setFormData(d => ({ ...d, [col.title]: e.target.value }))}
+                  rows={3}
+                  className="w-full bg-muted rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none resize-none"
+                  placeholder={col.title}
+                />
+              ) : col.type === 'Checkbox' ? (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData[col.title] === 'true'}
+                    onChange={e => setFormData(d => ({ ...d, [col.title]: e.target.checked ? 'true' : '' }))}
+                    className="rounded border-border"
+                  />
+                  <span className="text-xs text-foreground">是</span>
+                </label>
+              ) : col.type === 'SingleSelect' && col.options?.length ? (
+                <select
+                  value={formData[col.title] || ''}
+                  onChange={e => setFormData(d => ({ ...d, [col.title]: e.target.value }))}
+                  className="w-full bg-muted rounded-lg px-3 py-2 text-sm text-foreground outline-none"
+                >
+                  <option value="">选择...</option>
+                  {col.options.map(o => <option key={o.title} value={o.title}>{o.title}</option>)}
+                </select>
+              ) : (
+                <input
+                  value={formData[col.title] || ''}
+                  onChange={e => setFormData(d => ({ ...d, [col.title]: e.target.value }))}
+                  className="w-full bg-muted rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                  placeholder={col.title}
+                  type={['Number', 'Decimal', 'Currency', 'Percent'].includes(col.type) ? 'number' : col.type === 'Email' ? 'email' : col.type === 'URL' ? 'url' : 'text'}
+                />
+              )}
+            </div>
+          );
+        })}
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="px-6 py-2 bg-sidebar-primary text-sidebar-primary-foreground text-sm rounded-lg hover:opacity-90 disabled:opacity-50"
+          >
+            {submitting ? '提交中...' : '提交'}
+          </button>
+          {submitted && <span className="text-xs text-green-500">提交成功 ✓</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Calendar View ──
+
+function CalendarView({ rows, columns, isLoading }: {
+  rows: Record<string, unknown>[];
+  columns: nc.NCColumn[];
+  isLoading: boolean;
+}) {
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  // Find date/datetime columns
+  const dateCol = columns.find(c => c.type === 'Date' || c.type === 'DateTime');
+  const titleCol = columns.find(c => c.primary_key) || columns[0];
+
+  if (!dateCol) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="bg-card border border-border rounded-xl p-6 max-w-sm text-center space-y-3">
+          <CalendarDays className="h-8 w-8 mx-auto text-muted-foreground" />
+          <h3 className="text-sm font-semibold text-foreground">需要日期字段</h3>
+          <p className="text-xs text-muted-foreground">日历视图需要一个日期或日期时间字段来定位事件</p>
+        </div>
+      </div>
+    );
+  }
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+  // Group rows by date
+  const rowsByDate: Record<string, Record<string, unknown>[]> = {};
+  for (const row of rows) {
+    const dateVal = row[dateCol.title];
+    if (!dateVal) continue;
+    const dateStr = String(dateVal).slice(0, 10); // YYYY-MM-DD
+    if (!rowsByDate[dateStr]) rowsByDate[dateStr] = [];
+    rowsByDate[dateStr].push(row);
+  }
+
+  const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
+
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+
+  if (isLoading) {
+    return <div className="flex-1 p-4"><div className="h-full rounded bg-muted/50 animate-pulse" /></div>;
+  }
+
+  return (
+    <div className="flex-1 overflow-auto p-4 flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={prevMonth} className="p-1 text-muted-foreground hover:text-foreground"><ChevronLeft className="h-4 w-4" /></button>
+        <h3 className="text-sm font-semibold text-foreground">{year}年{month + 1}月</h3>
+        <button onClick={nextMonth} className="p-1 text-muted-foreground hover:text-foreground"><ChevronRight className="h-4 w-4" /></button>
+      </div>
+      <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden flex-1">
+        {weekDays.map(d => (
+          <div key={d} className="bg-muted/30 px-1 py-1.5 text-center text-[10px] text-muted-foreground font-medium">{d}</div>
+        ))}
+        {Array.from({ length: firstDay }, (_, i) => (
+          <div key={`pad-${i}`} className="bg-card/50 min-h-[80px]" />
+        ))}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dayRows = rowsByDate[dateStr] || [];
+          const isToday = dateStr === todayStr;
+          return (
+            <div key={day} className={cn('bg-card min-h-[80px] p-1', isToday && 'ring-1 ring-sidebar-primary ring-inset')}>
+              <div className={cn('text-[10px] mb-0.5', isToday ? 'text-sidebar-primary font-bold' : 'text-muted-foreground')}>
+                {day}
+              </div>
+              <div className="space-y-0.5">
+                {dayRows.slice(0, 3).map((row, ri) => (
+                  <div
+                    key={ri}
+                    className="text-[9px] px-1 py-0.5 rounded bg-sidebar-primary/10 text-sidebar-primary truncate"
+                    title={String(row[titleCol.title] ?? '')}
+                  >
+                    {String(row[titleCol.title] ?? '')}
+                  </div>
+                ))}
+                {dayRows.length > 3 && (
+                  <div className="text-[9px] text-muted-foreground px-1">+{dayRows.length - 3}</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

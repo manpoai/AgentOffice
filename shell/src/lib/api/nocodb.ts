@@ -46,9 +46,11 @@ export interface NCColumn {
 export interface NCView {
   view_id: string;
   title: string;
-  type: number; // 1=form, 2=gallery, 3=grid, 4=kanban, 5=calendar
+  type: number; // 1=form, 2=gallery, 3=grid, 4=kanban
   is_default: boolean;
   order: number;
+  fk_grp_col_id?: string; // kanban grouping column
+  fk_cover_image_col_id?: string; // kanban/gallery cover image column
 }
 
 export interface NCFilter {
@@ -222,6 +224,14 @@ export async function renameView(viewId: string, title: string): Promise<void> {
 
 export async function deleteView(viewId: string): Promise<void> {
   await ncFetch(`/views/${viewId}`, { method: 'DELETE' });
+}
+
+export async function updateKanbanConfig(viewId: string, config: { fk_grp_col_id?: string; fk_cover_image_col_id?: string }): Promise<void> {
+  await ncFetch(`/views/${viewId}/kanban`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
 }
 
 export async function queryRowsByView(

@@ -827,13 +827,21 @@ app.get('/api/data/tables/:table_id', authenticateAgent, async (req, res) => {
     }
     return col;
   });
-  const views = (t.views || []).map(v => ({
-    view_id: v.id,
-    title: v.title,
-    type: v.type,
-    is_default: !!v.is_default,
-    order: v.order,
-  }));
+  const views = (t.views || []).map(v => {
+    const view = {
+      view_id: v.id,
+      title: v.title,
+      type: v.type, // 1=form, 2=gallery, 3=grid, 4=kanban
+      is_default: !!v.is_default,
+      order: v.order,
+    };
+    // Pass through kanban/gallery config from nested view object
+    if (v.view) {
+      if (v.view.fk_grp_col_id) view.fk_grp_col_id = v.view.fk_grp_col_id;
+      if (v.view.fk_cover_image_col_id) view.fk_cover_image_col_id = v.view.fk_cover_image_col_id;
+    }
+    return view;
+  });
   res.json({ table_id: t.id, title: t.title, columns, views });
 });
 
@@ -953,6 +961,18 @@ app.post('/api/data/tables/:table_id/views', authenticateAgent, async (req, res)
     is_default: !!result.data.is_default,
     order: result.data.order,
   });
+});
+
+// Update kanban view config (set grouping column)
+app.patch('/api/data/views/:view_id/kanban', authenticateAgent, async (req, res) => {
+  if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
+  const { fk_grp_col_id, fk_cover_image_col_id } = req.body;
+  const body = {};
+  if (fk_grp_col_id) body.fk_grp_col_id = fk_grp_col_id;
+  if (fk_cover_image_col_id) body.fk_cover_image_col_id = fk_cover_image_col_id;
+  const result = await nc('PATCH', `/api/v1/db/meta/kanbans/${req.params.view_id}`, body);
+  if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+  res.json({ updated: true });
 });
 
 // Rename a view
