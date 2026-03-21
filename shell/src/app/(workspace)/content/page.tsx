@@ -4,14 +4,14 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Save, Trash2, X, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Save, Trash2, X, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Search, Clock, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Editor } from '@/components/editor';
 import { Comments } from '@/components/comments/Comments';
 import * as gw from '@/lib/api/gateway';
 
-type ContentItem = { type: 'doc'; id: string; title: string; subtitle: string; emoji?: string }
+type ContentItem = { type: 'doc'; id: string; title: string; subtitle: string; emoji?: string; updatedAt?: string }
   | { type: 'table'; id: string; title: string };
 
 type Selection = { type: 'doc'; id: string } | { type: 'table'; id: string } | null;
@@ -66,7 +66,15 @@ export default function ContentPage() {
     title: doc.emoji ? `${doc.emoji} ${doc.title || '无标题'}` : (doc.title || '无标题'),
     subtitle: `${collectionMap.get(doc.collectionId) || ''} · ${formatDate(doc.updatedAt)}`,
     emoji: doc.emoji,
+    updatedAt: doc.updatedAt,
   }));
+  // Sort docs by last updated (most recent first)
+  items.sort((a, b) => {
+    if (a.type === 'doc' && b.type === 'doc') {
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+    }
+    return 0;
+  });
   tables?.forEach(t => items.push({ type: 'table', id: t.id, title: t.title }));
 
   // Filter by search
@@ -164,30 +172,63 @@ export default function ContentPage() {
             {searchQuery.length >= 2 && displayItems.length === 0 && !isLoading && (
               <p className="p-3 text-xs text-muted-foreground">未找到匹配的文档</p>
             )}
-            {displayItems.map(item => {
-              const isSelected = selection?.type === item.type && selection?.id === item.id;
+            {(() => {
+              const docItems = displayItems.filter(i => i.type === 'doc');
+              const tableItems = displayItems.filter(i => i.type === 'table');
               return (
-                <button
-                  key={`${item.type}-${item.id}`}
-                  onClick={() => handleSelect(item)}
-                  className={cn(
-                    'w-full flex items-start gap-2 px-3 py-2 text-left transition-colors',
-                    isSelected ? 'bg-accent text-accent-foreground' : 'text-foreground/80 hover:bg-accent/50'
+                <>
+                  {docItems.length > 0 && !searchQuery && (
+                    <div className="px-3 pt-2 pb-1 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="h-3 w-3" />
+                      文档 ({docItems.length})
+                    </div>
                   )}
-                >
-                  {item.type === 'doc'
-                    ? <FileText className="h-4 w-4 shrink-0 mt-0.5 text-blue-400/70" />
-                    : <Table2 className="h-4 w-4 shrink-0 mt-0.5 text-green-400/70" />
-                  }
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm truncate">{item.title}</p>
-                    {item.type === 'doc' && (
-                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">{item.subtitle}</p>
-                    )}
-                  </div>
-                </button>
+                  {docItems.map(item => {
+                    const isSelected = selection?.type === item.type && selection?.id === item.id;
+                    return (
+                      <button
+                        key={`${item.type}-${item.id}`}
+                        onClick={() => handleSelect(item)}
+                        className={cn(
+                          'w-full flex items-start gap-2 px-3 py-2 text-left transition-colors',
+                          isSelected ? 'bg-accent text-accent-foreground' : 'text-foreground/80 hover:bg-accent/50'
+                        )}
+                      >
+                        <FileText className="h-4 w-4 shrink-0 mt-0.5 text-blue-400/70" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm truncate">{item.title}</p>
+                          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{item.subtitle}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {tableItems.length > 0 && !searchQuery && (
+                    <div className="px-3 pt-3 pb-1 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider flex items-center gap-1.5">
+                      <Table2 className="h-3 w-3" />
+                      数据表 ({tableItems.length})
+                    </div>
+                  )}
+                  {tableItems.map(item => {
+                    const isSelected = selection?.type === item.type && selection?.id === item.id;
+                    return (
+                      <button
+                        key={`${item.type}-${item.id}`}
+                        onClick={() => handleSelect(item)}
+                        className={cn(
+                          'w-full flex items-start gap-2 px-3 py-2 text-left transition-colors',
+                          isSelected ? 'bg-accent text-accent-foreground' : 'text-foreground/80 hover:bg-accent/50'
+                        )}
+                      >
+                        <Table2 className="h-4 w-4 shrink-0 mt-0.5 text-green-400/70" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm truncate">{item.title}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
               );
-            })}
+            })()}
           </div>
         </ScrollArea>
       </div>
@@ -211,6 +252,7 @@ export default function ContentPage() {
         ) : selectedDoc && selection?.type === 'doc' ? (
           <DocPanel
             doc={selectedDoc}
+            collectionName={collectionMap.get(selectedDoc.collectionId)}
             onBack={() => setMobileView('list')}
             onSaved={refreshDocs}
             onDeleted={() => { setSelection(null); refreshDocs(); setMobileView('list'); }}
@@ -221,12 +263,13 @@ export default function ContentPage() {
             onBack={() => setMobileView('list')}
           />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-            <div className="flex gap-3 mb-4">
+          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
+            <div className="flex gap-3 mb-2">
               <FileText className="h-8 w-8 opacity-20" />
               <Table2 className="h-8 w-8 opacity-20" />
             </div>
             <p className="text-sm">选择文档或数据表</p>
+            <p className="text-xs text-muted-foreground/50">或点击左上角 + 新建</p>
           </div>
         )}
       </div>
@@ -499,8 +542,9 @@ function TableViewer({ tableId, onBack }: { tableId: string; onBack: () => void 
  * DocPanel — Outline-style: always editable, auto-save on change.
  * No separate view/edit modes. Title is editable inline.
  */
-function DocPanel({ doc, onBack, onSaved, onDeleted }: {
+function DocPanel({ doc, collectionName, onBack, onSaved, onDeleted }: {
   doc: ol.OLDocument;
+  collectionName?: string;
   onBack: () => void;
   onSaved: () => void;
   onDeleted: () => void;
@@ -573,27 +617,44 @@ function DocPanel({ doc, onBack, onSaved, onDeleted }: {
 
   return (
     <>
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-card shrink-0">
-        <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <input
-            value={title}
-            onChange={handleTitleChange}
-            className="w-full text-sm font-semibold bg-transparent text-foreground outline-none"
-            placeholder="文档标题"
-          />
+      <div className="flex flex-col px-4 py-2 border-b border-border bg-card shrink-0">
+        {/* Breadcrumb + actions row */}
+        <div className="flex items-center gap-2">
+          <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          {collectionName && (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+              <FolderOpen className="h-3 w-3" />
+              {collectionName}
+              <span className="mx-0.5">/</span>
+            </span>
+          )}
+          <div className="flex-1 min-w-0">
+            <input
+              value={title}
+              onChange={handleTitleChange}
+              className="w-full text-sm font-semibold bg-transparent text-foreground outline-none"
+              placeholder="文档标题"
+            />
+          </div>
+          {statusText && (
+            <span className={cn(
+              'text-[10px] shrink-0',
+              saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'
+            )}>{statusText}</span>
+          )}
+          <button onClick={handleDelete} disabled={deleting} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0" title="删除">
+            <Trash2 className="h-4 w-4" />
+          </button>
         </div>
-        {statusText && (
-          <span className={cn(
-            'text-[10px] shrink-0',
-            saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'
-          )}>{statusText}</span>
-        )}
-        <button onClick={handleDelete} disabled={deleting} className="p-1.5 text-muted-foreground hover:text-destructive shrink-0" title="删除">
-          <Trash2 className="h-4 w-4" />
-        </button>
+        {/* Last edited info */}
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 mt-0.5 pl-0 md:pl-0">
+          <Clock className="h-2.5 w-2.5" />
+          <span>
+            {doc.updatedBy?.name || '未知'} 编辑于 {formatDate(doc.updatedAt)}
+          </span>
+        </div>
       </div>
       <div className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-hidden">
