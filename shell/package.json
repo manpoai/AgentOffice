@@ -1,0 +1,25 @@
+{
+  "name": "asuite-shell",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3101",
+    "build": "next build",
+    "start": "next start -p 3101"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.3",
+    "next": "14.2.29",
+    "next-auth": "^4.24.7",
+    "openid-client": "^5.7.0",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "20.19.37",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "^18",
+    "typescript": "5.9.3"
+  }
+}

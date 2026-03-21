@@ -1,8 +1,8 @@
 # Agent 接入协议 v1
 
-> 创建于 2026-03-20
+> 创建于 2026-03-20，基于实践更新于 2026-03-20
 > 基于 hxa-connect (github.com/coco-xyz/hxa-connect) 设计，针对 Human-Agent 协作办公套件裁剪与扩展。
-> 本文档是拼凑版和正式开发阶段的设计锚点。阶段三完成后更新为 v1.1。
+> 本文档同时作为当前参考实现（ASuite Gateway + Zylos Adapter）的设计说明。
 
 ---
 
@@ -43,7 +43,7 @@
 
 ## 三、Agent 注册 & 身份机制
 
-### 3.1 注册流程（3 步）
+### 3.1 注册流程（3 步 + Provisioning）
 
 ```
 Step 1 — 管理员创建 ticket
@@ -69,14 +69,23 @@ Step 2 — Agent 注册
     token: "<64hex>",           // 仅返回一次，请妥善保存
     name: "zylos",
     display_name: "Zylos",
+    workspace: {                // Provisioning 结果，入驻时自动创建
+      ol_collection_id: "xxx",   // Outline 专属文档集
+      mm_channel_id: "xxx",      // Mattermost 专属频道（可选）
+    },
     created_at: <unix_ms>
   }
 
 Step 3 — 验证（可选）
   GET /api/me
   Headers: Authorization: Bearer <token>
-  Response: { agent_id, name, display_name, capabilities, webhook_url, online, ... }
+  Response: { agent_id, name, display_name, capabilities, workspace, online, ... }
 ```
+
+**Provisioning（入驻配置）**：注册完成后，Gateway 自动执行一次性初始化：
+- 在 Outline 创建以 `display_name` 命名的 Collection，作为该 Agent 的专属文档空间
+- 在 Mattermost 创建 Bot 账号
+- 将创建的资源 ID 写入 agent_accounts，供后续 API 调用时作为默认值
 
 ### 3.2 Token 机制
 
@@ -89,19 +98,49 @@ Step 3 — 验证（可选）
 
 ```sql
 CREATE TABLE agent_accounts (
-  id          TEXT PRIMARY KEY,        -- "agt_<16hex>"
-  name        TEXT UNIQUE NOT NULL,    -- 唯一标识，用于 @mention
-  display_name TEXT NOT NULL,
-  token_hash  TEXT NOT NULL,           -- SHA-256(token)
-  capabilities TEXT,                   -- JSON array
-  webhook_url TEXT,
-  webhook_secret TEXT,                 -- 原文存储（用于签名验证），或加密存储
-  online      BOOLEAN DEFAULT FALSE,
-  last_seen_at INTEGER,
-  created_at  INTEGER NOT NULL,
-  updated_at  INTEGER NOT NULL
+  id              TEXT PRIMARY KEY,        -- "agt_<16hex>"
+  name            TEXT UNIQUE NOT NULL,    -- 唯一标识，用于 @mention
+  display_name    TEXT NOT NULL,
+  token_hash      TEXT NOT NULL,           -- SHA-256(token)
+  capabilities    TEXT,                    -- JSON array
+  webhook_url     TEXT,
+  webhook_secret  TEXT,
+  -- Workspace（Provisioning 结果）
+  ol_collection_id TEXT,                   -- Outline 专属文档集 ID
+  mm_channel_id   TEXT,                    -- Mattermost 专属频道 ID（预留）
+  -- 状态
+  online          BOOLEAN DEFAULT FALSE,
+  last_seen_at    INTEGER,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
 );
 ```
+
+---
+
+## 三·五、Agent Context Injection
+
+**核心规则：Gateway API 层会自动用 Agent 身份补全缺省参数，Agent 调用时无需关心平台细节。**
+
+这是一个横切关注点，在身份验证之后、业务逻辑之前执行：
+
+```
+请求 → 身份验证 → Agent Context Injection → 业务逻辑 → 上游调用
+```
+
+### 当前规则
+
+| API | 无 Agent 指定时的默认行为 |
+|---|---|
+| `POST /api/docs` 未传 `collection_id` | 自动使用该 Agent 的 `ol_collection_id` |
+| `POST /api/tasks` 未传 `assignee_name` | 任务默认分配给发起请求的 Agent 自己 |
+| `POST /api/messages` 发送者 | 自动以该 Agent 的 MM Bot 身份发送 |
+
+### 扩展规则（v1.1 方向）
+
+- **资源隔离**：Agent 默认只能读写自己 Collection 里的文档，跨 Collection 需要显式声明
+- **署名注入**：Agent 创建的内容自动带来源标记（元数据，不修改正文）
+- **优先级继承**：Agent 创建的任务默认优先级从触发事件的任务继承
 
 ---
 
@@ -240,7 +279,7 @@ Response 201:
 }
 ```
 
-### 4.6 创建子任务（Plane）
+### 4.6 创建任务 / 委派子任务（Plane）
 
 ```
 POST /api/tasks
@@ -249,7 +288,8 @@ Body:
 {
   title: string,
   description?: string,
-  assignee_name?: string,      // Agent name 或 Human name（通讯录 lookup）
+  context?: string,            // Agent-to-Agent 委派时使用：传递背景信息给被委派方
+  assignee_name?: string,      // Agent name 或 Human name
   parent_task_id?: string,
   priority?: "urgent" | "high" | "medium" | "low" | "none"
 }
@@ -260,6 +300,34 @@ Response 201:
   url: string,
   created_at: number
 }
+```
+
+**`context` 字段说明：**
+
+当 Agent A 委派任务给 Agent B 时，`context` 用于传递 A 所知道的背景，让 B 不必从零理解任务。
+
+Gateway 会将 context 嵌入任务描述，并在推送给 B 的 `task.assigned` 事件中拆出为独立字段 `delegation_context`：
+
+```json
+"delegation_context": {
+  "from": "zylos",
+  "text": "用户在讨论产品定价，需要竞品调研。原始问题：..."
+}
+```
+
+B 收到任务时，消息末尾会自动附加提示：完成后在任务评论里 @A，A 会收到 `task.commented` 事件通知。
+
+**Agent-to-Agent 委派完整流程：**
+
+```
+1. Agent A 创建任务：POST /api/tasks { assignee_name: "zylos-digger", context: "..." }
+2. Gateway poll 检测到 Digger 被分配，推 task.assigned 事件（含 delegation_context）
+3. Digger 收到任务，执行工作
+4. Digger 完成后：
+   a. POST /api/tasks/:id/comments { text: "完成结果摘要... @zylos" }
+   b. PATCH /api/tasks/:id/status { status: "done" }
+5. Gateway 检测到 @zylos 的评论，推 task.commented 事件给 Zylos
+6. Zylos 收到结果，继续下游工作
 ```
 
 ### 4.7 重放错过的事件（Catchup）
@@ -283,6 +351,119 @@ CatchupEvent:
   data: object             // 同 Webhook payload 的 data 字段
 }
 ```
+
+---
+
+## 四·五、结构化数据 API（NocoDB）
+
+Agent 可通过 `/api/data` 接口读写 NocoDB 中的结构化数据表。底层是 NocoDB 0.202，所有数据存储在 ASuite 共享 Base（`pgw03v3ek2obunx`）中。
+
+> NocoDB 管理界面：http://localhost:8080（admin@asuite.local / Asuite2026!）
+
+### 4·5.1 创建表
+
+```
+POST /api/data/tables
+
+Body:
+{
+  title: string,           // 表名
+  columns: [               // 列定义，不需要传 Id（Gateway 自动添加主键和 created_by）
+    {
+      title: string,       // 列名
+      uidt: string         // 类型：SingleLineText | LongText | Number | Decimal |
+                           //       Checkbox | Date | DateTime | Email | URL
+    }
+  ]
+}
+
+Response 201:
+{
+  table_id: string,        // 后续 CRUD 用此 ID
+  title: string,
+  columns: [...]           // 完整列定义（含自动加的 Id、created_by）
+}
+
+说明：
+- Gateway 自动注入 Id（自增主键）和 created_by 列
+- 调用方在插入时把 agent name 写入 created_by，实现 agent 身份溯源
+```
+
+### 4·5.2 列出所有表
+
+```
+GET /api/data/tables
+
+Response 200:
+{
+  list: [
+    {
+      id: "mb7m0i7guw5dhaq",
+      title: "agent_notes",
+      base_id: "pgw03v3ek2obunx",
+      ...
+    }
+  ]
+}
+```
+
+### 4·5.2 查询行
+
+```
+GET /api/data/:table_id/rows?limit=25&offset=0&where=...&sort=...
+
+参数:
+  table_id  — NocoDB table ID（从 GET /api/data/tables 获取）
+  limit     — 每页条数，默认 25
+  offset    — 偏移，默认 0
+  where     — NocoDB where 表达式（如 (Agent,eq,zylos-thinker)）
+  sort      — 排序字段（如 -created_at 表示倒序）
+
+Response 200:
+{
+  list: [ { Id: 1, Title: "...", ... }, ... ],
+  pageInfo: { totalRows: 10, page: 1, pageSize: 25, isFirstPage: true, isLastPage: true }
+}
+```
+
+### 4·5.3 插入行
+
+```
+POST /api/data/:table_id/rows
+
+Body: { 列名: 值, ... }  // 列名与表定义一致，区分大小写
+
+Response 201:
+{ Id: 2, Title: "...", ... }  // 返回完整行（含自增 Id）
+```
+
+### 4·5.4 更新行
+
+```
+PATCH /api/data/:table_id/rows/:row_id
+
+Body: { 列名: 新值, ... }  // 只需传需要更新的列
+
+Response 200:
+{ Id: 2, Title: "更新后", ... }
+```
+
+### 4·5.5 删除行
+
+```
+DELETE /api/data/:table_id/rows/:row_id
+
+Response 200:
+{ deleted: true }
+```
+
+### 4·5.6 表 ID 速查
+
+| 表名 | Table ID | 列 |
+|---|---|---|
+| agent_notes | `mb7m0i7guw5dhaq` | Id, Title, Content, Agent |
+
+> 新建表需在 NocoDB 管理界面操作，建好后通过 `GET /api/data/tables` 获取 table_id。
 
 ---
 
@@ -415,7 +596,95 @@ CatchupEvent:
 
 ---
 
-## 六、Webhook 签名与验证
+## 六、任务生命周期
+
+### 6.1 状态机
+
+```
+todo ──→ in_progress ──→ done
+  │                        │
+  └──→ cancelled ←─────────┘
+```
+
+状态流转由 **Agent 自己调用 API 完成**，Gateway 不做自动推进。
+
+| 状态 | 含义 | 谁设置 |
+|---|---|---|
+| `todo` | 已创建，等待执行 | 任务创建时默认 |
+| `in_progress` | 执行中 | Agent 收到 task.assigned 后立即设置 |
+| `done` | 已完成 | Agent 完成工作后设置 |
+| `cancelled` | 已取消 | Human 或 Agent 均可设置 |
+
+### 6.2 Agent 收到任务后的标准流程
+
+```
+1. 收到 task.assigned 事件
+2. 立即调用 PATCH /api/tasks/:id/status  { status: "in_progress" }
+3. 执行工作
+4. 完成后调用 PATCH /api/tasks/:id/status  { status: "done" }
+   （可选）在 done 之前调用 POST /api/tasks/:id/comments 附上工作结果摘要
+```
+
+### 6.3 定时/未来任务
+
+若 `task.assigned` 事件中 `data.start_date` 存在且大于今日，Agent **不应**立即设置 `in_progress`，等到 start_date 当天再开始。
+
+---
+
+## 七、Adapter 架构
+
+### 7.1 职责划分
+
+```
+Gateway ──SSE──→ Adapter ──C4 inject──→ Agent
+         事件推送   格式转换    消息队列
+```
+
+**Adapter 只做一件事：把 Gateway 的事件格式转换成 Agent 能理解的自然语言消息，然后注入 C4 队列。**
+
+Adapter 不应：
+- 调用任何 Gateway API（不做状态更新、不发消息）
+- 做任何业务判断（不决定"要不要"处理某事件）
+- 维护任务状态
+
+所有业务逻辑由 Agent 自己执行。
+
+### 7.2 消息格式规范
+
+Adapter 注入 C4 的消息遵循固定格式：
+
+```
+[来源标签] sender said: <current-message>
+内容
+</current-message>
+
+（可选的上下文或行动指引）
+```
+
+来源标签：
+- `[MM]` — Mattermost @mention
+- `[MM DM]` — Mattermost 私信
+- `[Plane]` — Plane 任务相关
+- `[Outline]` — Outline 文档相关
+
+### 7.3 Endpoint 编码规范
+
+Endpoint 是 C4 消息的"回复地址"，send.js 根据 endpoint 格式路由回复到正确位置。
+
+格式：`<主体>|<修饰符1>|<修饰符2>...`
+
+| 场景 | Endpoint 格式 | 路由目标 |
+|---|---|---|
+| MM 频道消息 | `<channel_id>\|msg:<msg_id>` | MM 频道，thread 为 msg_id |
+| MM 带 thread 消息 | `<channel_id>\|msg:<msg_id>\|thread:<thread_id>` | MM 指定 thread |
+| Plane 任务 | `task:<task_id>` | Plane 任务评论 |
+| Plane 任务评论 | `task:<task_id>\|comment:<comment_id>` | Plane 任务评论 |
+| Outline 文档 | `doc:<doc_id>` | Outline 文档评论 |
+| Outline 文档评论 | `doc:<doc_id>\|comment:<comment_id>` | Outline 回复该评论 |
+
+---
+
+## 八、Webhook 签名与验证（预留）
 
 ### 6.1 请求 Headers
 
@@ -464,7 +733,7 @@ function verifyWebhook(secret: string, headers: Headers, rawBody: string): boole
 
 ---
 
-## 七、Catchup 机制
+## 九、Catchup 机制
 
 ### 7.1 事件存储
 
@@ -513,7 +782,7 @@ data: {"event":"task.assigned","source":"plane",...}\n\n
 
 ---
 
-## 八、能力发现（Capability Registry）
+## 十、能力发现（Capability Registry）
 
 ### 8.1 标准能力标签
 
@@ -550,7 +819,7 @@ Response 200:
 
 ---
 
-## 九、待定问题（留给阶段三修订）
+## 十一、待定问题（留给 v1.1）
 
 1. **文档 patch 策略**：当前 v1 用全量替换（`content_markdown` 覆盖）。多人同时编辑时会有冲突。评估 Outline 的 OT/CRDT（Yjs）能否在 API 层暴露，或改用 append-only 的 ProseMirror patch 格式。
 
@@ -566,9 +835,13 @@ Response 200:
 
 7. **多 Agent 协作场景**：多个 Agent 同时参与一个文档/任务时，如何通过协议层协调（避免互相覆盖）？v1 暂不处理，但需要在 v1.1 明确。
 
+8. ~~**跨 Agent 委派协议**~~：**已实现（v1）**。`POST /api/tasks` 新增 `context` 字段，Gateway 解析后在 `task.assigned` 事件中拆出为 `delegation_context`，Adapter 消息模板自动带入并提示被委派方完成后 @委派方。
+
+9. **任务超时与升级**：Agent 接受任务后长时间无响应（in_progress 后超时），Gateway 应有检测机制，自动通知 Human 或触发 escalated 事件。当前无此机制。
+
 ---
 
-## 十、参考资料
+## 十二、参考资料
 
 - hxa-connect 源码：https://github.com/coco-xyz/hxa-connect
 - Mattermost Bot Accounts：https://developers.mattermost.com/integrate/reference/bot-accounts/

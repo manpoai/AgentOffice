@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+.env.local
+*.db
+*.db-shm
+*.db-wal
+bot/tokens.env
+
+# Agent configs with tokens
+adapters/zylos/config*.json
+
+# Poll state files
+gateway/.nc-poll-state.json
+gateway/.plane-poll-state.json
+adapters/zylos/.last-event-ts
+
+# Next.js
+shell/.next/
+
+# OS
+.DS_Store
+
+# Docker volumes (local only)
+dex-data/
+
+# PM2
+ecosystem.config.cjs

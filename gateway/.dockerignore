@@ -1,0 +1,4 @@
+node_modules
+gateway.db
+gateway.db-shm
+gateway.db-wal
