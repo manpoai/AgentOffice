@@ -1,6 +1,7 @@
 /**
  * Slash command menu plugin for ProseMirror.
  * Typing "/" at the start of a line opens a popup with block type options.
+ * Aligned with Outline's block menu items.
  */
 import { Plugin, PluginKey } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
@@ -13,40 +14,45 @@ interface SlashMenuItem {
   label: string;
   description: string;
   icon: string;
+  keywords?: string;
   command: (view: EditorView) => void;
 }
 
 const SLASH_ITEMS: SlashMenuItem[] = [
   {
-    label: '标题 1', description: '大标题', icon: 'H1',
+    label: '标题 1', description: '大标题', icon: 'H1', keywords: 'heading h1',
     command: (view) => { setBlockType(schema.nodes.heading, { level: 1 })(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '标题 2', description: '中标题', icon: 'H2',
+    label: '标题 2', description: '中标题', icon: 'H2', keywords: 'heading h2',
     command: (view) => { setBlockType(schema.nodes.heading, { level: 2 })(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '标题 3', description: '小标题', icon: 'H3',
+    label: '标题 3', description: '小标题', icon: 'H3', keywords: 'heading h3',
     command: (view) => { setBlockType(schema.nodes.heading, { level: 3 })(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '无序列表', description: '项目符号列表', icon: '•',
+    label: '无序列表', description: '项目符号列表', icon: '•', keywords: 'bullet list ul',
     command: (view) => { wrapIn(schema.nodes.bullet_list)(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '有序列表', description: '编号列表', icon: '1.',
+    label: '有序列表', description: '编号列表', icon: '1.', keywords: 'ordered list ol number',
     command: (view) => { wrapIn(schema.nodes.ordered_list)(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '引用', description: '块引用', icon: '❝',
+    label: '待办列表', description: '任务清单', icon: '☑', keywords: 'todo task checkbox checklist',
+    command: (view) => { wrapIn(schema.nodes.checkbox_list)(view.state, view.dispatch); view.focus(); },
+  },
+  {
+    label: '引用', description: '块引用', icon: '❝', keywords: 'quote blockquote',
     command: (view) => { wrapIn(schema.nodes.blockquote)(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '代码块', description: '代码片段', icon: '<>',
+    label: '代码块', description: '代码片段', icon: '</>', keywords: 'code block pre',
     command: (view) => { setBlockType(schema.nodes.code_block)(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '分割线', description: '水平线', icon: '—',
+    label: '分割线', description: '水平线', icon: '—', keywords: 'divider horizontal rule hr',
     command: (view) => {
       const { state, dispatch } = view;
       dispatch(state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create()).scrollIntoView());
@@ -54,7 +60,7 @@ const SLASH_ITEMS: SlashMenuItem[] = [
     },
   },
   {
-    label: '表格', description: '插入表格', icon: '⊞',
+    label: '表格', description: '插入表格', icon: '⊞', keywords: 'table grid',
     command: (view) => {
       const { state, dispatch } = view;
       const cell = schema.nodes.table_cell.createAndFill()!;
@@ -70,6 +76,17 @@ const SLASH_ITEMS: SlashMenuItem[] = [
       view.focus();
     },
   },
+  {
+    label: '图片', description: '插入图片', icon: '🖼', keywords: 'image picture photo img',
+    command: (view) => {
+      const url = prompt('图片 URL:');
+      if (!url) return;
+      const { state, dispatch } = view;
+      const node = schema.nodes.image.create({ src: url, alt: '' });
+      dispatch(state.tr.replaceSelectionWith(node).scrollIntoView());
+      view.focus();
+    },
+  },
 ];
 
 function createMenuDOM(): HTMLDivElement {
@@ -78,35 +95,43 @@ function createMenuDOM(): HTMLDivElement {
   el.style.cssText = `
     position: absolute; z-index: 100; display: none;
     background: hsl(240 6% 14%); border: 1px solid hsl(240 4% 20%);
-    border-radius: 8px; padding: 4px; width: 240px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 320px; overflow-y: auto;
+    border-radius: 8px; padding: 4px; width: 260px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 360px; overflow-y: auto;
   `;
   return el;
 }
 
-function renderItems(el: HTMLDivElement, items: SlashMenuItem[], selected: number, onSelect: (i: number) => void) {
+function renderItems(
+  el: HTMLDivElement,
+  items: SlashMenuItem[],
+  selected: number,
+  onHover: (i: number) => void,
+  onClick: (i: number) => void,
+) {
   el.innerHTML = '';
   items.forEach((item, i) => {
     const row = document.createElement('div');
     row.style.cssText = `
       display: flex; align-items: center; gap: 10px;
-      padding: 6px 10px; border-radius: 6px; cursor: pointer;
+      padding: 8px 10px; border-radius: 6px; cursor: pointer;
+      transition: background 0.1s;
       ${i === selected ? 'background: hsl(240 4% 20%);' : ''}
     `;
-    row.onmouseenter = () => onSelect(i);
-    row.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onSelect(i); };
+    row.onmouseenter = () => onHover(i);
+    // Use mousedown + preventDefault to prevent editor blur
+    row.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); onClick(i); };
 
     const icon = document.createElement('span');
-    icon.style.cssText = 'width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: hsl(240 4% 18%); border-radius: 4px; font-size: 12px; font-weight: 600; color: #a1a1aa; flex-shrink: 0;';
+    icon.style.cssText = 'width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: hsl(240 4% 18%); border-radius: 6px; font-size: 13px; font-weight: 600; color: #a1a1aa; flex-shrink: 0;';
     icon.textContent = item.icon;
 
     const text = document.createElement('div');
-    text.style.cssText = 'min-width: 0;';
+    text.style.cssText = 'min-width: 0; flex: 1;';
     const label = document.createElement('div');
-    label.style.cssText = 'font-size: 13px; color: #e4e4e7; font-weight: 500;';
+    label.style.cssText = 'font-size: 13px; color: #e4e4e7; font-weight: 500; line-height: 1.3;';
     label.textContent = item.label;
     const desc = document.createElement('div');
-    desc.style.cssText = 'font-size: 11px; color: #71717a;';
+    desc.style.cssText = 'font-size: 11px; color: #71717a; line-height: 1.3;';
     desc.textContent = item.description;
     text.appendChild(label);
     text.appendChild(desc);
@@ -128,7 +153,9 @@ export function slashMenuPlugin(): Plugin {
     if (!filterText) return SLASH_ITEMS;
     const q = filterText.toLowerCase();
     return SLASH_ITEMS.filter(item =>
-      item.label.toLowerCase().includes(q) || item.description.toLowerCase().includes(q)
+      item.label.toLowerCase().includes(q) ||
+      item.description.toLowerCase().includes(q) ||
+      (item.keywords && item.keywords.toLowerCase().includes(q))
     );
   }
 
@@ -154,19 +181,35 @@ export function slashMenuPlugin(): Plugin {
     const items = getFilteredItems();
     if (items.length === 0) { hide(); return; }
     selectedIndex = Math.min(selectedIndex, items.length - 1);
-    renderItems(menuEl, items, selectedIndex, (i) => {
-      selectedIndex = i;
-      const filtered = getFilteredItems();
-      executeItem(view, filtered[i]);
-    });
+    renderItems(menuEl, items, selectedIndex,
+      // onHover: just update highlight
+      (i) => {
+        selectedIndex = i;
+        // Re-render to update highlight without re-triggering hover loop
+        if (!menuEl) return;
+        const rows = menuEl.children;
+        for (let j = 0; j < rows.length; j++) {
+          (rows[j] as HTMLElement).style.background = j === i ? 'hsl(240 4% 20%)' : '';
+        }
+      },
+      // onClick: execute command
+      (i) => {
+        const filtered = getFilteredItems();
+        if (filtered[i]) executeItem(view, filtered[i]);
+      }
+    );
   }
 
   function updatePosition(view: EditorView) {
     if (!menuEl || slashPos < 0) return;
-    const coords = view.coordsAtPos(slashPos);
-    const editorRect = view.dom.closest('.outline-editor')?.getBoundingClientRect() || view.dom.getBoundingClientRect();
-    menuEl.style.left = `${coords.left - editorRect.left}px`;
-    menuEl.style.top = `${coords.bottom - editorRect.top + 4}px`;
+    try {
+      const coords = view.coordsAtPos(slashPos);
+      const editorRect = view.dom.closest('.outline-editor')?.getBoundingClientRect() || view.dom.getBoundingClientRect();
+      menuEl.style.left = `${coords.left - editorRect.left}px`;
+      menuEl.style.top = `${coords.bottom - editorRect.top + 4}px`;
+    } catch {
+      // Position may be invalid if doc changed
+    }
   }
 
   function executeItem(view: EditorView, item: SlashMenuItem) {
@@ -174,11 +217,15 @@ export function slashMenuPlugin(): Plugin {
     const { state, dispatch } = view;
     const from = slashPos;
     const to = state.selection.from;
-    const tr = state.tr.delete(from, to);
-    dispatch(tr);
+    if (from >= 0 && to >= from) {
+      const tr = state.tr.delete(from, to);
+      dispatch(tr);
+    }
     hide();
-    // Execute the command
-    setTimeout(() => item.command(view), 0);
+    // Execute the command after state update
+    setTimeout(() => {
+      item.command(view);
+    }, 10);
   }
 
   return new Plugin({
@@ -191,6 +238,9 @@ export function slashMenuPlugin(): Plugin {
         container.appendChild(menuEl);
       }
       return {
+        update(view) {
+          if (active) updatePosition(view);
+        },
         destroy() {
           menuEl?.remove();
           menuEl = null;
@@ -223,7 +273,26 @@ export function slashMenuPlugin(): Plugin {
             hide();
             return true;
           }
-          // Let other keys (typing) pass through — handleTextInput will update filter
+          if (event.key === 'Backspace') {
+            // If we'd backspace past the slash, close menu
+            const { state } = view;
+            if (state.selection.from <= slashPos + 1) {
+              // Let backspace happen (deletes the /), then close
+              setTimeout(() => hide(), 0);
+              return false;
+            }
+            // Otherwise update filter after backspace
+            setTimeout(() => {
+              const { state: newState } = view;
+              if (slashPos >= 0 && newState.selection.from > slashPos) {
+                filterText = newState.doc.textBetween(slashPos + 1, newState.selection.from, '');
+                selectedIndex = 0;
+                updateMenu(view);
+              }
+            }, 0);
+            return false;
+          }
+          // Let other keys pass through — handleTextInput will update filter
           return false;
         }
         return false;
@@ -248,21 +317,26 @@ export function slashMenuPlugin(): Plugin {
           // Update filter based on text after slash
           setTimeout(() => {
             const { state } = view;
-            const textAfterSlash = state.doc.textBetween(slashPos + 1, state.selection.from, '');
-            filterText = textAfterSlash;
-            selectedIndex = 0;
-            updateMenu(view);
+            if (slashPos >= 0 && state.selection.from > slashPos) {
+              filterText = state.doc.textBetween(slashPos + 1, state.selection.from, '');
+              selectedIndex = 0;
+              updateMenu(view);
+            }
           }, 0);
           return false;
         }
         return false;
       },
+      handleClick(view) {
+        // Close menu on click elsewhere in editor
+        if (active) hide();
+        return false;
+      },
     },
-    // Close menu on blur or selection change outside
+    // Close menu if cursor moved before the slash
     appendTransaction(transactions, oldState, newState) {
       if (!active) return null;
       const { selection } = newState;
-      // Close if cursor moved before the slash
       if (selection.from < slashPos) {
         hide();
       }
