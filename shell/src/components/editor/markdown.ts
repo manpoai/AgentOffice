@@ -138,6 +138,19 @@ export const markdownSerializer = new MarkdownSerializer(
     table_row() { /* handled by table */ },
     table_cell() { /* handled by table */ },
     table_header() { /* handled by table */ },
+    container_notice(state, node) {
+      state.write(`:::${node.attrs.style || 'info'}\n`);
+      state.renderContent(node);
+      state.write(':::');
+      state.closeBlock(node);
+    },
+    math_block(state, node) {
+      state.write('$$\n');
+      state.text(node.textContent, false);
+      state.ensureNewLine();
+      state.write('$$');
+      state.closeBlock(node);
+    },
   },
   {
     em: { open: '*', close: '*', mixable: true, expelEnclosingWhitespace: true },

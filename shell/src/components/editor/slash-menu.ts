@@ -18,7 +18,24 @@ interface SlashMenuItem {
   command: (view: EditorView) => void;
 }
 
+// Helper: insert a block node at current selection
+function insertBlock(view: EditorView, node: ReturnType<typeof schema.nodes.paragraph.create>) {
+  const { state, dispatch } = view;
+  dispatch(state.tr.replaceSelectionWith(node).scrollIntoView());
+  view.focus();
+}
+
+// Helper: wrap current block and insert a paragraph inside
+function wrapWithNotice(view: EditorView, style: string) {
+  const { state, dispatch } = view;
+  const paragraph = schema.nodes.paragraph.create();
+  const notice = schema.nodes.container_notice.create({ style }, [paragraph]);
+  dispatch(state.tr.replaceSelectionWith(notice).scrollIntoView());
+  view.focus();
+}
+
 const SLASH_ITEMS: SlashMenuItem[] = [
+  // --- Headings ---
   {
     label: '标题 1', description: '大标题', icon: 'H1', keywords: 'heading h1',
     command: (view) => { setBlockType(schema.nodes.heading, { level: 1 })(view.state, view.dispatch); view.focus(); },
@@ -32,6 +49,11 @@ const SLASH_ITEMS: SlashMenuItem[] = [
     command: (view) => { setBlockType(schema.nodes.heading, { level: 3 })(view.state, view.dispatch); view.focus(); },
   },
   {
+    label: '标题 4', description: '四级标题', icon: 'H4', keywords: 'heading h4',
+    command: (view) => { setBlockType(schema.nodes.heading, { level: 4 })(view.state, view.dispatch); view.focus(); },
+  },
+  // --- Lists ---
+  {
     label: '无序列表', description: '项目符号列表', icon: '•', keywords: 'bullet list ul',
     command: (view) => { wrapIn(schema.nodes.bullet_list)(view.state, view.dispatch); view.focus(); },
   },
@@ -43,6 +65,7 @@ const SLASH_ITEMS: SlashMenuItem[] = [
     label: '待办列表', description: '任务清单', icon: '☑', keywords: 'todo task checkbox checklist',
     command: (view) => { wrapIn(schema.nodes.checkbox_list)(view.state, view.dispatch); view.focus(); },
   },
+  // --- Structure ---
   {
     label: '引用', description: '块引用', icon: '❝', keywords: 'quote blockquote',
     command: (view) => { wrapIn(schema.nodes.blockquote)(view.state, view.dispatch); view.focus(); },
@@ -52,22 +75,20 @@ const SLASH_ITEMS: SlashMenuItem[] = [
     command: (view) => { setBlockType(schema.nodes.code_block)(view.state, view.dispatch); view.focus(); },
   },
   {
-    label: '分割线', description: '水平线', icon: '—', keywords: 'divider horizontal rule hr',
+    label: '分割线', description: '水平线', icon: '—', keywords: 'divider horizontal rule hr separator',
     command: (view) => {
-      const { state, dispatch } = view;
-      dispatch(state.tr.replaceSelectionWith(schema.nodes.horizontal_rule.create()).scrollIntoView());
-      view.focus();
+      insertBlock(view, schema.nodes.horizontal_rule.create());
     },
   },
   {
     label: '表格', description: '插入表格', icon: '⊞', keywords: 'table grid',
     command: (view) => {
       const { state, dispatch } = view;
-      const cell = schema.nodes.table_cell.createAndFill()!;
       const header = schema.nodes.table_header.createAndFill()!;
       const headerRow = schema.nodes.table_row.create(null, [
         header, schema.nodes.table_header.createAndFill()!, schema.nodes.table_header.createAndFill()!,
       ]);
+      const cell = schema.nodes.table_cell.createAndFill()!;
       const row = schema.nodes.table_row.create(null, [
         cell, schema.nodes.table_cell.createAndFill()!, schema.nodes.table_cell.createAndFill()!,
       ]);
@@ -76,16 +97,54 @@ const SLASH_ITEMS: SlashMenuItem[] = [
       view.focus();
     },
   },
+  // --- Media ---
   {
     label: '图片', description: '插入图片', icon: '🖼', keywords: 'image picture photo img',
     command: (view) => {
       const url = prompt('图片 URL:');
       if (!url) return;
+      insertBlock(view, schema.nodes.image.create({ src: url, alt: '' }));
+    },
+  },
+  // --- Notices / Callouts ---
+  {
+    label: '信息提示', description: '信息说明块', icon: 'ℹ', keywords: 'info notice callout tip blue',
+    command: (view) => { wrapWithNotice(view, 'info'); },
+  },
+  {
+    label: '成功提示', description: '成功状态块', icon: '✓', keywords: 'success notice callout green done',
+    command: (view) => { wrapWithNotice(view, 'success'); },
+  },
+  {
+    label: '警告提示', description: '警告注意块', icon: '⚠', keywords: 'warning notice callout alert orange caution',
+    command: (view) => { wrapWithNotice(view, 'warning'); },
+  },
+  {
+    label: '小贴士', description: '提示建议块', icon: '💡', keywords: 'tip notice callout hint purple suggestion',
+    command: (view) => { wrapWithNotice(view, 'tip'); },
+  },
+  // --- Advanced blocks ---
+  {
+    label: '数学公式', description: 'LaTeX 数学块', icon: '∑', keywords: 'math latex formula equation katex',
+    command: (view) => {
+      insertBlock(view, schema.nodes.math_block.create());
+    },
+  },
+  {
+    label: '流程图', description: 'Mermaid 图表', icon: '⊡', keywords: 'mermaid diagram flowchart graph chart',
+    command: (view) => {
       const { state, dispatch } = view;
-      const node = schema.nodes.image.create({ src: url, alt: '' });
+      const node = schema.nodes.code_block.create(
+        { language: 'mermaid' },
+        schema.text('graph TD\n  A[Start] --> B[End]')
+      );
       dispatch(state.tr.replaceSelectionWith(node).scrollIntoView());
       view.focus();
     },
+  },
+  {
+    label: '正文', description: '普通文本段落', icon: '¶', keywords: 'paragraph text plain normal',
+    command: (view) => { setBlockType(schema.nodes.paragraph)(view.state, view.dispatch); view.focus(); },
   },
 ];
 
@@ -96,7 +155,7 @@ function createMenuDOM(): HTMLDivElement {
     position: absolute; z-index: 100; display: none;
     background: hsl(240 6% 14%); border: 1px solid hsl(240 4% 20%);
     border-radius: 8px; padding: 4px; width: 260px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 360px; overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 420px; overflow-y: auto;
   `;
   return el;
 }
