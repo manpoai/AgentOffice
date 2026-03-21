@@ -5,7 +5,7 @@ import * as gw from '@/lib/api/gateway';
 import { CheckSquare, Circle, Clock, Loader2, CheckCircle2, XCircle, X, ArrowUp, ArrowDown, Plus, Calendar, User, GripVertical, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import { Comments } from '@/components/comments/Comments';
@@ -70,6 +70,21 @@ export default function TasksPage() {
   const selectedTask = tasks?.find(t => t.task_id === selectedTaskId);
 
   const refreshTasks = () => queryClient.invalidateQueries({ queryKey: ['tasks'] });
+
+  // Keyboard shortcut: 'n' for new task (when not typing)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        e.preventDefault();
+        setShowCreate(true);
+        setSelectedTaskId(null);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, []);
 
   // Apply filters + search
   const filteredTasks = useMemo(() => {
@@ -399,6 +414,9 @@ function TaskCard({ task, onClick, isDragging, dragHandleProps }: {
       )}
       <button onClick={onClick} className="flex-1 text-left min-w-0">
         <p className="text-sm text-foreground line-clamp-2">{task.title}</p>
+        {task.description && (
+          <p className="text-[11px] text-muted-foreground/70 line-clamp-1 mt-0.5">{task.description.slice(0, 80)}</p>
+        )}
         <div className="flex items-center gap-2 mt-2 flex-wrap">
           {task.priority && task.priority !== 'none' && (
             <span className={cn('text-[10px] flex items-center gap-0.5', priorityConfig.color)}>
@@ -506,7 +524,12 @@ function ListView({ tasks, onSelect, selectedId }: { tasks: gw.Task[]; onSelect:
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
                       <Icon className={cn('h-3.5 w-3.5 shrink-0', config.color)} />
-                      <span className="text-sm text-foreground truncate max-w-[300px]">{task.title}</span>
+                      <div className="min-w-0">
+                        <span className="text-sm text-foreground truncate block max-w-[300px]">{task.title}</span>
+                        {task.description && (
+                          <span className="text-[10px] text-muted-foreground/60 truncate block max-w-[300px]">{task.description.slice(0, 60)}</span>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="px-3 py-2.5">
@@ -595,13 +618,10 @@ function TaskDetailPanel({ task, onClose, onUpdated }: { task: gw.Task; onClose:
             placeholder="任务标题"
           />
 
-          {/* Description — editable */}
-          <EditableText
+          {/* Description — editable with markdown preview */}
+          <DescriptionField
             value={task.description || ''}
             onSave={val => patchField({ description: val })}
-            multiline
-            className="text-sm text-foreground/80"
-            placeholder="添加描述..."
           />
 
           <div className="space-y-3 pt-2 border-t border-border">
@@ -944,6 +964,63 @@ function EditableText({ value, onSave, className, placeholder, multiline, inline
       )}
     >
       {value || placeholder || '点击编辑'}
+    </div>
+  );
+}
+
+function DescriptionField({ value, onSave }: { value: string; onSave: (val: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  const startEdit = () => { setDraft(value); setEditing(true); };
+  const save = () => { setEditing(false); if (draft.trim() !== value) onSave(draft.trim()); };
+  const cancel = () => { setEditing(false); setDraft(value); };
+
+  if (editing) {
+    return (
+      <textarea
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === 'Escape') cancel(); }}
+        className="w-full bg-muted rounded px-2 py-1 outline-none resize-none text-sm text-foreground"
+        rows={6}
+        autoFocus
+        placeholder="使用 Markdown 编写描述..."
+      />
+    );
+  }
+
+  if (!value) {
+    return (
+      <div
+        onClick={startEdit}
+        className="cursor-pointer rounded px-1 -mx-1 hover:bg-accent/50 transition-colors min-h-[1.5em] text-muted-foreground italic text-sm"
+      >
+        添加描述...
+      </div>
+    );
+  }
+
+  // Simple markdown rendering
+  return (
+    <div
+      onClick={startEdit}
+      className="cursor-pointer rounded px-1 -mx-1 hover:bg-accent/50 transition-colors text-sm text-foreground/80 space-y-1"
+    >
+      {value.split('\n').map((line, i) => {
+        if (line.startsWith('### ')) return <h4 key={i} className="font-semibold text-foreground text-xs mt-1">{line.slice(4)}</h4>;
+        if (line.startsWith('## ')) return <h3 key={i} className="font-semibold text-foreground text-sm mt-1">{line.slice(3)}</h3>;
+        if (line.startsWith('# ')) return <h2 key={i} className="font-bold text-foreground mt-1">{line.slice(2)}</h2>;
+        if (line.startsWith('- ') || line.startsWith('* ')) return <p key={i} className="pl-3 before:content-['•'] before:mr-1.5 before:text-muted-foreground">{line.slice(2)}</p>;
+        if (line.startsWith('> ')) return <blockquote key={i} className="pl-2 border-l-2 border-muted-foreground/30 text-muted-foreground">{line.slice(2)}</blockquote>;
+        if (line.trim() === '') return <br key={i} />;
+        // Inline bold/code
+        const rendered = line
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/`([^`]+)`/g, '<code class="bg-muted rounded px-1 text-xs font-mono">$1</code>');
+        return <p key={i} dangerouslySetInnerHTML={{ __html: rendered }} />;
+      })}
     </div>
   );
 }
