@@ -212,13 +212,14 @@ export function MessageArea({ channelId }: { channelId: string }) {
                 )}
                 {/* Reply indicator */}
                 {replyParent && (
-                  <div className="pl-10 flex items-center gap-1.5 mb-0.5">
-                    <div className="w-4 h-3 border-l-2 border-t-2 border-muted-foreground/30 rounded-tl" />
-                    <span className="text-[10px] text-muted-foreground">
-                      回复 {replyUser?.nickname || replyUser?.username || '...'}:
+                  <div className="pl-10 flex items-center gap-1.5 mb-0.5 group/reply cursor-pointer hover:bg-accent/20 rounded py-0.5 -mx-1 px-1 transition-colors">
+                    <div className="w-4 h-3 border-l-2 border-t-2 border-sidebar-primary/40 rounded-tl shrink-0" />
+                    <img src={mm.getProfileImageUrl(replyParent.user_id)} alt="" className="w-3.5 h-3.5 rounded-full bg-muted shrink-0" />
+                    <span className="text-[10px] text-sidebar-primary/80 font-medium shrink-0">
+                      {replyUser?.nickname || replyUser?.username || '...'}
                     </span>
-                    <span className="text-[10px] text-muted-foreground/60 truncate max-w-[200px]">
-                      {replyParent.message.slice(0, 50)}
+                    <span className="text-[10px] text-muted-foreground/60 truncate">
+                      {replyParent.message.slice(0, 60)}
                     </span>
                   </div>
                 )}

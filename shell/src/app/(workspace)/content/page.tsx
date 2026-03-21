@@ -168,7 +168,19 @@ export default function ContentPage() {
         </div>
         <ScrollArea className="flex-1">
           <div className="py-1">
-            {isLoading && <p className="p-3 text-sm text-muted-foreground">加载中...</p>}
+            {isLoading && (
+              <div className="space-y-1 px-3 py-2">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="flex items-start gap-2 py-2 animate-pulse">
+                    <div className="w-4 h-4 rounded bg-muted mt-0.5 shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 100}px` }} />
+                      <div className="h-2.5 rounded bg-muted/60" style={{ width: `${40 + Math.random() * 60}px` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {searchQuery.length >= 2 && displayItems.length === 0 && !isLoading && (
               <p className="p-3 text-xs text-muted-foreground">未找到匹配的文档</p>
             )}

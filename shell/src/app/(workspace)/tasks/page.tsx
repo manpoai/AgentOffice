@@ -430,7 +430,10 @@ function TaskCard({ task, onClick, isDragging, dragHandleProps }: {
             </span>
           )}
           {task.target_date && (
-            <span className="text-[10px] flex items-center gap-0.5 text-muted-foreground">
+            <span className={cn(
+              'text-[10px] flex items-center gap-0.5',
+              isOverdue(task) ? 'text-red-500' : 'text-muted-foreground'
+            )}>
               <Calendar className="h-2.5 w-2.5" />
               {task.target_date}
             </span>
@@ -543,7 +546,10 @@ function ListView({ tasks, onSelect, selectedId }: { tasks: gw.Task[]; onSelect:
                   </td>
                   <td className="px-3 py-2.5">
                     {task.target_date ? (
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <span className={cn(
+                        'text-xs flex items-center gap-1',
+                        isOverdue(task) ? 'text-red-500 font-medium' : 'text-muted-foreground'
+                      )}>
                         <Calendar className="h-3 w-3" />
                         {task.target_date}
                       </span>
@@ -1023,6 +1029,13 @@ function DescriptionField({ value, onSave }: { value: string; onSave: (val: stri
       })}
     </div>
   );
+}
+
+function isOverdue(task: gw.Task): boolean {
+  if (!task.target_date) return false;
+  const status = getTaskStatus(task);
+  if (status === 'done' || status === 'cancelled') return false;
+  return new Date(task.target_date) < new Date(new Date().toDateString());
 }
 
 function formatTimestamp(ts?: number): string {
