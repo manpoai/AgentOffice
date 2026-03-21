@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Send, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageCircle, Send, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Comment } from '@/lib/api/gateway';
 import { useMentionPopover, MentionPopover, type MentionCandidate } from '@/components/mention-popover';
@@ -16,6 +16,10 @@ interface CommentsProps {
   postComment: (text: string) => Promise<void>;
   /** Label shown in header */
   label?: string;
+  /** Pre-filled quote from selected text */
+  initialQuote?: string;
+  /** Called after quote is consumed */
+  onQuoteConsumed?: () => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -44,14 +48,25 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function Comments({ queryKey, fetchComments, postComment, label = '评论' }: CommentsProps) {
+export function Comments({ queryKey, fetchComments, postComment, label = '评论', initialQuote, onQuoteConsumed }: CommentsProps) {
   const [expanded, setExpanded] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [posting, setPosting] = useState(false);
   const [cursorPos, setCursorPos] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
+  const [quote, setQuote] = useState('');
   const commentInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  // Handle incoming quote from selection
+  useEffect(() => {
+    if (initialQuote) {
+      setQuote(initialQuote);
+      setExpanded(true);
+      onQuoteConsumed?.();
+      setTimeout(() => commentInputRef.current?.focus(), 100);
+    }
+  }, [initialQuote, onQuoteConsumed]);
 
   const mention = useMentionPopover(newComment, cursorPos);
 
@@ -77,8 +92,12 @@ export function Comments({ queryKey, fetchComments, postComment, label = '评论
     if (!newComment.trim() || posting) return;
     setPosting(true);
     try {
-      await postComment(newComment.trim());
+      const commentText = quote
+        ? `> ${quote}\n\n${newComment.trim()}`
+        : newComment.trim();
+      await postComment(commentText);
       setNewComment('');
+      setQuote('');
       queryClient.invalidateQueries({ queryKey });
     } catch (e) {
       console.error('Post comment failed:', e);
@@ -127,6 +146,15 @@ export function Comments({ queryKey, fetchComments, postComment, label = '评论
             </div>
           )}
 
+          {/* Quote preview */}
+          {quote && (
+            <div className="flex items-start gap-2 mb-2 px-2 py-1.5 bg-accent/30 rounded-lg border-l-2 border-sidebar-primary/50">
+              <p className="text-[11px] text-muted-foreground italic flex-1 line-clamp-2">&ldquo;{quote}&rdquo;</p>
+              <button onClick={() => setQuote('')} className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
           {/* New comment input */}
           <div className="relative flex items-center gap-2">
             <input

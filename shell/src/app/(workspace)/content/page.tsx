@@ -530,12 +530,26 @@ function DocPanel({ doc, collectionName, onBack, onSaved, onDeleted }: {
 }) {
   const [showComments, setShowComments] = useState(false);
   const [showDocMenu, setShowDocMenu] = useState(false);
+  const [commentQuote, setCommentQuote] = useState('');
   const [title, setTitle] = useState(doc.title);
   const [text, setText] = useState(doc.text);
   const [deleting, setDeleting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef({ title: doc.title, text: doc.text });
+
+  // Listen for selection comment events from the floating toolbar
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.text) {
+        setCommentQuote(detail.text);
+        setShowComments(true);
+      }
+    };
+    window.addEventListener('editor-comment', handler);
+    return () => window.removeEventListener('editor-comment', handler);
+  }, []);
 
   // Reset state when doc changes
   useEffect(() => {
@@ -689,6 +703,8 @@ function DocPanel({ doc, collectionName, onBack, onSaved, onDeleted }: {
               queryKey={['doc-comments', doc.id]}
               fetchComments={() => gw.listDocComments(doc.id)}
               postComment={(text) => gw.commentOnDoc(doc.id, text)}
+              initialQuote={commentQuote}
+              onQuoteConsumed={() => setCommentQuote('')}
             />
           </div>
         )}

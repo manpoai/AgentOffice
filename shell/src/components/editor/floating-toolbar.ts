@@ -120,6 +120,19 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
     isActive: (view) => isBlockActive(view, schema.nodes.ordered_list),
     command: (view) => { wrapIn(schema.nodes.ordered_list)(view.state, view.dispatch); view.focus(); },
   },
+  // -- Comment --
+  {
+    label: '评论', icon: '💬', section: 'block',
+    command: (view) => {
+      const { state } = view;
+      const { from, to } = state.selection;
+      if (from === to) return;
+      const selectedText = state.doc.textBetween(from, to, ' ');
+      // Dispatch custom event to open comment panel with selected text
+      window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text: selectedText } }));
+      view.focus();
+    },
+  },
 ];
 
 function isMarkActive(view: EditorView, markName: string): boolean {
@@ -162,6 +175,7 @@ function renderToolbar(el: HTMLDivElement, view: EditorView) {
     if (i > 0 && i === 4) addSeparator(el); // after S, before link
     if (i === 7) addSeparator(el); // before headings
     if (i === 10) addSeparator(el); // before block elements
+    if (i === 13) addSeparator(el); // before comment
 
     const btn = document.createElement('button');
     const active = action.mark
@@ -204,9 +218,12 @@ function renderToolbar(el: HTMLDivElement, view: EditorView) {
 export function floatingToolbarPlugin(): Plugin {
   let toolbarEl: HTMLDivElement | null = null;
   let isShown = false;
+  let isHovering = false;
+  let hideTimeout: ReturnType<typeof setTimeout> | null = null;
 
   function showAt(view: EditorView, from: number, to: number) {
     if (!toolbarEl) return;
+    if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
 
     renderToolbar(toolbarEl, view);
 
@@ -228,14 +245,26 @@ export function floatingToolbarPlugin(): Plugin {
 
   function hide() {
     if (!toolbarEl) return;
+    // Don't hide if mouse is over the toolbar
+    if (isHovering) return;
     toolbarEl.style.display = 'none';
     isShown = false;
+  }
+
+  function scheduleHide() {
+    if (hideTimeout) clearTimeout(hideTimeout);
+    hideTimeout = setTimeout(() => {
+      hideTimeout = null;
+      hide();
+    }, 150);
   }
 
   return new Plugin({
     key: floatingToolbarKey,
     view(editorView) {
       toolbarEl = createToolbarDOM();
+      toolbarEl.addEventListener('mouseenter', () => { isHovering = true; if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; } });
+      toolbarEl.addEventListener('mouseleave', () => { isHovering = false; });
       document.body.appendChild(toolbarEl);
       return {
         update(view, prevState) {
@@ -245,20 +274,23 @@ export function floatingToolbarPlugin(): Plugin {
 
           // Only show for non-empty text selections (not node selections)
           if (empty || from === to) {
-            hide();
+            // If hovering toolbar, don't hide immediately
+            if (isHovering) return;
+            scheduleHide();
             return;
           }
 
           // Don't show in code blocks
           const $from = state.doc.resolve(from);
           if ($from.parent.type === schema.nodes.code_block) {
-            hide();
+            scheduleHide();
             return;
           }
 
           showAt(view, from, to);
         },
         destroy() {
+          if (hideTimeout) clearTimeout(hideTimeout);
           toolbarEl?.remove();
           toolbarEl = null;
         },
