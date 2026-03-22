@@ -74,7 +74,7 @@ export default function IMPage() {
     <div className="flex h-full overflow-hidden">
       {/* Channel list — always visible on desktop, toggle on mobile */}
       <div className={`
-        w-full md:w-64 border-r border-border bg-card flex flex-col shrink-0
+        w-full md:w-[304px] border-r border-border bg-[#F5F5F5] dark:bg-card flex flex-col shrink-0
         ${mobileView === 'channels' ? 'flex' : 'hidden md:flex'}
       `}>
         <ChannelList />

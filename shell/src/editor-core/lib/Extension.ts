@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { PluginSimple } from "markdown-it";
 import type { InputRule } from "prosemirror-inputrules";
 import type { NodeType, MarkType, Schema } from "prosemirror-model";

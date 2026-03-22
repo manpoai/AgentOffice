@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { inflate } from "pako";
 import extract from "png-chunks-extract";
 

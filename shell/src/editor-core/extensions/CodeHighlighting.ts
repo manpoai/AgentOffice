@@ -1,3 +1,4 @@
+// @ts-nocheck
 import flattenDeep from "lodash/flattenDeep";
 import padStart from "lodash/padStart";
 import type { Node } from "prosemirror-model";

@@ -1,6 +1,6 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
-import { MessageSquare, FileText, CheckSquare, Users, Settings, Keyboard, Sun, Moon, Globe } from 'lucide-react';
+import { MessageSquare, FileText, CheckSquare, Users, Settings, Keyboard, Sun, Moon, Globe, Search, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIMStore } from '@/lib/stores/im';
 import { useMemo, useState, useEffect } from 'react';
@@ -12,6 +12,7 @@ import { useT, LOCALE_LABELS, type Locale } from '@/lib/i18n';
 
 const NAV_KEYS = ['im', 'content', 'tasks', 'contacts'] as const;
 const NAV_ICONS = { im: MessageSquare, content: FileText, tasks: CheckSquare, contacts: Users } as const;
+const NAV_LABELS: Record<typeof NAV_KEYS[number], string> = { im: 'Messenger', content: 'Docs', tasks: 'Tasks', contacts: 'Contacts' };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -23,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const NAV_ITEMS = NAV_KEYS.map(id => ({
     id,
     path: `/${id}`,
-    label: t(`nav.${id}`),
+    label: NAV_LABELS[id],
     icon: NAV_ICONS[id],
   }));
 
@@ -66,93 +67,65 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen w-screen flex-col md:flex-row bg-background text-foreground">
       {/* Desktop sidebar — hidden on mobile */}
-      <nav className="hidden md:flex w-16 flex-col items-center border-r border-border bg-sidebar py-3 gap-1 shrink-0">
-        {NAV_ITEMS.map(item => {
-          const Icon = item.icon;
-          const isActive = activeModule === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => router.push(item.path)}
-              title={item.label}
-              className={cn(
-                'relative flex flex-col items-center justify-center w-12 h-12 rounded-xl transition-colors',
-                isActive
-                  ? 'bg-sidebar-accent text-sidebar-primary'
-                  : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground'
-              )}
-            >
-              <Icon className="h-5 w-5" />
-              <span className="text-[10px] mt-0.5">{item.label}</span>
-              {item.id === 'im' && totalUnread > 0 && (
-                <span className="absolute top-1 right-1 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full">
-                  {totalUnread > 99 ? '99+' : totalUnread}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <nav className="hidden md:flex w-40 flex-col border-r border-border bg-white dark:bg-sidebar shrink-0">
+        {/* Logo */}
+        <div className="px-3 h-[72px] flex items-center">
+          <span className="text-xl text-foreground font-[family-name:var(--font-allura)]">Asuite</span>
+        </div>
+
+        {/* Search + Add */}
+        <div className="px-2 flex items-center gap-1 mb-1">
+          <button
+            className="flex items-center gap-1.5 flex-1 h-8 px-2 rounded-lg bg-[#E1E2E3] dark:bg-muted text-muted-foreground text-xs border border-[#D7D9DA] dark:border-border"
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span>Search</span>
+          </button>
+          <button className="flex items-center justify-center h-8 w-8 rounded-lg bg-[#E1E2E3] dark:bg-muted text-muted-foreground border border-[#D7D9DA] dark:border-border">
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* Nav items */}
+        <div className="flex flex-col gap-0.5 px-2 mt-1">
+          {NAV_ITEMS.map(item => {
+            const Icon = item.icon;
+            const isActive = activeModule === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => router.push(item.path)}
+                className={cn(
+                  'relative flex items-center gap-2.5 h-8 px-2 rounded-lg text-sm font-medium transition-colors',
+                  isActive
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{item.label}</span>
+                {item.id === 'im' && totalUnread > 0 && (
+                  <span className="absolute right-2 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full">
+                    {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
         <div className="flex-1" />
 
-        <button
-          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-          title={mounted && resolvedTheme === 'dark' ? t('theme.toLight') : t('theme.toDark')}
-          className="flex items-center justify-center w-12 h-12 rounded-xl text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground transition-colors"
-        >
-          {mounted && resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-
-        <div className="relative">
+        {/* Settings at bottom */}
+        <div className="px-2 mb-3 flex flex-col gap-0.5">
           <button
-            onClick={() => setShowLangMenu(v => !v)}
-            title={LOCALE_LABELS[locale]}
-            className="flex items-center justify-center w-12 h-12 rounded-xl text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground transition-colors"
+            onClick={() => setShowShortcuts(true)}
+            className="flex items-center gap-2.5 h-8 px-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
           >
-            <Globe className="h-4 w-4" />
+            <Settings className="h-4 w-4 shrink-0" />
+            <span>Settings</span>
           </button>
-          {showLangMenu && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowLangMenu(false)} />
-              <div className="absolute left-full bottom-0 ml-2 z-50 bg-card border border-border rounded-lg shadow-xl py-1 w-28">
-                {(Object.entries(LOCALE_LABELS) as [Locale, string][]).map(([key, label]) => (
-                  <button
-                    key={key}
-                    onClick={() => { setLocale(key); setShowLangMenu(false); }}
-                    className={cn(
-                      'w-full text-left px-3 py-1.5 text-xs transition-colors',
-                      locale === key ? 'text-sidebar-primary font-medium bg-accent' : 'text-foreground hover:bg-accent/50'
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </div>
-
-        <button
-          onClick={() => setShowShortcuts(true)}
-          title={`${t('shortcuts.title')} (?)`}
-          className="flex items-center justify-center w-12 h-12 rounded-xl text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground transition-colors"
-        >
-          <Keyboard className="h-4 w-4" />
-        </button>
-
-        {me && (
-          <div className="mb-2 flex flex-col items-center">
-            <img
-              src={mm.getProfileImageUrl(me.id)}
-              alt=""
-              className="w-8 h-8 rounded-full bg-muted"
-              title={me.nickname || me.username}
-            />
-            <span className="text-[8px] text-muted-foreground mt-0.5 truncate max-w-[56px]">
-              {me.nickname || me.username}
-            </span>
-          </div>
-        )}
       </nav>
 
       {/* Main content area — fills remaining space */}

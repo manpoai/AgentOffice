@@ -14,8 +14,19 @@
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shared/utils/color": ["./src/editor-core/_stubs/shared-utils-color"],
+      "@shared/utils/urls": ["./src/editor-core/_stubs/shared-utils-urls"],
+      "@shared/utils/browser": ["./src/editor-core/_stubs/shared-utils-browser"],
+      "@shared/utils/ProsemirrorHelper": ["./src/editor-core/_stubs/shared-utils-prosemirror-helper"],
+      "@shared/utils/rfc6902": ["./src/editor-core/_stubs/shared-utils-rfc6902"],
+      "@shared/editor/types": ["./src/editor-core/_stubs/shared-editor-types"],
+      "~/editor": ["./src/editor-core/_stubs/editor-type"],
+      "~/hooks/useDictionary": ["./src/editor-core/_stubs/use-dictionary"],
+      "outline-icons": ["./src/editor-core/_stubs/outline-icons"]
+    }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "src/editor-core"]
+  "exclude": ["node_modules", "**/*.test.ts", "**/*.test.tsx"]
 }

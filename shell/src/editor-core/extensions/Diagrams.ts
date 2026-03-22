@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Command, EditorState } from "prosemirror-state";
 import { NodeSelection } from "prosemirror-state";
 import type { Node } from "prosemirror-model";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import last from "lodash/last";
 import sortBy from "lodash/sortBy";
 import { v4 as uuidv4 } from "uuid";

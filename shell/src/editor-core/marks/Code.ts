@@ -1,3 +1,4 @@
+// @ts-nocheck
 import codemark from "prosemirror-codemark";
 import { toggleMark } from "prosemirror-commands";
 import type {

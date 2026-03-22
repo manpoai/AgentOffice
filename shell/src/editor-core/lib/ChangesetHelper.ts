@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Mark, Slice } from "prosemirror-model";
 import { Node, Schema } from "prosemirror-model";
 import type { Change, TokenEncoder } from "prosemirror-changeset";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Transaction } from "prosemirror-state";
 import type { DecorationSet } from "prosemirror-view";
 import { ySyncPluginKey } from "y-prosemirror";

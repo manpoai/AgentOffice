@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Node as ProsemirrorNode } from "prosemirror-model";
 import type { EditorView, NodeView } from "prosemirror-view";
 import type { Dictionary } from "../../../app/hooks/useDictionary";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { RefractorSyntax } from "refractor";
 import Storage from "../../utils/Storage";
 

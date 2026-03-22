@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { observable } from "mobx";
 import type { Command } from "prosemirror-state";
 import { Plugin, PluginKey } from "prosemirror-state";

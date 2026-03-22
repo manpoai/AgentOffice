@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Star, Copy, Download } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Star, Copy, Download, ChevronRight, Share2, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Editor } from '@/components/editor';
@@ -13,7 +13,7 @@ import { TableEditor } from '@/components/table-editor/TableEditor';
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
 
-type ContentItem = { type: 'doc'; id: string; title: string; subtitle: string; emoji?: string; updatedAt?: string; sortTime: number }
+type ContentItem = { type: 'doc'; id: string; title: string; subtitle: string; emoji?: string; updatedAt?: string; sortTime: number; parentDocumentId?: string | null }
   | { type: 'table'; id: string; title: string; sortTime: number };
 
 type Selection = { type: 'doc'; id: string } | { type: 'table'; id: string } | null;
@@ -25,6 +25,7 @@ export default function ContentPage() {
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [creating, setCreating] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
   const { data: docs, isLoading: docsLoading } = useQuery({
@@ -57,25 +58,47 @@ export default function ContentPage() {
     enabled: !!selectedDocId,
   });
 
-  // Build unified content list: docs + tables mixed, sorted by time (newest first)
-  const items: ContentItem[] = [];
-  docs?.forEach(doc => items.push({
-    type: 'doc', id: doc.id,
-    title: doc.emoji ? `${doc.emoji} ${doc.title || t('content.untitled')}` : (doc.title || t('content.untitled')),
+  // Build tree structure from docs
+  const docItems = (docs || []).map(doc => ({
+    type: 'doc' as const,
+    id: doc.id,
+    title: doc.emoji ? `${doc.title || t('content.untitled')}` : (doc.title || t('content.untitled')),
     subtitle: formatDate(doc.updatedAt),
     emoji: doc.emoji,
     updatedAt: doc.updatedAt,
     sortTime: new Date(doc.updatedAt || 0).getTime(),
+    parentDocumentId: doc.parentDocumentId || null,
   }));
-  tables?.forEach(t => items.push({
-    type: 'table', id: t.id, title: t.title,
-    sortTime: new Date(t.created_at || 0).getTime(),
-  }));
-  // Sort all items by time, newest first
-  items.sort((a, b) => b.sortTime - a.sortTime);
 
-  // Filter by search
-  const displayItems = searchQuery.length >= 2
+  const tableItems = (tables || []).map(tbl => ({
+    type: 'table' as const,
+    id: tbl.id,
+    title: tbl.title,
+    sortTime: new Date(tbl.created_at || 0).getTime(),
+  }));
+
+  // Build tree: root docs (no parent) and children
+  const rootDocs = docItems.filter(d => !d.parentDocumentId);
+  const childDocsMap = new Map<string, typeof docItems>();
+  docItems.forEach(d => {
+    if (d.parentDocumentId) {
+      const children = childDocsMap.get(d.parentDocumentId) || [];
+      children.push(d);
+      childDocsMap.set(d.parentDocumentId, children);
+    }
+  });
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Search results
+  const displaySearchItems = searchQuery.length >= 2
     ? (searchResults
         ? searchResults.map(r => ({
             type: 'doc' as const,
@@ -84,11 +107,12 @@ export default function ContentPage() {
             subtitle: r.context?.slice(0, 60) || '',
             emoji: r.document.emoji,
             sortTime: 0,
+            parentDocumentId: null,
           }))
         : [])
-    : items;
+    : null;
 
-  const handleSelect = (item: ContentItem) => {
+  const handleSelect = (item: { type: 'doc' | 'table'; id: string }) => {
     setSelection({ type: item.type, id: item.id });
     setMobileView('detail');
   };
@@ -140,33 +164,55 @@ export default function ContentPage() {
 
   const isLoading = docsLoading || tablesLoading;
 
+  // Get breadcrumb path for selected doc
+  const getBreadcrumb = (docId: string): { id: string; title: string }[] => {
+    const path: { id: string; title: string }[] = [];
+    let current = docItems.find(d => d.id === docId);
+    while (current) {
+      path.unshift({ id: current.id, title: current.title });
+      if (current.parentDocumentId) {
+        current = docItems.find(d => d.id === current!.parentDocumentId);
+      } else {
+        break;
+      }
+    }
+    return path;
+  };
+
   return (
     <div className="flex h-full overflow-hidden flex-col md:flex-row">
-      {/* Unified content list sidebar */}
+      {/* Document Library sidebar */}
       <div className={cn(
-        'w-full md:w-72 border-r border-border bg-card flex flex-col md:shrink-0 min-h-0 overflow-hidden',
+        'w-full md:w-[260px] border-r border-border bg-[#F5F5F5] dark:bg-card flex flex-col md:shrink-0 min-h-0 overflow-hidden',
         mobileView === 'list' ? 'flex' : 'hidden md:flex'
       )}>
-        <div className="p-3 border-b border-border flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">{t('content.title')}</h2>
-          <div className="relative">
+        {/* Header */}
+        <div className="px-3 pt-3 pb-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-xs font-medium text-muted-foreground">Document Library</h2>
+          </div>
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setShowNewMenu(v => !v)}
               className="p-1 text-muted-foreground hover:text-foreground"
               title={t('common.new')}
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            <button className="p-1 text-muted-foreground hover:text-foreground">
+              <Search className="h-3.5 w-3.5" />
             </button>
             {showNewMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowNewMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
+                <div className="absolute right-4 top-12 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
                   <button
                     onClick={() => { setShowNewMenu(false); handleCreateDoc(); }}
                     disabled={creating}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
                   >
-                    <FileText className="h-4 w-4 text-blue-400/70" />
+                    <FileText className="h-4 w-4 text-muted-foreground" />
                     {t('content.newDoc')}
                   </button>
                   <button
@@ -174,7 +220,7 @@ export default function ContentPage() {
                     disabled={creating}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
                   >
-                    <Table2 className="h-4 w-4 text-green-400/70" />
+                    <Table2 className="h-4 w-4 text-muted-foreground" />
                     {t('content.newTable')}
                   </button>
                 </div>
@@ -182,67 +228,63 @@ export default function ContentPage() {
             )}
           </div>
         </div>
-        <div className="px-3 py-2 border-b border-border">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder={t('content.searchDocs')}
-              className="w-full bg-muted rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground outline-none"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-        </div>
+
         <ScrollArea className="flex-1 min-h-0">
-          <div className="py-1">
+          <div className="px-2 py-1">
             {isLoading && (
-              <div className="space-y-1 px-3 py-2">
+              <div className="space-y-1 px-1 py-2">
                 {[...Array(6)].map((_, i) => (
-                  <div key={i} className="flex items-start gap-2 py-2 animate-pulse">
-                    <div className="w-4 h-4 rounded bg-muted mt-0.5 shrink-0" />
-                    <div className="flex-1 space-y-1">
-                      <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 100}px` }} />
-                      <div className="h-2.5 rounded bg-muted/60" style={{ width: `${40 + Math.random() * 60}px` }} />
-                    </div>
+                  <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
+                    <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                    <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
                   </div>
                 ))}
               </div>
             )}
-            {searchQuery.length >= 2 && displayItems.length === 0 && !isLoading && (
-              <p className="p-3 text-xs text-muted-foreground">{t('content.noMatch')}</p>
+
+            {/* Search mode */}
+            {displaySearchItems && (
+              displaySearchItems.length === 0 ? (
+                <p className="p-3 text-xs text-muted-foreground">{t('content.noMatch')}</p>
+              ) : (
+                displaySearchItems.map(item => (
+                  <TreeItem
+                    key={item.id}
+                    item={item}
+                    isSelected={selection?.type === item.type && selection?.id === item.id}
+                    onSelect={() => handleSelect(item)}
+                    depth={0}
+                  />
+                ))
+              )
             )}
-            {displayItems.map(item => {
-              const isSelected = selection?.type === item.type && selection?.id === item.id;
-              return (
-                <button
-                  key={`${item.type}-${item.id}`}
-                  onClick={() => handleSelect(item)}
-                  className={cn(
-                    'w-full flex items-start gap-2 px-3 py-1.5 text-left transition-colors',
-                    isSelected ? 'bg-accent text-accent-foreground' : 'text-foreground/80 hover:bg-accent/50'
-                  )}
-                >
-                  {item.type === 'doc'
-                    ? <FileText className="h-4 w-4 shrink-0 mt-0.5 text-blue-400/70" />
-                    : <Table2 className="h-4 w-4 shrink-0 mt-0.5 text-green-400/70" />
-                  }
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm truncate">{item.title}</p>
-                    {item.type === 'doc' && item.subtitle && (
-                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">{item.subtitle}</p>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+
+            {/* Tree mode */}
+            {!displaySearchItems && !isLoading && (
+              <>
+                {rootDocs.map(doc => (
+                  <TreeDocItem
+                    key={doc.id}
+                    doc={doc}
+                    selection={selection}
+                    onSelect={handleSelect}
+                    childDocsMap={childDocsMap}
+                    expandedIds={expandedIds}
+                    toggleExpand={toggleExpand}
+                    depth={0}
+                  />
+                ))}
+                {tableItems.map(tbl => (
+                  <TreeItem
+                    key={tbl.id}
+                    item={tbl}
+                    isSelected={selection?.type === 'table' && selection?.id === tbl.id}
+                    onSelect={() => handleSelect(tbl)}
+                    depth={0}
+                  />
+                ))}
+              </>
+            )}
           </div>
         </ScrollArea>
       </div>
@@ -255,9 +297,11 @@ export default function ContentPage() {
         {selectedDoc && selection?.type === 'doc' ? (
           <DocPanel
             doc={selectedDoc}
+            breadcrumb={getBreadcrumb(selectedDoc.id)}
             onBack={() => setMobileView('list')}
             onSaved={refreshDocs}
             onDeleted={() => { setSelection(null); refreshDocs(); setMobileView('list'); }}
+            onNavigate={(docId) => setSelection({ type: 'doc', id: docId })}
           />
         ) : selectedTableId ? (
           <TableEditor
@@ -281,18 +325,107 @@ export default function ContentPage() {
 }
 
 // ════════════════════════════════════════════════════════════════
+// Tree components
+// ════════════════════════════════════════════════════════════════
+
+function TreeDocItem({ doc, selection, onSelect, childDocsMap, expandedIds, toggleExpand, depth }: {
+  doc: { type: 'doc'; id: string; title: string; parentDocumentId?: string | null };
+  selection: Selection;
+  onSelect: (item: { type: 'doc' | 'table'; id: string }) => void;
+  childDocsMap: Map<string, any[]>;
+  expandedIds: Set<string>;
+  toggleExpand: (id: string) => void;
+  depth: number;
+}) {
+  const children = childDocsMap.get(doc.id) || [];
+  const hasChildren = children.length > 0;
+  const isExpanded = expandedIds.has(doc.id);
+  const isSelected = selection?.type === 'doc' && selection?.id === doc.id;
+
+  return (
+    <div>
+      <button
+        onClick={() => onSelect(doc)}
+        className={cn(
+          'w-full flex items-center gap-1.5 py-1.5 px-2 text-left text-sm transition-colors rounded-lg',
+          isSelected
+            ? 'bg-[#D6DFF6] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
+            : 'text-foreground hover:bg-black/[0.03] dark:hover:bg-accent/50'
+        )}
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
+      >
+        {hasChildren ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleExpand(doc.id); }}
+            className="p-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')} />
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" />
+        )}
+        <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+        <span className="truncate">{doc.title}</span>
+      </button>
+      {hasChildren && isExpanded && (
+        <div>
+          {children.map((child: any) => (
+            <TreeDocItem
+              key={child.id}
+              doc={child}
+              selection={selection}
+              onSelect={onSelect}
+              childDocsMap={childDocsMap}
+              expandedIds={expandedIds}
+              toggleExpand={toggleExpand}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TreeItem({ item, isSelected, onSelect, depth }: {
+  item: { type: 'doc' | 'table'; id: string; title: string };
+  isSelected: boolean;
+  onSelect: () => void;
+  depth: number;
+}) {
+  const isTable = item.type === 'table';
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        'w-full flex items-center gap-1.5 py-1.5 px-2 text-left text-sm transition-colors rounded-lg',
+        isSelected
+          ? 'bg-[#D6DFF6] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
+          : 'text-foreground hover:bg-black/[0.03] dark:hover:bg-accent/50'
+      )}
+      style={{ paddingLeft: `${8 + depth * 16}px` }}
+    >
+      <span className="w-4 shrink-0" />
+      {isTable
+        ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+        : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+      }
+      <span className="truncate">{item.title}</span>
+    </button>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
 // Document sub-components
 // ════════════════════════════════════════════════════════════════
 
-/**
- * DocPanel — Outline-style: always editable, auto-save on change.
- * No separate view/edit modes. Title is editable inline.
- */
-function DocPanel({ doc, onBack, onSaved, onDeleted }: {
+function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   doc: ol.OLDocument;
+  breadcrumb: { id: string; title: string }[];
   onBack: () => void;
   onSaved: () => void;
   onDeleted: () => void;
+  onNavigate: (docId: string) => void;
 }) {
   const { t } = useT();
   const [showComments, setShowComments] = useState(false);
@@ -344,7 +477,6 @@ function DocPanel({ doc, onBack, onSaved, onDeleted }: {
     }, 1500);
   }, [doc.id, onSaved]);
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -379,71 +511,91 @@ function DocPanel({ doc, onBack, onSaved, onDeleted }: {
 
   return (
     <>
-      <div className="flex flex-col px-4 py-2 border-b border-border bg-card shrink-0">
-        {/* Breadcrumb + actions row */}
+      {/* Header with breadcrumb */}
+      <div className="flex flex-col px-4 py-2 border-b border-border bg-white dark:bg-card shrink-0">
         <div className="flex items-center gap-2">
           <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-5 w-5" />
           </button>
+
+          {/* Breadcrumb */}
           <div className="flex-1 min-w-0">
-            <input
-              value={title}
-              onChange={handleTitleChange}
-              className="w-full text-sm font-semibold bg-transparent text-foreground outline-none"
-              placeholder={t('content.docTitle')}
-            />
+            <div className="flex items-center gap-1 text-sm">
+              {breadcrumb.map((crumb, i) => (
+                <span key={crumb.id} className="flex items-center gap-1 min-w-0">
+                  {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+                  {i < breadcrumb.length - 1 ? (
+                    <button
+                      onClick={() => onNavigate(crumb.id)}
+                      className="text-muted-foreground hover:text-foreground truncate"
+                    >
+                      {crumb.title}
+                    </button>
+                  ) : (
+                    <span className="text-foreground font-medium truncate">{crumb.title}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+            {/* Last modified info */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+              <span>
+                Last modified: {formatRelativeTime(doc.updatedAt)} by {doc.updatedBy?.name || '?'}
+              </span>
+            </div>
           </div>
-          {statusText && (
-            <span className={cn(
-              'text-[10px] shrink-0',
-              saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'
-            )}>{statusText}</span>
-          )}
-          <button
-            onClick={() => setShowComments(v => !v)}
-            className={cn(
-              'p-1.5 rounded transition-colors shrink-0',
-              showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground'
+
+          {/* Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {statusText && (
+              <span className={cn(
+                'text-[10px]',
+                saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'
+              )}>{statusText}</span>
             )}
-            title={t('content.comments')}
-          >
-            <MessageSquareIcon className="h-4 w-4" />
-          </button>
-          <div className="relative">
-            <button
-              onClick={() => setShowDocMenu(v => !v)}
-              className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"
-              title={t('content.moreActions')}
-            >
-              <MoreHorizontal className="h-4 w-4" />
+            <button className="flex items-center gap-1.5 h-8 px-3 rounded bg-black/10 dark:bg-accent text-sm text-foreground/80 hover:bg-black/15 dark:hover:bg-accent/80 transition-colors">
+              <Share2 className="h-3.5 w-3.5" />
+              <span>Share</span>
             </button>
-            {showDocMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
-                  <DocMenuBtn icon={Star} label={t('content.favorite')} onClick={() => setShowDocMenu(false)} />
-                  <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => setShowDocMenu(false)} />
-                  <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
-                  <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
-                    const blob = new Blob([doc.text], { type: 'text/markdown' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url; a.download = `${title}.md`; a.click();
-                    URL.revokeObjectURL(url);
-                    setShowDocMenu(false);
-                  }} />
-                  <div className="border-t border-border my-1" />
-                  <DocMenuBtn icon={Trash2} label={t('content.delete')} onClick={() => { setShowDocMenu(false); handleDelete(); }} danger />
-                </div>
-              </>
-            )}
+            <button
+              onClick={() => setShowComments(v => !v)}
+              className={cn(
+                'p-1.5 rounded transition-colors',
+                showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground'
+              )}
+              title={t('content.comments')}
+            >
+              <MessageSquareIcon className="h-4 w-4" />
+            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowDocMenu(v => !v)}
+                className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"
+                title={t('content.moreActions')}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {showDocMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
+                    <DocMenuBtn icon={Star} label={t('content.favorite')} onClick={() => setShowDocMenu(false)} />
+                    <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => setShowDocMenu(false)} />
+                    <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
+                    <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
+                      const blob = new Blob([doc.text], { type: 'text/markdown' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url; a.download = `${title}.md`; a.click();
+                      URL.revokeObjectURL(url);
+                      setShowDocMenu(false);
+                    }} />
+                    <div className="border-t border-border my-1" />
+                    <DocMenuBtn icon={Trash2} label={t('content.delete')} onClick={() => { setShowDocMenu(false); handleDelete(); }} danger />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-        {/* Last edited info */}
-        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 mt-0.5 pl-0 md:pl-0">
-          <Clock className="h-2.5 w-2.5" />
-          <span>
-            {doc.updatedBy?.name || '?'} {t('time.editedAt')} {formatDate(doc.updatedAt)}
-          </span>
         </div>
       </div>
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
@@ -506,4 +658,17 @@ function formatDate(isoStr: string): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h`;
   return d.toLocaleDateString(undefined, { month: '2-digit', day: '2-digit' });
+}
+
+function formatRelativeTime(isoStr: string): string {
+  const d = new Date(isoStr);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} days ago`;
 }

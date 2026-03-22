@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useIMStore } from '@/lib/stores/im';
 import * as mm from '@/lib/api/mm';
-import { ArrowLeft, Send, MoreHorizontal, Pencil, Trash2, Smile, Users, Hash, Reply, X, Bold, Italic, Strikethrough, Heading, Link, Code, Quote, List, ListOrdered, Paperclip, AtSign, Bookmark, Pin, Copy } from 'lucide-react';
+import { ArrowLeft, Send, MoreHorizontal, Pencil, Trash2, Smile, Users, Hash, Reply, X, Bold, Italic, Strikethrough, Heading, Link, Code, Quote, List, ListOrdered, Paperclip, AtSign, Bookmark, Pin, Copy, MessageCircle, FileText, File, CheckSquare, Search } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useMentionPopover, MentionPopover, type MentionCandidate } from '@/components/mention-popover';
@@ -192,30 +192,72 @@ export function MessageArea({ channelId }: { channelId: string }) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
-        <button
-          onClick={() => setMobileView('channels')}
-          className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        {channel?.type === 'O' || channel?.type === 'P' ? (
-          <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
-        ) : null}
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold text-foreground truncate">
-            {channel?.display_name || channelId}
-          </h2>
-          {channel?.header && (
-            <p className="text-[10px] text-muted-foreground truncate">{channel.header}</p>
-          )}
-        </div>
-        {channelStats && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0" title={t('im.members')}>
-            <Users className="h-3 w-3" />
-            <span>{channelStats.member_count}</span>
+      <div className="border-b border-border bg-white dark:bg-card shrink-0">
+        {/* Top row: avatar + name + actions */}
+        <div className="flex items-center gap-3 px-4 pt-2.5 pb-1">
+          <button
+            onClick={() => setMobileView('channels')}
+            className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          {/* Avatar */}
+          {channel?.type === 'D' ? (() => {
+            const parts = channel.name?.split('__') || [];
+            const otherUid = parts.find(id => id !== myUserId) || parts[0];
+            return otherUid ? (
+              <img src={mm.getProfileImageUrl(otherUid)} alt="" className="w-10 h-10 rounded-full bg-muted border border-black/10 shrink-0" />
+            ) : null;
+          })() : null}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-foreground truncate">
+                {(() => {
+                  if (channel?.type === 'D' && channel?.name) {
+                    const parts = channel.name.split('__');
+                    const otherUid = parts.find(id => id !== myUserId) || parts[0];
+                    const u = users[otherUid || ''];
+                    return u?.nickname || u?.username || channel.display_name || channelId;
+                  }
+                  return channel?.display_name || channelId;
+                })()}
+              </h2>
+              {channel?.type === 'D' && (
+                <span className="text-xs text-muted-foreground bg-black/5 dark:bg-accent rounded px-1.5 py-0.5">Chat</span>
+              )}
+            </div>
           </div>
-        )}
+          <div className="flex items-center gap-1 shrink-0">
+            <button className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors">
+              <Search className="h-4 w-4" />
+            </button>
+            <button className="p-1.5 text-muted-foreground hover:text-foreground rounded transition-colors">
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        {/* Sub-tabs */}
+        <div className="flex items-center gap-4 px-4 mt-1">
+          {[
+            { icon: MessageCircle, label: 'Chat', active: true },
+            { icon: FileText, label: 'Docs', active: false },
+            { icon: File, label: 'Files', active: false },
+            { icon: CheckSquare, label: 'Tasks', active: false },
+          ].map(tab => (
+            <button
+              key={tab.label}
+              className={cn(
+                'flex items-center gap-1 pb-2 text-xs transition-colors border-b-2',
+                tab.active
+                  ? 'text-foreground font-semibold border-foreground'
+                  : 'text-muted-foreground font-medium border-transparent hover:text-foreground'
+              )}
+            >
+              <tab.icon className="h-3 w-3" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Messages */}
@@ -376,7 +418,7 @@ export function MessageArea({ channelId }: { channelId: string }) {
       </ScrollArea>
 
       {/* Input */}
-      <div className="px-3 py-2 border-t border-border bg-card shrink-0">
+      <div className="px-3 py-2 bg-white dark:bg-card shrink-0">
         {/* Reply preview */}
         {replyTo && (
           <div className="flex items-center gap-2 px-3 py-1.5 mb-1 bg-accent/30 rounded-t-lg text-xs">
@@ -389,7 +431,7 @@ export function MessageArea({ channelId }: { channelId: string }) {
             </button>
           </div>
         )}
-        <div className="bg-muted rounded-lg border border-border/50 focus-within:border-sidebar-primary/50 transition-colors">
+        <div className="bg-white dark:bg-muted rounded-lg border border-[#BCC0C2] dark:border-border focus-within:border-sidebar-primary/50 transition-colors">
           <div className="relative">
             <textarea
               ref={textareaRef}
@@ -397,7 +439,16 @@ export function MessageArea({ channelId }: { channelId: string }) {
               onChange={e => { setInput(e.target.value); setCursorPos(e.target.selectionStart); autoResize(); }}
               onKeyDown={handleKeyDown}
               onSelect={e => setCursorPos((e.target as HTMLTextAreaElement).selectionStart)}
-              placeholder={t('im.typeMessage')}
+              placeholder={(() => {
+                if (channel?.type === 'D' && channel?.name) {
+                  const parts = channel.name.split('__');
+                  const otherUid = parts.find(id => id !== myUserId) || parts[0];
+                  const u = users[otherUid || ''];
+                  const name = u?.nickname || u?.username || channel.display_name;
+                  return `Message ${name}`;
+                }
+                return t('im.typeMessage');
+              })()}
               rows={1}
               className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none px-3 pt-2.5 pb-1 max-h-32"
               style={{ minHeight: '24px' }}

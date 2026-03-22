@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { MathView } from "@benrbray/prosemirror-math";
 import { isNode } from "@shared/utils/browser";
 import type { PluginSpec } from "prosemirror-state";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { EmojiMartData } from "@emoji-mart/data";
 
 export const emojiMartToGemoji: Record<string, string> = {

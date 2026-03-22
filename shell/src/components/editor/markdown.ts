@@ -1,31 +1,156 @@
 /**
  * Markdown parser and serializer for ProseMirror.
  * Compatible with Outline's markdown format.
+ *
+ * Plugins added for:
+ * - ==highlight== marks
+ * - :::info / :::warning / :::tip notice blocks
+ * - - [ ] / - [x] checkbox lists
+ * - $$ math blocks $$
  */
 import { MarkdownParser, MarkdownSerializer } from 'prosemirror-markdown';
 import markdownIt from 'markdown-it';
-import container from 'markdown-it-container';
+import markdownItContainer from 'markdown-it-container';
+import markdownItMark from 'markdown-it-mark';
 import { schema } from './schema';
 import type { Node as PMNode } from 'prosemirror-model';
+import type Token from 'markdown-it/lib/token.mjs';
+import type MarkdownItType from 'markdown-it';
+
+// --- Custom markdown-it plugins ---
+
+/**
+ * Checkbox list plugin: converts `- [ ] text` and `- [x] text` into
+ * checkbox_list / checkbox_item tokens.
+ */
+function checkboxPlugin(md: MarkdownItType) {
+  const CHECKBOX_RE = /^\[([ xX])\]\s/;
+
+  md.core.ruler.after('inline', 'checkbox', (state) => {
+    const tokens = state.tokens;
+    for (let i = tokens.length - 1; i >= 2; i--) {
+      const inline = tokens[i];
+      if (inline.type !== 'inline') continue;
+      const paraOpen = tokens[i - 1];
+      if (paraOpen.type !== 'paragraph_open') continue;
+      const listItemOpen = tokens[i - 2];
+      if (listItemOpen.type !== 'list_item_open') continue;
+
+      const match = inline.content.match(CHECKBOX_RE);
+      if (!match) continue;
+
+      const checked = match[1].toLowerCase() === 'x';
+
+      // Change list_item_open → checkbox_item_open
+      listItemOpen.type = 'checkbox_item_open';
+      listItemOpen.attrSet('checked', checked ? 'true' : 'false');
+
+      // Find matching list_item_close
+      let j = i + 1;
+      while (j < tokens.length && tokens[j].type !== 'list_item_close') j++;
+      if (j < tokens.length) {
+        tokens[j].type = 'checkbox_item_close';
+      }
+
+      // Change parent bullet_list_open → checkbox_list_open
+      // Walk backward to find the bullet_list_open
+      for (let k = i - 3; k >= 0; k--) {
+        if (tokens[k].type === 'bullet_list_open') {
+          tokens[k].type = 'checkbox_list_open';
+          // Find matching close
+          let depth = 1;
+          for (let m = k + 1; m < tokens.length; m++) {
+            if (tokens[m].type === 'bullet_list_open' || tokens[m].type === 'checkbox_list_open') depth++;
+            if (tokens[m].type === 'bullet_list_close' || tokens[m].type === 'checkbox_list_close') {
+              depth--;
+              if (depth === 0) {
+                tokens[m].type = 'checkbox_list_close';
+                break;
+              }
+            }
+          }
+          break;
+        }
+        // Stop if we hit another block boundary
+        if (tokens[k].type === 'bullet_list_close' || tokens[k].type === 'ordered_list_close') break;
+      }
+
+      // Strip `[ ] ` or `[x] ` from inline content
+      inline.content = inline.content.slice(match[0].length);
+      if (inline.children && inline.children.length > 0 && inline.children[0].type === 'text') {
+        inline.children[0].content = inline.children[0].content.slice(match[0].length);
+      }
+    }
+  });
+}
+
+/**
+ * Math block plugin: converts ```$$ ... $$``` fenced blocks into math_block tokens.
+ * Outline uses `$$\n...\n$$` syntax.
+ */
+function mathBlockPlugin(md: MarkdownItType) {
+  // Pre-process: convert all $$ math block variants to ```math fenced blocks
+  // before markdown-it parses. This handles:
+  //   $$\ncontent\n$$        (Outline standard)
+  //   $$\ncontent$$          (no trailing newline before $$)
+  //   $$content$$            (single-line)
+  const origParse = md.parse.bind(md);
+  md.parse = function (src: string, env: any) {
+    // Match $$ blocks: opening $$ on its own line, content, closing $$ (possibly on same line as content)
+    src = src.replace(/^\$\$\s*\n([\s\S]*?)\$\$\s*$/gm, '```math\n$1\n```');
+    return origParse(src, env);
+  };
+
+  md.core.ruler.after('inline', 'math_block', (state) => {
+    const tokens = state.tokens;
+    for (let i = 0; i < tokens.length; i++) {
+      // Convert ```math fence tokens to math_block (single token, noCloseToken)
+      if (tokens[i].type === 'fence' && tokens[i].info.trim() === 'math') {
+        tokens[i].type = 'math_block';
+        tokens[i].tag = 'div';
+      }
+    }
+  });
+}
+
+// --- Build markdown-it instance ---
 
 const md = markdownIt('default', { html: false, breaks: false, linkify: true });
 md.enable('table');
 
-// Register container plugin for :::info, :::warning, :::tip, :::success callouts
-const noticeTypes = ['info', 'warning', 'tip', 'success'] as const;
-for (const type of noticeTypes) {
-  md.use(container, type);
-}
+// Add plugins
+md.use(markdownItMark); // ==highlight==
+md.use(checkboxPlugin);
+md.use(mathBlockPlugin);
 
-// Build token mappings for container notices
-// MarkdownParser uses base name (e.g. 'container_info') and auto-matches _open/_close
-const containerTokens: Record<string, any> = {};
-for (const type of noticeTypes) {
-  containerTokens[`container_${type}`] = { block: 'container_notice', getAttrs: () => ({ style: type }) };
+// Notice blocks: :::info, :::warning, :::success, :::tip
+const noticeStyles = ['info', 'warning', 'success', 'tip'];
+for (const style of noticeStyles) {
+  md.use(markdownItContainer, style, {
+    render(tokens: Token[], idx: number) {
+      if (tokens[idx].nesting === 1) {
+        return `<div class="notice-block notice-${style}" data-style="${style}">\n`;
+      }
+      return '</div>\n';
+    },
+  });
 }
+// Also handle bare ::: (default to info)
+md.use(markdownItContainer, 'notice', {
+  validate(params: string) {
+    return params.trim() === '';
+  },
+  render(tokens: Token[], idx: number) {
+    if (tokens[idx].nesting === 1) {
+      return '<div class="notice-block notice-info" data-style="info">\n';
+    }
+    return '</div>\n';
+  },
+});
+
+// --- Parser ---
 
 export const markdownParser = new MarkdownParser(schema, md, {
-  ...containerTokens,
   blockquote: { block: 'blockquote' },
   paragraph: { block: 'paragraph' },
   list_item: { block: 'list_item' },
@@ -49,6 +174,25 @@ export const markdownParser = new MarkdownParser(schema, md, {
     title: tok.attrGet('title') || null,
   })},
   code_inline: { mark: 'code' },
+  mark: { mark: 'highlight' }, // ==highlight== via markdown-it-mark
+
+  // Checkbox lists
+  checkbox_list: { block: 'checkbox_list' },
+  checkbox_item: { block: 'checkbox_item', getAttrs: (tok) => ({
+    checked: tok.attrGet('checked') === 'true',
+  })},
+
+  // Notice blocks (markdown-it-container emits container_<name>_open/_close)
+  // prosemirror-markdown strips _open/_close → looks up "container_<name>"
+  container_info: { block: 'container_notice', getAttrs: () => ({ style: 'info' }) },
+  container_warning: { block: 'container_notice', getAttrs: () => ({ style: 'warning' }) },
+  container_success: { block: 'container_notice', getAttrs: () => ({ style: 'success' }) },
+  container_tip: { block: 'container_notice', getAttrs: () => ({ style: 'tip' }) },
+  container_notice: { block: 'container_notice', getAttrs: () => ({ style: 'info' }) },
+
+  // Math blocks
+  math_block: { block: 'math_block', noCloseToken: true },
+
   // Table tokens from markdown-it
   table: { block: 'table' },
   thead: { ignore: true },
@@ -69,6 +213,8 @@ export function parseMarkdown(markdown: string): PMNode | null {
     ]);
   }
 }
+
+// --- Serializer ---
 
 export const markdownSerializer = new MarkdownSerializer(
   {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as Sentry from "@sentry/react";
 import { v4 as uuidv4 } from "uuid";
 import type { EditorView } from "prosemirror-view";

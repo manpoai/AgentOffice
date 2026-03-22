@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as React from "react";
 import useMeasure from "react-use-measure";
 import Frame from "../components/Frame";

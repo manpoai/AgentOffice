@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { schema, createEditorState, doc, p } from "@shared/test/editor";
 import { getDocumentHighlightColors } from "./getDocumentHighlightColors";
 

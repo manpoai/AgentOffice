@@ -18,6 +18,7 @@ staticClients:
     redirectURIs:
       - "https://asuite.gridtabs.com/api/auth/callback/dex"
       - "http://localhost:3100/api/auth/callback/dex"
+      - "http://localhost:3101/api/auth/callback/dex"
     name: ASuite Shell
     secret: shell-secret-change-me
 
@@ -46,6 +47,6 @@ enablePasswordDB: true
 
 staticPasswords:
   - email: "admin@asuite.local"
-    hash: "$2b$10$Ot7dDfUMeLKoX2Py8u6HqerDoKvPkcE9rNpF2Xgd3GtSRKbMyiow."
+    hash: "$2a$10$odLOiwbtFzG2y8TkuLp3Hu9GZF7qVOUoQwXKqKYdArKRUoP2FW2Re"
     username: "Admin"
     userID: "admin-001"

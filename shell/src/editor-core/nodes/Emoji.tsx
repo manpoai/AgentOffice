@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Token } from "markdown-it";
 import type {
   NodeSpec,
