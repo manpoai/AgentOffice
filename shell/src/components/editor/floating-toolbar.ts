@@ -151,9 +151,9 @@ function createToolbarDOM(): HTMLDivElement {
   el.className = 'floating-toolbar';
   el.style.cssText = `
     position: fixed; z-index: 1000; display: none;
-    background: hsl(240 6% 14%); border: 1px solid hsl(240 4% 20%);
+    background: hsl(var(--popover, 0 0% 100%)); border: 1px solid hsl(var(--border, 0 0% 90%));
     border-radius: 8px; padding: 3px 4px; gap: 1px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
     display: none; flex-direction: row; align-items: center;
     backdrop-filter: blur(8px);
   `;
@@ -162,7 +162,7 @@ function createToolbarDOM(): HTMLDivElement {
 
 function addSeparator(el: HTMLDivElement) {
   const sep = document.createElement('div');
-  sep.style.cssText = 'width: 1px; height: 20px; background: hsl(240 4% 22%); margin: 0 3px;';
+  sep.style.cssText = 'width: 1px; height: 20px; background: hsl(var(--border, 0 0% 90%)); margin: 0 3px;';
   el.appendChild(sep);
 }
 
@@ -190,18 +190,18 @@ function renderToolbar(el: HTMLDivElement, view: EditorView) {
       font-weight: ${action.icon === 'B' ? '700' : isSmallText ? '600' : '500'};
       font-style: ${action.icon === 'I' ? 'italic' : 'normal'};
       text-decoration: ${action.icon === 'U' ? 'underline' : action.icon === 'S' ? 'line-through' : 'none'};
-      color: ${active ? '#fff' : '#a1a1aa'};
-      background: ${active ? 'hsl(220 80% 50%)' : 'transparent'};
+      color: ${active ? '#fff' : 'hsl(var(--muted-foreground, 0 0% 45%))'};
+      background: ${active ? 'hsl(var(--sidebar-primary, 228 80% 60%))' : 'transparent'};
       padding: 0 5px;
       transition: all 0.1s;
     `;
     btn.title = action.label;
     btn.textContent = action.icon;
     btn.onmouseenter = () => {
-      if (!active) { btn.style.background = 'hsl(240 4% 20%)'; btn.style.color = '#e4e4e7'; }
+      if (!active) { btn.style.background = 'hsl(var(--accent, 0 0% 96%))'; btn.style.color = 'hsl(var(--foreground, 0 0% 9%))'; }
     };
     btn.onmouseleave = () => {
-      if (!active) { btn.style.background = 'transparent'; btn.style.color = '#a1a1aa'; }
+      if (!active) { btn.style.background = 'transparent'; btn.style.color = 'hsl(var(--muted-foreground, 0 0% 45%))'; }
     };
     btn.onmousedown = (e) => {
       e.preventDefault();

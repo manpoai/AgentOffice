@@ -153,9 +153,10 @@ function createMenuDOM(): HTMLDivElement {
   el.className = 'slash-menu';
   el.style.cssText = `
     position: absolute; z-index: 100; display: none;
-    background: hsl(240 6% 14%); border: 1px solid hsl(240 4% 20%);
+    background: hsl(var(--popover, 0 0% 100%)); border: 1px solid hsl(var(--border, 0 0% 90%));
     border-radius: 8px; padding: 4px; width: 260px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4); max-height: 420px; overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15); max-height: 420px; overflow-y: auto;
+    color: hsl(var(--popover-foreground, 0 0% 9%));
   `;
   return el;
 }
@@ -174,23 +175,23 @@ function renderItems(
       display: flex; align-items: center; gap: 10px;
       padding: 8px 10px; border-radius: 6px; cursor: pointer;
       transition: background 0.1s;
-      ${i === selected ? 'background: hsl(240 4% 20%);' : ''}
+      ${i === selected ? 'background: hsl(var(--accent, 0 0% 96%));' : ''}
     `;
     row.onmouseenter = () => onHover(i);
     // Use mousedown + preventDefault to prevent editor blur
     row.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); onClick(i); };
 
     const icon = document.createElement('span');
-    icon.style.cssText = 'width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: hsl(240 4% 18%); border-radius: 6px; font-size: 13px; font-weight: 600; color: #a1a1aa; flex-shrink: 0;';
+    icon.style.cssText = 'width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: hsl(var(--muted, 0 0% 96%)); border-radius: 6px; font-size: 13px; font-weight: 600; color: hsl(var(--muted-foreground, 0 0% 45%)); flex-shrink: 0;';
     icon.textContent = item.icon;
 
     const text = document.createElement('div');
     text.style.cssText = 'min-width: 0; flex: 1;';
     const label = document.createElement('div');
-    label.style.cssText = 'font-size: 13px; color: #e4e4e7; font-weight: 500; line-height: 1.3;';
+    label.style.cssText = 'font-size: 13px; color: hsl(var(--foreground, 0 0% 9%)); font-weight: 500; line-height: 1.3;';
     label.textContent = item.label;
     const desc = document.createElement('div');
-    desc.style.cssText = 'font-size: 11px; color: #71717a; line-height: 1.3;';
+    desc.style.cssText = 'font-size: 11px; color: hsl(var(--muted-foreground, 0 0% 45%)); line-height: 1.3;';
     desc.textContent = item.description;
     text.appendChild(label);
     text.appendChild(desc);
@@ -248,7 +249,7 @@ export function slashMenuPlugin(): Plugin {
         if (!menuEl) return;
         const rows = menuEl.children;
         for (let j = 0; j < rows.length; j++) {
-          (rows[j] as HTMLElement).style.background = j === i ? 'hsl(240 4% 20%)' : '';
+          (rows[j] as HTMLElement).style.background = j === i ? 'hsl(var(--accent, 0 0% 96%))' : '';
         }
       },
       // onClick: execute command

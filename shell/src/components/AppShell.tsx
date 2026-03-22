@@ -1,10 +1,11 @@
 'use client';
 import { usePathname, useRouter } from 'next/navigation';
-import { MessageSquare, FileText, CheckSquare, Users, Settings, Keyboard } from 'lucide-react';
+import { MessageSquare, FileText, CheckSquare, Users, Settings, Keyboard, Sun, Moon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIMStore } from '@/lib/stores/im';
 import { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTheme } from 'next-themes';
 import * as mm from '@/lib/api/mm';
 import { CommandPalette } from './CommandPalette';
 
@@ -39,6 +40,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, []);
+
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const { channels, channelMembers } = useIMStore();
   const totalUnread = useMemo(() => {
@@ -83,6 +88,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         })}
 
         <div className="flex-1" />
+
+        <button
+          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          title={mounted && resolvedTheme === 'dark' ? '切换浅色' : '切换深色'}
+          className="flex items-center justify-center w-12 h-12 rounded-xl text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground transition-colors"
+        >
+          {mounted && resolvedTheme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
 
         <button
           onClick={() => setShowShortcuts(true)}
