@@ -16,7 +16,9 @@
 .outline-editor-mount {
   flex: 1;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 1rem;
+  min-height: 0;
 }
 
 .outline-editor-content {

@@ -20,7 +20,7 @@ export default function ContactsPage() {
   const offlineAgents = agents?.filter(a => !a.online) || [];
 
   return (
-    <div className="flex h-full flex-col md:flex-row">
+    <div className="flex h-full overflow-hidden flex-col md:flex-row">
       {/* Agent list */}
       <div className="flex-1 flex flex-col">
         <div className="p-4 border-b border-border">
@@ -30,7 +30,7 @@ export default function ContactsPage() {
           </p>
         </div>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <div className="p-4 space-y-6">
             {isLoading && (
               <p className="text-sm text-muted-foreground text-center py-8">{t('contacts.loading')}</p>
