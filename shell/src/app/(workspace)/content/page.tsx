@@ -1230,31 +1230,31 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
         <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto">
           {/* Title area — uses same max-width and centering as editor content */}
-          <div className="doc-title-area">
-            <div
-              className="group/title relative flex items-start gap-3"
-              onMouseEnter={() => setShowTitleIcon(true)}
-              onMouseLeave={() => { if (!showEmojiPicker) setShowTitleIcon(false); }}
-            >
-              {/* Emoji/icon button — shows on hover or when emoji is set */}
-              <div className="relative shrink-0" ref={emojiPickerRef}>
+          <div
+            className="doc-title-area group/title"
+            onMouseEnter={() => setShowTitleIcon(true)}
+            onMouseLeave={() => { if (!showEmojiPicker) setShowTitleIcon(false); }}
+          >
+            {/* Emoji row — only visible when emoji exists or hovering */}
+            {(emoji || showTitleIcon) && (
+              <div className="relative mb-2" ref={emojiPickerRef}>
                 {emoji ? (
                   <button
                     onClick={() => setShowEmojiPicker(v => !v)}
-                    className="text-4xl leading-none mt-1.5 hover:opacity-70 transition-opacity"
+                    className="text-5xl leading-none hover:opacity-70 transition-opacity"
                     title="Change icon"
                   >
                     {emoji}
                   </button>
-                ) : showTitleIcon ? (
+                ) : (
                   <button
                     onClick={() => setShowEmojiPicker(v => !v)}
-                    className="p-1.5 mt-2 rounded text-muted-foreground/40 hover:text-muted-foreground hover:bg-black/5 transition-all"
+                    className="p-1.5 rounded text-muted-foreground/40 hover:text-muted-foreground hover:bg-black/5 transition-all"
                     title="Add icon"
                   >
                     <Smile className="h-6 w-6" />
                   </button>
-                ) : null}
+                )}
                 {/* Emoji picker dropdown */}
                 {showEmojiPicker && (
                   <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-3 w-[280px]">
@@ -1283,14 +1283,14 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                   </div>
                 )}
               </div>
-              {/* Title input */}
-              <input
-                value={title}
-                onChange={handleTitleChange}
-                placeholder={t('content.untitled')}
-                className="flex-1 text-[2.5rem] font-bold text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/30 leading-tight"
-              />
-            </div>
+            )}
+            {/* Title input — full width */}
+            <input
+              value={title}
+              onChange={handleTitleChange}
+              placeholder={t('content.untitled')}
+              className="w-full text-[2.5rem] font-bold text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/30 leading-tight"
+            />
             {/* Meta info below title */}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-3 mb-2">
               <span>{formatRelativeTime(doc.updatedAt)}</span>
