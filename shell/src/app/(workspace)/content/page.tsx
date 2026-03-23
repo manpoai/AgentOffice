@@ -196,7 +196,7 @@ export default function ContentPage() {
           if (ia >= 0 && ib >= 0) return ia - ib;
           if (ia >= 0) return -1;
           if (ib >= 0) return 1;
-          return (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0);
+          return (effectiveNodes.get(b)?.createdAt || 0) - (effectiveNodes.get(a)?.createdAt || 0);
         });
       } else {
         children.sort((a, b) => (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0));
