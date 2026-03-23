@@ -61,6 +61,17 @@ export async function updateAgentProfile(name: string, fields: {
   });
 }
 
+export async function uploadAgentAvatar(name: string, file: File): Promise<{ avatar_url: string }> {
+  const form = new FormData();
+  form.append('avatar', file);
+  const res = await fetch(`${BASE}/agents/${name}/avatar`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Upload avatar: ${res.status}`);
+  return res.json();
+}
+
 // ── Tasks ──
 
 export async function listTasks(): Promise<Task[]> {

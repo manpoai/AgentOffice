@@ -56,7 +56,10 @@ export const useIMStore = create<IMState>((set, get) => ({
     set({ channelMembers: map });
   },
 
-  setActiveChannel: (id) => set({ activeChannelId: id }),
+  setActiveChannel: (id) => {
+    set({ activeChannelId: id });
+    try { if (id) localStorage.setItem('asuite-im-active-channel', id); } catch { /* ignore */ }
+  },
 
   setMessages: (channelId, posts) => set(state => ({
     messages: { ...state.messages, [channelId]: posts },

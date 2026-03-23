@@ -11,6 +11,7 @@ interface EditorProps {
   autoFocus?: boolean;
   placeholder?: string;
   className?: string;
+  documentId?: string;
 }
 
 /**
@@ -20,7 +21,7 @@ interface EditorProps {
  * - Floating toolbar on text selection for inline formatting
  * - No top toolbar
  */
-function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = false, placeholder, className }: EditorProps) {
+function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = false, placeholder, className, documentId }: EditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +48,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           { slashMenuPlugin },
           { floatingToolbarPlugin },
           { createNodeViews },
+          { imageUploadPlugin },
         ] = await Promise.all([
           import('prosemirror-state'),
           import('prosemirror-view'),
@@ -61,6 +63,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           import('./slash-menu'),
           import('./floating-toolbar'),
           import('./node-views'),
+          import('./image-plugin'),
         ]);
 
         if (destroyed) return;
@@ -86,6 +89,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
         if (!readOnly) {
           plugins.push(slashMenuPlugin());
           plugins.push(floatingToolbarPlugin());
+          plugins.push(imageUploadPlugin(() => documentId));
         }
 
         const state = EditorState.create({ doc, plugins });

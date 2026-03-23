@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
+import multer from 'multer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.GATEWAY_PORT || 4000;
@@ -1928,6 +1929,38 @@ app.patch('/api/agents/:name', authenticateAgent, (req, res) => {
   values.push(target.id);
   db.prepare(`UPDATE agent_accounts SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   res.json({ ok: true });
+});
+
+// Upload agent avatar
+const AVATAR_DIR = path.join(__dirname, '..', 'shell', 'public', 'uploads', 'avatars');
+if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: AVATAR_DIR,
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.png';
+      cb(null, `${crypto.randomUUID()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
+
+app.post('/api/agents/:name/avatar', authenticateAgent, avatarUpload.single('avatar'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
+  const target = db.prepare('SELECT id, avatar_url FROM agent_accounts WHERE name = ?').get(req.params.name);
+  if (!target) return res.status(404).json({ error: 'NOT_FOUND' });
+  // Delete old avatar file if it exists
+  if (target.avatar_url && target.avatar_url.startsWith('/uploads/avatars/')) {
+    const oldPath = path.join(__dirname, '..', 'shell', 'public', target.avatar_url);
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  db.prepare('UPDATE agent_accounts SET avatar_url = ?, updated_at = ? WHERE id = ?').run(avatarUrl, Date.now(), target.id);
+  res.json({ ok: true, avatar_url: avatarUrl });
 });
 
 // Helper: find Town Square channel ID

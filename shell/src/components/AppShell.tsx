@@ -99,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen w-screen flex-col md:flex-row bg-background text-foreground">
       {/* Desktop sidebar — hidden on mobile */}
       <nav className={cn(
-        'hidden md:flex flex-col border-r border-border shrink-0 transition-[width] duration-200 relative',
+        'hidden md:flex flex-col border-r border-border shrink-0 transition-all duration-200 ease-in-out relative overflow-hidden',
         collapsed ? 'w-14' : 'w-40'
       )} style={{ backgroundColor: '#ECECEC' }}>
         {/* Logo */}
@@ -112,20 +112,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {/* Search + Add — hidden when collapsed */}
-        {!collapsed && (
-          <div className="px-2 flex items-center gap-1 mb-1">
+        {/* Search + Add */}
+        <div className={cn('flex items-center gap-1 mb-1', collapsed ? 'px-1 justify-center' : 'px-2')}>
+          {collapsed ? (
             <button
-              className="flex items-center gap-1.5 flex-1 h-8 px-2 rounded-lg bg-[#E1E2E3] text-muted-foreground text-xs border border-[#D7D9DA]"
+              className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5"
+              title="Search"
             >
-              <img src="/icons/icon-search.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
-              <span>Search</span>
+              <img src="/icons/icon-search.svg" alt="" className="h-4 w-4 opacity-50" />
             </button>
-            <button className="flex items-center justify-center h-8 w-8 rounded-lg bg-[#E1E2E3] text-muted-foreground border border-[#D7D9DA]">
-              <img src="/icons/icon-plus.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
-            </button>
-          </div>
-        )}
+          ) : (
+            <>
+              <button
+                className="flex items-center gap-1.5 flex-1 h-8 px-2 rounded-lg bg-[#E1E2E3] text-muted-foreground text-xs border border-[#D7D9DA]"
+              >
+                <img src="/icons/icon-search.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
+                <span>Search</span>
+              </button>
+              <button className="flex items-center justify-center h-8 w-8 rounded-lg bg-[#E1E2E3] text-muted-foreground border border-[#D7D9DA]">
+                <img src="/icons/icon-plus.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Nav items */}
         <div className={cn('flex flex-col gap-0.5 mt-1', collapsed ? 'px-1' : 'px-2')}>

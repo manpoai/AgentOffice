@@ -125,14 +125,33 @@ export const schema = new Schema({
     },
     image: {
       inline: false,
-      attrs: { src: {}, alt: { default: null }, title: { default: null } },
+      attrs: {
+        src: {},
+        alt: { default: null },
+        title: { default: null },
+        width: { default: null },
+        align: { default: null }, // 'left' | 'center' | 'right'
+      },
       group: 'block',
       draggable: true,
       parseDOM: [{ tag: 'img[src]', getAttrs(dom) {
         const el = dom as HTMLElement;
-        return { src: el.getAttribute('src'), alt: el.getAttribute('alt'), title: el.getAttribute('title') };
+        return {
+          src: el.getAttribute('src'),
+          alt: el.getAttribute('alt'),
+          title: el.getAttribute('title'),
+          width: el.getAttribute('width') || el.style.width || null,
+          align: el.getAttribute('data-align') || null,
+        };
       }}],
-      toDOM(node) { return ['img', node.attrs]; },
+      toDOM(node) {
+        const attrs: Record<string, string> = { src: node.attrs.src };
+        if (node.attrs.alt) attrs.alt = node.attrs.alt;
+        if (node.attrs.title) attrs.title = node.attrs.title;
+        if (node.attrs.width) attrs.width = node.attrs.width;
+        if (node.attrs.align) attrs['data-align'] = node.attrs.align;
+        return ['img', attrs];
+      },
     },
     hard_break: {
       inline: true,

@@ -15,8 +15,6 @@ import { useT } from '@/lib/i18n';
 import {
   DndContext,
   closestCenter,
-  pointerWithin,
-  rectIntersection,
   PointerSensor,
   useSensor,
   useSensors,
@@ -24,7 +22,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
-  type CollisionDetection,
+  type DragMoveEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -83,7 +81,13 @@ function saveTreeState(state: TreeState) {
 
 export default function ContentPage() {
   const { t } = useT();
-  const [selection, setSelection] = useState<Selection>(null);
+  const [selection, setSelection] = useState<Selection>(() => {
+    try {
+      const saved = localStorage.getItem('asuite-content-selection');
+      if (saved) return JSON.parse(saved);
+    } catch { /* ignore */ }
+    return null;
+  });
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -267,9 +271,23 @@ export default function ContentPage() {
   const handleSelect = (nodeId: string) => {
     const node = effectiveNodes.get(nodeId);
     if (!node) return;
-    setSelection({ type: node.type, id: node.rawId });
+    const sel = { type: node.type, id: node.rawId };
+    setSelection(sel);
+    localStorage.setItem('asuite-content-selection', JSON.stringify(sel));
     setMobileView('detail');
   };
+
+  // Auto-select first item if nothing is selected
+  useEffect(() => {
+    if (selection || rootIds.length === 0) return;
+    const firstId = rootIds[0];
+    const firstNode = effectiveNodes.get(firstId);
+    if (firstNode) {
+      const sel = { type: firstNode.type, id: firstNode.rawId } as Selection;
+      setSelection(sel);
+      localStorage.setItem('asuite-content-selection', JSON.stringify(sel));
+    }
+  }, [rootIds, selection, effectiveNodes]);
 
   const refreshDocs = () => {
     queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
@@ -449,28 +467,35 @@ export default function ContentPage() {
     setDropIntent(null);
   };
 
-  const handleDragOver = (event: DragOverEvent) => {
+  // Track current pointer position via a ref (updated by native pointer events)
+  const pointerPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  useEffect(() => {
+    const handler = (e: PointerEvent) => {
+      pointerPosRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('pointermove', handler);
+    return () => window.removeEventListener('pointermove', handler);
+  }, []);
+
+  const updateDropIntent = useCallback((event: DragOverEvent | DragMoveEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) {
       setDropIntent(null);
       return;
     }
     const overId = over.id as string;
-    // Use pointer Y position relative to the over element to determine intent
-    const overRect = over.rect;
-    const pointerY = (event.activatorEvent as PointerEvent)?.clientY;
-    // Use delta to compute current pointer position
-    const currentY = pointerY != null ? pointerY + (event.delta?.y || 0) : null;
 
-    if (!overRect || currentY == null) {
+    // Find the actual DOM element for the over node to get its current rect
+    const overEl = document.querySelector(`[data-tree-id="${overId}"]`);
+    if (!overEl) {
       setDropIntent({ overId, position: 'inside' });
       return;
     }
 
-    const top = overRect.top;
-    const height = overRect.height;
-    const relativeY = currentY - top;
-    const ratio = relativeY / height;
+    const rect = overEl.getBoundingClientRect();
+    const pointerY = pointerPosRef.current.y;
+    const relativeY = pointerY - rect.top;
+    const ratio = relativeY / rect.height;
 
     // Top 25% = before, bottom 25% = after, middle 50% = inside (become child)
     let position: 'before' | 'after' | 'inside';
@@ -479,7 +504,7 @@ export default function ContentPage() {
     else position = 'inside';
 
     setDropIntent({ overId, position });
-  };
+  }, []);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const intent = dropIntent;
@@ -709,7 +734,8 @@ export default function ContentPage() {
                 sensors={sensors}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
+                onDragOver={updateDropIntent}
+                onDragMove={updateDropIntent}
                 onDragEnd={handleDragEnd}
               >
                 <SortableContext items={flatVisibleIds} strategy={verticalListSortingStrategy}>
@@ -752,7 +778,7 @@ export default function ContentPage() {
 
       {/* Detail area */}
       <div className={cn(
-        'flex-1 flex flex-col min-w-0 min-h-0',
+        'flex-1 flex flex-col min-w-0 min-h-0 bg-white dark:bg-card',
         mobileView === 'detail' ? 'flex' : 'hidden md:flex'
       )}>
         {selectedDoc && selection?.type === 'doc' ? (
@@ -893,7 +919,7 @@ function SortableTreeNode({
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} className="relative">
+    <div ref={setNodeRef} style={style} {...attributes} className="relative" data-tree-id={nodeId}>
       {/* Drop indicator: before */}
       {dropPosition === 'before' && (
         <div className="absolute top-0 left-2 right-2 h-0.5 bg-blue-500 rounded-full z-10" />
@@ -1175,7 +1201,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
       </div>
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
         <div className="flex-1 min-h-0 min-w-0">
-          <Editor key={doc.id} defaultValue={doc.text} onChange={handleTextChange} placeholder={t('content.editorPlaceholder')} />
+          <Editor key={doc.id} defaultValue={doc.text} onChange={handleTextChange} placeholder={t('content.editorPlaceholder')} documentId={doc.id} />
         </div>
         {showComments && (
           <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">

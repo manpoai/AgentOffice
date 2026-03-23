@@ -99,3 +99,16 @@ export async function updateDocument(id: string, title?: string, text?: string):
 export async function deleteDocument(id: string): Promise<void> {
   await olFetch('documents.delete', { id });
 }
+
+/** Upload an attachment (image) to Outline. Returns { url, ... } */
+export async function uploadAttachment(file: File, documentId?: string): Promise<{ data: { url: string; name: string; size: number } }> {
+  const form = new FormData();
+  form.append('file', file);
+  if (documentId) form.append('documentId', documentId);
+  const res = await fetch(`${BASE}/attachments.create`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Outline attachment upload: ${res.status}`);
+  return res.json();
+}

@@ -49,6 +49,8 @@ export default function IMPage() {
     enabled: !!teamId,
   });
 
+  const { setActiveChannel } = useIMStore();
+
   // Load channels into store
   useEffect(() => {
     if (channels) {
@@ -63,8 +65,22 @@ export default function IMPage() {
       if (userIds.size > 0) {
         mm.getUsersByIds(Array.from(userIds)).then(setUsers).catch(() => {});
       }
+      // Restore or auto-select channel
+      if (!activeChannelId) {
+        try {
+          const saved = localStorage.getItem('asuite-im-active-channel');
+          if (saved && channels.some(ch => ch.id === saved)) {
+            setActiveChannel(saved);
+            return;
+          }
+        } catch { /* ignore */ }
+        // Auto-select first channel
+        if (channels.length > 0) {
+          setActiveChannel(channels[0].id);
+        }
+      }
     }
-  }, [channels, setChannels, setUsers]);
+  }, [channels, setChannels, setUsers, activeChannelId, setActiveChannel]);
 
   useEffect(() => {
     if (members) setChannelMembers(members);
@@ -82,7 +98,7 @@ export default function IMPage() {
 
       {/* Message area — always visible on desktop, toggle on mobile */}
       <div className={`
-        flex-1 flex flex-col min-w-0 overflow-hidden
+        flex-1 flex flex-col min-w-0 overflow-hidden bg-white dark:bg-card
         ${mobileView === 'messages' ? 'flex' : 'hidden md:flex'}
       `}>
         {activeChannelId ? (

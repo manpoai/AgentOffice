@@ -109,7 +109,7 @@ export default function TasksPage() {
   const clearFilters = () => { setFilters({ status: new Set(), priority: new Set(), assignee: '' }); setSearchQuery(''); };
 
   return (
-    <div className="flex h-full overflow-hidden flex-col md:flex-row">
+    <div className="flex h-full overflow-hidden flex-col md:flex-row bg-white dark:bg-card">
       {/* Main area */}
       <div className={cn(
         'flex-1 flex flex-col min-w-0',

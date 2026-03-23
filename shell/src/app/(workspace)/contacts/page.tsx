@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as gw from '@/lib/api/gateway';
-import { Bot, Circle, Clock, MessageSquare, CheckSquare, Pencil, Check, X } from 'lucide-react';
+import { Bot, Circle, Clock, MessageSquare, CheckSquare, Pencil, Check, X, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -101,8 +101,11 @@ function AgentCard({ agent }: { agent: gw.Agent }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(agent.display_name || agent.name);
-  const [editAvatar, setEditAvatar] = useState(agent.avatar_url || '');
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (editing && nameInputRef.current) {
@@ -120,20 +123,43 @@ function AgentCard({ agent }: { agent: gw.Agent }) {
     },
   });
 
-  const handleSave = () => {
-    const fields: { display_name?: string; avatar_url?: string } = {};
-    if (editName !== (agent.display_name || agent.name)) fields.display_name = editName;
-    if (editAvatar !== (agent.avatar_url || '')) fields.avatar_url = editAvatar || '';
-    if (Object.keys(fields).length === 0) {
+  const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAvatarFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setAvatarPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async () => {
+    setUploading(true);
+    try {
+      // Upload avatar file if changed
+      if (avatarFile) {
+        await gw.uploadAgentAvatar(agent.name, avatarFile);
+      }
+      // Update display name if changed
+      const fields: { display_name?: string } = {};
+      if (editName !== (agent.display_name || agent.name)) fields.display_name = editName;
+      if (Object.keys(fields).length > 0) {
+        await gw.updateAgentProfile(agent.name, fields);
+      }
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
       setEditing(false);
-      return;
+      setAvatarFile(null);
+      setAvatarPreview(null);
+    } catch (e) {
+      console.error('Save failed:', e);
+    } finally {
+      setUploading(false);
     }
-    mutation.mutate(fields);
   };
 
   const handleCancel = () => {
     setEditName(agent.display_name || agent.name);
-    setEditAvatar(agent.avatar_url || '');
+    setAvatarFile(null);
+    setAvatarPreview(null);
     setEditing(false);
   };
 
@@ -179,23 +205,34 @@ function AgentCard({ agent }: { agent: gw.Agent }) {
                 />
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Avatar URL</label>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Avatar</label>
                 <input
-                  value={editAvatar}
-                  onChange={e => setEditAvatar(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full text-xs bg-muted border border-border rounded px-2 py-1 text-foreground outline-none focus:ring-1 focus:ring-sidebar-primary"
-                  onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarSelect}
+                  className="hidden"
                 />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded bg-muted border border-border border-dashed text-xs text-muted-foreground hover:bg-accent/30 transition-colors"
+                >
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Preview" className="w-5 h-5 rounded-full object-cover" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  <span>{avatarFile ? avatarFile.name : 'Choose image...'}</span>
+                </button>
               </div>
               <div className="flex gap-1">
                 <button
                   onClick={handleSave}
-                  disabled={mutation.isPending}
+                  disabled={uploading}
                   className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-sidebar-primary text-white hover:opacity-90"
                 >
                   <Check className="h-3 w-3" />
-                  {mutation.isPending ? '...' : 'Save'}
+                  {uploading ? '...' : 'Save'}
                 </button>
                 <button
                   onClick={handleCancel}
