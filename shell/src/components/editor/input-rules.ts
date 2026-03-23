@@ -46,13 +46,21 @@ const hrRule = new InputRule(/^(?:---|\*\*\*|___)\s$/, (state, match, start, end
   return tr;
 });
 
-// Checkbox list: [ ] or [x] at start
-const checkboxRule = wrappingInputRule(
-  /^\s*\[([ x])\]\s$/,
-  schema.nodes.checkbox_list,
-  undefined,
-  undefined
-);
+// Checkbox list: [ ] or [x] at start of line
+const checkboxRule = new InputRule(/^\s*\[([ xX])\]\s$/, (state, match, start, end) => {
+  const checked = match[1].toLowerCase() === 'x';
+  const { $from } = state.selection;
+  // Only at the start of a top-level paragraph (not inside a list already)
+  if ($from.depth > 1 && $from.node(-1).type !== schema.nodes.doc) return null;
+
+  const checkboxItem = schema.nodes.checkbox_item.create(
+    { checked },
+    schema.nodes.paragraph.create()
+  );
+  const checkboxList = schema.nodes.checkbox_list.create(null, checkboxItem);
+
+  return state.tr.replaceWith(start - 1, end, checkboxList);
+});
 
 export function buildInputRules() {
   return inputRules({
@@ -64,6 +72,7 @@ export function buildInputRules() {
       orderedListRule,
       codeBlockRule,
       hrRule,
+      checkboxRule,
     ],
   });
 }

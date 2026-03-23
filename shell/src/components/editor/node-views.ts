@@ -241,6 +241,61 @@ class ImageNodeView implements NodeView {
 }
 
 /**
+ * Checkbox item NodeView — renders a clickable checkbox before the content.
+ */
+class CheckboxItemView implements NodeView {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  private checkbox: HTMLInputElement;
+
+  constructor(private node: PMNode, private view: EditorView, private getPos: () => number | undefined) {
+    this.dom = document.createElement('li');
+    this.dom.className = 'checkbox-item';
+    this.dom.dataset.checked = node.attrs.checked ? 'true' : 'false';
+
+    this.checkbox = document.createElement('input');
+    this.checkbox.type = 'checkbox';
+    this.checkbox.checked = node.attrs.checked;
+    this.checkbox.style.cssText = 'margin: 0.3em 0.5rem 0 0; cursor: pointer; flex-shrink: 0; width: 16px; height: 16px; accent-color: hsl(var(--sidebar-primary, 228 80% 50%));';
+    this.checkbox.addEventListener('mousedown', (e) => {
+      // Prevent ProseMirror from handling this click
+      e.preventDefault();
+    });
+    this.checkbox.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const pos = this.getPos();
+      if (pos != null) {
+        const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
+          ...this.node.attrs,
+          checked: !this.node.attrs.checked,
+        });
+        this.view.dispatch(tr);
+      }
+    });
+
+    this.dom.style.cssText = 'display: flex; align-items: flex-start; list-style: none;';
+    this.dom.appendChild(this.checkbox);
+
+    this.contentDOM = document.createElement('div');
+    this.contentDOM.style.cssText = 'flex: 1; min-width: 0;';
+    this.dom.appendChild(this.contentDOM);
+  }
+
+  update(node: PMNode) {
+    if (node.type.name !== 'checkbox_item') return false;
+    this.node = node;
+    this.checkbox.checked = node.attrs.checked;
+    this.dom.dataset.checked = node.attrs.checked ? 'true' : 'false';
+    return true;
+  }
+
+  stopEvent(event: Event) {
+    return event.target === this.checkbox;
+  }
+}
+
+/**
  * Factory function to create nodeViews map for ProseMirror EditorView.
  */
 export function createNodeViews() {
@@ -249,5 +304,7 @@ export function createNodeViews() {
       new MathBlockView(node, view, getPos),
     image: (node: PMNode, view: EditorView, getPos: () => number | undefined) =>
       new ImageNodeView(node, view, getPos),
+    checkbox_item: (node: PMNode, view: EditorView, getPos: () => number | undefined) =>
+      new CheckboxItemView(node, view, getPos),
   };
 }

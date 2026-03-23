@@ -5,9 +5,62 @@ import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, toggleMark, setBlockType, wrapIn, chainCommands, exitCode, joinUp, joinDown, lift, selectParentNode } from 'prosemirror-commands';
 import { undo, redo } from 'prosemirror-history';
 import { liftListItem, sinkListItem, splitListItem } from 'prosemirror-schema-list';
+import type { EditorState, Transaction } from 'prosemirror-state';
 import { schema } from './schema';
 
 const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
+
+/**
+ * Smart Enter for list items: if the current list item is empty, lift it out
+ * (outdent). Otherwise split normally. Works for both list_item and checkbox_item.
+ */
+function smartListEnter(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  const { $from } = state.selection;
+  // Check if we're in a list_item or checkbox_item
+  const listItem = $from.node(-1);
+  if (!listItem) return false;
+
+  const isListItem = listItem.type === schema.nodes.list_item;
+  const isCheckboxItem = listItem.type === schema.nodes.checkbox_item;
+  if (!isListItem && !isCheckboxItem) return false;
+
+  const nodeType = listItem.type;
+
+  // Check if the list item content is empty (just an empty paragraph)
+  if (listItem.childCount === 1 && listItem.firstChild!.type === schema.nodes.paragraph && listItem.firstChild!.content.size === 0) {
+    // If we're nested (depth > 1 list), lift out one level
+    return liftListItem(nodeType)(state, dispatch);
+  }
+
+  // Otherwise, split normally
+  return splitListItem(nodeType)(state, dispatch);
+}
+
+/**
+ * Smart Tab for list items: works for both list_item and checkbox_item.
+ */
+function smartListSink(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  const { $from } = state.selection;
+  const listItem = $from.node(-1);
+  if (!listItem) return false;
+
+  if (listItem.type === schema.nodes.list_item) return sinkListItem(schema.nodes.list_item)(state, dispatch);
+  if (listItem.type === schema.nodes.checkbox_item) return sinkListItem(schema.nodes.checkbox_item)(state, dispatch);
+  return false;
+}
+
+/**
+ * Smart Shift-Tab for list items: works for both list_item and checkbox_item.
+ */
+function smartListLift(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
+  const { $from } = state.selection;
+  const listItem = $from.node(-1);
+  if (!listItem) return false;
+
+  if (listItem.type === schema.nodes.list_item) return liftListItem(schema.nodes.list_item)(state, dispatch);
+  if (listItem.type === schema.nodes.checkbox_item) return liftListItem(schema.nodes.checkbox_item)(state, dispatch);
+  return false;
+}
 
 export function buildKeymap() {
   const keys: Record<string, any> = {};
@@ -31,10 +84,10 @@ export function buildKeymap() {
   keys['Mod-Shift-2'] = setBlockType(schema.nodes.heading, { level: 2 });
   keys['Mod-Shift-3'] = setBlockType(schema.nodes.heading, { level: 3 });
 
-  // Lists
-  keys['Enter'] = splitListItem(schema.nodes.list_item);
-  keys['Tab'] = sinkListItem(schema.nodes.list_item);
-  keys['Shift-Tab'] = liftListItem(schema.nodes.list_item);
+  // Lists — smart handlers for both list_item and checkbox_item
+  keys['Enter'] = smartListEnter;
+  keys['Tab'] = smartListSink;
+  keys['Shift-Tab'] = smartListLift;
   keys['Mod-Shift-7'] = wrapIn(schema.nodes.ordered_list);
   keys['Mod-Shift-8'] = wrapIn(schema.nodes.bullet_list);
 
