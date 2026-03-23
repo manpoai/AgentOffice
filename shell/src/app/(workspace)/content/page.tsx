@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Star, Copy, Download, ChevronRight, Share2, FolderOpen } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Star, Copy, Download, ChevronRight, Share2, FolderOpen, Smile } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Editor } from '@/components/editor';
@@ -933,8 +933,10 @@ function DraggableTreeNode({
           <span className="w-4 shrink-0" />
         )}
 
-        {/* Icon */}
-        {node.type === 'table'
+        {/* Icon — emoji overrides default for docs */}
+        {node.emoji ? (
+          <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
+        ) : node.type === 'table'
           ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
           : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
         }
@@ -1019,7 +1021,9 @@ function TreeNodeItem({
       style={{ paddingLeft: `${8 + depth * 16}px` }}
     >
       <span className="w-4 shrink-0" />
-      {node.type === 'table'
+      {node.emoji ? (
+        <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
+      ) : node.type === 'table'
         ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
         : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
       }
@@ -1031,6 +1035,13 @@ function TreeNodeItem({
 // ═══════════════════════════════════════════════════
 // Document sub-components
 // ═══════════════════════════════════════════════════
+
+/** Common emoji list for quick selection */
+const COMMON_EMOJIS = [
+  '😀', '😊', '🎉', '🚀', '💡', '📝', '📚', '🔥', '⭐', '✅',
+  '❤️', '👍', '🎯', '🔧', '📊', '🌟', '💻', '🎨', '📌', '🗂️',
+  '🏗️', '📋', '🧪', '🔍', '💬', '📖', '🎓', '🌍', '⚡', '🛠️',
+];
 
 function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   doc: ol.OLDocument;
@@ -1045,11 +1056,15 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const [showDocMenu, setShowDocMenu] = useState(false);
   const [commentQuote, setCommentQuote] = useState('');
   const [title, setTitle] = useState(doc.title);
+  const [emoji, setEmoji] = useState<string | null>(doc.emoji || null);
   const [text, setText] = useState(doc.text);
   const [deleting, setDeleting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showTitleIcon, setShowTitleIcon] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestRef = useRef({ title: doc.title, text: doc.text });
+  const latestRef = useRef({ title: doc.title, text: doc.text, emoji: doc.emoji || null as string | null });
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1065,19 +1080,32 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
 
   useEffect(() => {
     setTitle(doc.title);
+    setEmoji(doc.emoji || null);
     setText(doc.text);
-    latestRef.current = { title: doc.title, text: doc.text };
+    latestRef.current = { title: doc.title, text: doc.text, emoji: doc.emoji || null };
     setSaveStatus('saved');
-  }, [doc.id, doc.title, doc.text]);
+  }, [doc.id, doc.title, doc.text, doc.emoji]);
 
-  const scheduleSave = useCallback((newTitle: string, newText: string) => {
-    latestRef.current = { title: newTitle, text: newText };
+  // Close emoji picker on outside click
+  useEffect(() => {
+    if (!showEmojiPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showEmojiPicker]);
+
+  const scheduleSave = useCallback((newTitle: string, newText: string, newEmoji?: string | null) => {
+    latestRef.current = { title: newTitle, text: newText, emoji: newEmoji !== undefined ? newEmoji : latestRef.current.emoji };
     setSaveStatus('unsaved');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       setSaveStatus('saving');
       try {
-        await ol.updateDocument(doc.id, latestRef.current.title, latestRef.current.text);
+        await ol.updateDocument(doc.id, latestRef.current.title, latestRef.current.text, latestRef.current.emoji);
         setSaveStatus('saved');
         onSaved();
       } catch (e) {
@@ -1095,6 +1123,12 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     const newTitle = e.target.value;
     setTitle(newTitle);
     scheduleSave(newTitle, text);
+  };
+
+  const handleEmojiSelect = (selectedEmoji: string | null) => {
+    setEmoji(selectedEmoji);
+    setShowEmojiPicker(false);
+    scheduleSave(title, text, selectedEmoji);
   };
 
   const handleTextChange = (newText: string) => {
@@ -1119,76 +1153,148 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
 
   return (
     <>
-      <div className="flex flex-col px-4 py-2 border-b border-border bg-white dark:bg-card shrink-0">
-        <div className="flex items-center gap-2">
-          <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1 text-sm">
-              {breadcrumb.map((crumb, i) => (
-                <span key={crumb.id} className="flex items-center gap-1 min-w-0">
-                  {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
-                  {i < breadcrumb.length - 1 ? (
-                    <button onClick={() => onNavigate(crumb.id)} className="text-muted-foreground hover:text-foreground truncate">
-                      {crumb.title}
-                    </button>
-                  ) : (
-                    <span className="text-foreground font-medium truncate">{crumb.title}</span>
-                  )}
-                </span>
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
-              <span>Last modified: {formatRelativeTime(doc.updatedAt)} by {doc.updatedBy?.name || '?'}</span>
-            </div>
+      {/* Top bar — breadcrumb + actions */}
+      <div className="flex items-center px-4 py-2 border-b border-border bg-white dark:bg-card shrink-0">
+        <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1 text-sm">
+            {breadcrumb.map((crumb, i) => (
+              <span key={crumb.id} className="flex items-center gap-1 min-w-0">
+                {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
+                {i < breadcrumb.length - 1 ? (
+                  <button onClick={() => onNavigate(crumb.id)} className="text-muted-foreground hover:text-foreground truncate">
+                    {crumb.title}
+                  </button>
+                ) : (
+                  <span className="text-foreground font-medium truncate">{crumb.title}</span>
+                )}
+              </span>
+            ))}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {statusText && (
-              <span className={cn('text-[10px]', saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground')}>{statusText}</span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {statusText && (
+            <span className={cn('text-[10px]', saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground')}>{statusText}</span>
+          )}
+          <button className="flex items-center gap-1.5 h-8 px-3 rounded bg-black/10 dark:bg-accent text-sm text-foreground/80 hover:bg-black/15 dark:hover:bg-accent/80 transition-colors">
+            <Share2 className="h-3.5 w-3.5" />
+            <span>Share</span>
+          </button>
+          <button
+            onClick={() => setShowComments(v => !v)}
+            className={cn('p-1.5 rounded transition-colors', showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+            title={t('content.comments')}
+          >
+            <MessageSquareIcon className="h-4 w-4" />
+          </button>
+          <div className="relative">
+            <button onClick={() => setShowDocMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {showDocMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
+                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
+                  <DocMenuBtn icon={Star} label={t('content.favorite')} onClick={() => setShowDocMenu(false)} />
+                  <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => setShowDocMenu(false)} />
+                  <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
+                  <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
+                    const blob = new Blob([doc.text], { type: 'text/markdown' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = `${title}.md`; a.click();
+                    URL.revokeObjectURL(url);
+                    setShowDocMenu(false);
+                  }} />
+                  <div className="border-t border-border my-1" />
+                  <DocMenuBtn icon={Trash2} label={t('content.delete')} onClick={() => { setShowDocMenu(false); handleDelete(); }} danger />
+                </div>
+              </>
             )}
-            <button className="flex items-center gap-1.5 h-8 px-3 rounded bg-black/10 dark:bg-accent text-sm text-foreground/80 hover:bg-black/15 dark:hover:bg-accent/80 transition-colors">
-              <Share2 className="h-3.5 w-3.5" />
-              <span>Share</span>
-            </button>
-            <button
-              onClick={() => setShowComments(v => !v)}
-              className={cn('p-1.5 rounded transition-colors', showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
-              title={t('content.comments')}
-            >
-              <MessageSquareIcon className="h-4 w-4" />
-            </button>
-            <div className="relative">
-              <button onClick={() => setShowDocMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-              {showDocMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
-                    <DocMenuBtn icon={Star} label={t('content.favorite')} onClick={() => setShowDocMenu(false)} />
-                    <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => setShowDocMenu(false)} />
-                    <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
-                    <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
-                      const blob = new Blob([doc.text], { type: 'text/markdown' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a'); a.href = url; a.download = `${title}.md`; a.click();
-                      URL.revokeObjectURL(url);
-                      setShowDocMenu(false);
-                    }} />
-                    <div className="border-t border-border my-1" />
-                    <DocMenuBtn icon={Trash2} label={t('content.delete')} onClick={() => { setShowDocMenu(false); handleDelete(); }} danger />
-                  </div>
-                </>
-              )}
-            </div>
           </div>
         </div>
       </div>
+
+      {/* Content area */}
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
-        <div className="flex-1 min-h-0 min-w-0">
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto">
+          {/* Title area — inside scrollable content */}
+          <div className="max-w-[48rem] mx-auto w-full px-4 pt-8 pb-0">
+            <div
+              className="group/title relative flex items-start gap-2"
+              onMouseEnter={() => setShowTitleIcon(true)}
+              onMouseLeave={() => { if (!showEmojiPicker) setShowTitleIcon(false); }}
+            >
+              {/* Emoji/icon button — shows on hover or when emoji is set */}
+              <div className="relative shrink-0" ref={emojiPickerRef}>
+                {emoji ? (
+                  <button
+                    onClick={() => setShowEmojiPicker(v => !v)}
+                    className="text-3xl leading-none mt-1 hover:opacity-70 transition-opacity"
+                    title="Change icon"
+                  >
+                    {emoji}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowEmojiPicker(v => !v)}
+                    className={cn(
+                      'p-1 mt-2 rounded text-muted-foreground/40 hover:text-muted-foreground hover:bg-black/5 transition-all',
+                      showTitleIcon ? 'opacity-100' : 'opacity-0'
+                    )}
+                    title="Add icon"
+                  >
+                    <Smile className="h-5 w-5" />
+                  </button>
+                )}
+                {/* Emoji picker dropdown */}
+                {showEmojiPicker && (
+                  <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-2 w-[260px]">
+                    <div className="grid grid-cols-10 gap-0.5">
+                      {COMMON_EMOJIS.map(em => (
+                        <button
+                          key={em}
+                          onClick={() => handleEmojiSelect(em)}
+                          className="w-6 h-6 flex items-center justify-center rounded hover:bg-accent text-base leading-none"
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                    {emoji && (
+                      <>
+                        <div className="border-t border-border my-1.5" />
+                        <button
+                          onClick={() => handleEmojiSelect(null)}
+                          className="w-full text-xs text-muted-foreground hover:text-foreground py-1 rounded hover:bg-accent transition-colors"
+                        >
+                          Remove icon
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Title input */}
+              <input
+                value={title}
+                onChange={handleTitleChange}
+                placeholder={t('content.untitled')}
+                className="flex-1 text-3xl font-bold text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/30"
+              />
+            </div>
+            {/* Meta info below title */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2 mb-4">
+              <span>{formatRelativeTime(doc.updatedAt)}</span>
+              {doc.updatedBy?.name && <span>· {doc.updatedBy.name}</span>}
+            </div>
+          </div>
+
+          {/* Editor */}
           <Editor key={doc.id} defaultValue={doc.text} onChange={handleTextChange} placeholder={t('content.editorPlaceholder')} documentId={doc.id} />
         </div>
+
         {showComments && (
           <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
             <div className="px-3 py-2 border-b border-border flex items-center justify-between">

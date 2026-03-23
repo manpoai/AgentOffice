@@ -88,10 +88,11 @@ export async function moveDocument(id: string, parentDocumentId: string | null, 
   await olFetch('documents.move', body);
 }
 
-export async function updateDocument(id: string, title?: string, text?: string): Promise<OLDocument> {
+export async function updateDocument(id: string, title?: string, text?: string, emoji?: string | null): Promise<OLDocument> {
   const body: Record<string, unknown> = { id };
   if (title !== undefined) body.title = title;
   if (text !== undefined) body.text = text;
+  if (emoji !== undefined) body.emoji = emoji;
   const data = await olFetch<{ data: OLDocument }>('documents.update', body);
   return data.data;
 }

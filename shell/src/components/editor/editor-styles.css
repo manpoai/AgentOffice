@@ -16,7 +16,7 @@
 .outline-editor-mount {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
+  padding: 0 1rem 1rem;
 }
 
 .outline-editor-content {
@@ -28,11 +28,41 @@
   color: hsl(var(--foreground, 0 0% 9%));
 }
 
-.outline-editor-content[data-placeholder]::before {
+/* Empty document placeholder (full text hint) */
+.outline-editor-content p.is-empty-placeholder::before {
   content: attr(data-placeholder);
   color: hsl(var(--muted-foreground, 0 0% 45%));
-  position: absolute;
+  float: left;
+  height: 0;
   pointer-events: none;
+}
+
+/* "+" handle on focused empty paragraph */
+.outline-editor-content p.is-empty-line {
+  position: relative;
+}
+.outline-editor-content p.is-empty-line::before {
+  content: '+';
+  position: absolute;
+  left: -1.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 300;
+  color: hsl(var(--muted-foreground, 0 0% 45%));
+  opacity: 0.5;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity 0.15s, background 0.15s;
+}
+.outline-editor-content p.is-empty-line:hover::before {
+  opacity: 1;
+  background: hsl(var(--muted, 0 0% 96%));
 }
 
 /* Headings */

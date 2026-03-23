@@ -49,6 +49,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           { floatingToolbarPlugin },
           { createNodeViews },
           { imageUploadPlugin },
+          { placeholderPlugin },
         ] = await Promise.all([
           import('prosemirror-state'),
           import('prosemirror-view'),
@@ -64,6 +65,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           import('./floating-toolbar'),
           import('./node-views'),
           import('./image-plugin'),
+          import('./placeholder-plugin'),
         ]);
 
         if (destroyed) return;
@@ -90,6 +92,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           plugins.push(slashMenuPlugin());
           plugins.push(floatingToolbarPlugin());
           plugins.push(imageUploadPlugin(() => documentId));
+          plugins.push(placeholderPlugin(placeholder || ''));
         }
 
         const state = EditorState.create({ doc, plugins });
@@ -109,7 +112,6 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           },
           attributes: {
             class: 'outline-editor-content',
-            ...(placeholder && !doc.textContent ? { 'data-placeholder': placeholder } : {}),
           },
         });
 
