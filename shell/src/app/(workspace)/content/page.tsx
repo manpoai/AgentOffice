@@ -905,6 +905,15 @@ function DraggableTreeNode({
   const { attributes, listeners, setNodeRef } = useDraggable({ id: nodeId });
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Calculate fixed position for dropdown menus to avoid overflow clipping
+  const getMenuPos = (btnRef: React.RefObject<HTMLButtonElement | null>) => {
+    if (!btnRef.current) return { top: 0, left: 0 };
+    const rect = btnRef.current.getBoundingClientRect();
+    return { top: rect.bottom + 4, left: Math.max(4, rect.right - 160) };
+  };
 
   return (
     <div ref={setNodeRef} className="relative" data-tree-id={nodeId}>
@@ -951,6 +960,7 @@ function DraggableTreeNode({
         <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
           <div className="relative">
             <button
+              ref={addBtnRef}
               onClick={(e) => { e.stopPropagation(); setShowAddMenu(v => !v); }}
               className="p-0.5 text-muted-foreground hover:text-foreground rounded"
               title="Add child"
@@ -960,7 +970,7 @@ function DraggableTreeNode({
             {showAddMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); }} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
+                <div className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1 w-36" style={getMenuPos(addBtnRef)}>
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); onCreateChild('doc'); }}
                     disabled={creating}
@@ -983,6 +993,7 @@ function DraggableTreeNode({
           </div>
           <div className="relative">
             <button
+              ref={moreBtnRef}
               onClick={(e) => { e.stopPropagation(); setShowMoreMenu(v => !v); }}
               className="p-0.5 text-muted-foreground hover:text-foreground rounded"
               title="More"
@@ -992,7 +1003,7 @@ function DraggableTreeNode({
             {showMoreMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); }} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-40">
+                <div className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 w-40" style={getMenuPos(moreBtnRef)}>
                   {node.type === 'doc' && (
                     <button
                       onClick={async (e) => {
