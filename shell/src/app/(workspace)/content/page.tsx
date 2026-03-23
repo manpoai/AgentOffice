@@ -1230,14 +1230,23 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
         <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto">
           {/* Title area — Outline style: emoji inline when set, hover icon positioned outside */}
+          <div className="doc-title-wrap">
           <div
             className="doc-title-area group/title"
             onMouseEnter={() => setShowTitleIcon(true)}
             onMouseLeave={() => { if (!showEmojiPicker) setShowTitleIcon(false); }}
           >
             <div className="relative flex items-center" ref={emojiPickerRef}>
-              {/* Hover icon — absolute positioned to the LEFT, outside content area */}
-              {!emoji && showTitleIcon && (
+              {/* Emoji or hover icon — absolute positioned to the LEFT, outside content area */}
+              {emoji ? (
+                <button
+                  onClick={() => setShowEmojiPicker(v => !v)}
+                  className="absolute -left-12 top-1/2 -translate-y-1/2 text-4xl leading-none hover:opacity-70 transition-opacity"
+                  title="Change icon"
+                >
+                  {emoji}
+                </button>
+              ) : showTitleIcon ? (
                 <button
                   onClick={() => setShowEmojiPicker(v => !v)}
                   className="absolute -left-10 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-black/5 transition-all"
@@ -1245,17 +1254,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                 >
                   <Smile className="h-6 w-6" />
                 </button>
-              )}
-              {/* Emoji — inline before title when set */}
-              {emoji && (
-                <button
-                  onClick={() => setShowEmojiPicker(v => !v)}
-                  className="text-4xl leading-none mr-3 hover:opacity-70 transition-opacity shrink-0"
-                  title="Change icon"
-                >
-                  {emoji}
-                </button>
-              )}
+              ) : null}
               {/* Title input — left-aligned with body content */}
               <input
                 value={title}
@@ -1296,6 +1295,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
               <span>{formatRelativeTime(doc.updatedAt)}</span>
               {doc.updatedBy?.name && <span>· {doc.updatedBy.name}</span>}
             </div>
+          </div>
           </div>
 
           {/* Editor */}

@@ -13,11 +13,15 @@
   padding: 0 1rem 2rem;
 }
 
-/* Title area above editor — shares the same container scroll */
+/* Title wrapper — same horizontal padding as editor mount */
+.doc-title-wrap {
+  padding: 0 1rem;
+}
+/* Title content — same max-width and centering as editor content */
 .doc-title-area {
   max-width: 48rem;
   margin: 0 auto;
-  padding: 3.5rem 1rem 0;
+  padding-top: 3.5rem;
 }
 
 .outline-editor-content {
