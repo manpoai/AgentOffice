@@ -1052,6 +1052,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   onNavigate: (docId: string) => void;
 }) {
   const { t } = useT();
+  const queryClient = useQueryClient();
   const [showComments, setShowComments] = useState(false);
   const [showDocMenu, setShowDocMenu] = useState(false);
   const [commentQuote, setCommentQuote] = useState('');
@@ -1065,6 +1066,13 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef({ title: doc.title, text: doc.text, emoji: doc.emoji || null as string | null });
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  // Optimistically update sidebar doc list cache when title/emoji change
+  const updateDocCache = useCallback((newTitle: string, newEmoji: string | null) => {
+    queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
+      (old || []).map(d => d.id === doc.id ? { ...d, title: newTitle, emoji: newEmoji || undefined } : d)
+    );
+  }, [doc.id, queryClient]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1122,12 +1130,14 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
     setTitle(newTitle);
+    updateDocCache(newTitle, emoji);
     scheduleSave(newTitle, text);
   };
 
   const handleEmojiSelect = (selectedEmoji: string | null) => {
     setEmoji(selectedEmoji);
     setShowEmojiPicker(false);
+    updateDocCache(title, selectedEmoji);
     scheduleSave(title, text, selectedEmoji);
   };
 
@@ -1168,7 +1178,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                     {crumb.title}
                   </button>
                 ) : (
-                  <span className="text-foreground font-medium truncate">{crumb.title}</span>
+                  <span className="text-foreground font-medium truncate">{title || crumb.title}</span>
                 )}
               </span>
             ))}

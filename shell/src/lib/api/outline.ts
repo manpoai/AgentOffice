@@ -92,7 +92,8 @@ export async function updateDocument(id: string, title?: string, text?: string, 
   const body: Record<string, unknown> = { id };
   if (title !== undefined) body.title = title;
   if (text !== undefined) body.text = text;
-  if (emoji !== undefined) body.emoji = emoji;
+  // Outline expects emoji as string or null to remove
+  if (emoji !== undefined) body.emoji = emoji || null;
   const data = await olFetch<{ data: OLDocument }>('documents.update', body);
   return data.data;
 }

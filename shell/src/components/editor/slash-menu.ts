@@ -302,11 +302,24 @@ export function slashMenuPlugin(): Plugin {
         (container as HTMLElement).style.position = 'relative';
         container.appendChild(menuEl);
       }
+
+      // Listen for programmatic slash menu trigger (from "+" button)
+      const handleOpenSlash = () => {
+        if (!active) {
+          slashPos = editorView.state.selection.from - 1;
+          filterText = '';
+          selectedIndex = 0;
+          show(editorView);
+        }
+      };
+      editorView.dom.addEventListener('open-slash-menu', handleOpenSlash);
+
       return {
         update(view) {
           if (active) updatePosition(view);
         },
         destroy() {
+          editorView.dom.removeEventListener('open-slash-menu', handleOpenSlash);
           menuEl?.remove();
           menuEl = null;
         },

@@ -2,12 +2,23 @@
  * Placeholder plugin for ProseMirror.
  * Shows placeholder text on empty paragraphs and a "+" block handle.
  * - When the document is completely empty: shows full placeholder on the first paragraph
- * - On any empty paragraph that has focus: shows a "+" handle on the left
+ * - On any empty paragraph that has focus: shows a "+" handle on the left that opens slash menu
  */
 import { Plugin, PluginKey } from 'prosemirror-state';
-import { Decoration, DecorationSet } from 'prosemirror-view';
+import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 
 export const placeholderKey = new PluginKey('placeholder');
+
+function triggerSlashMenu(view: EditorView) {
+  // Insert "/" at the cursor position
+  const { state } = view;
+  const tr = state.tr.insertText('/');
+  view.dispatch(tr);
+  view.focus();
+  // The slash-menu plugin listens on appendTransaction for programmatic "/" insertion
+  // We dispatch a custom DOM event that slash-menu can listen for
+  view.dom.dispatchEvent(new CustomEvent('open-slash-menu'));
+}
 
 export function placeholderPlugin(text: string): Plugin {
   return new Plugin({
@@ -42,6 +53,21 @@ export function placeholderPlugin(text: string): Plugin {
             Decoration.node(pos, end, {
               class: 'is-empty-line',
             })
+          );
+          // Clickable "+" button widget
+          decorations.push(
+            Decoration.widget(pos + 1, (view: EditorView) => {
+              const btn = document.createElement('button');
+              btn.className = 'block-add-handle';
+              btn.textContent = '+';
+              btn.contentEditable = 'false';
+              btn.onmousedown = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                triggerSlashMenu(view);
+              };
+              return btn;
+            }, { side: -1 })
           );
         }
 
