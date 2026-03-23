@@ -164,7 +164,11 @@ export default function ContentPage() {
     // Apply localStorage parent overrides
     for (const [nodeId, parentId] of Object.entries(treeState.parents)) {
       const node = nodes.get(nodeId);
-      if (node && nodes.has(parentId)) {
+      if (!node) continue;
+      if (parentId === '__root__') {
+        // Explicitly moved to root — override native parent
+        nodes.set(nodeId, { ...node, parentId: null });
+      } else if (nodes.has(parentId)) {
         nodes.set(nodeId, { ...node, parentId });
       }
     }
@@ -585,9 +589,9 @@ export default function ContentPage() {
           if (next.children[activeParent]) {
             next.children[activeParent] = next.children[activeParent].filter(id => id !== activeId);
           }
-          // Set new parent
+          // Set new parent (use '__root__' to override native parentDocumentId)
           if (overParent === '__root__') {
-            delete next.parents[activeId];
+            next.parents[activeId] = '__root__';
           } else {
             next.parents[activeId] = overParent;
           }
