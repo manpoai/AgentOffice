@@ -1931,9 +1931,14 @@ app.patch('/api/agents/:name', authenticateAgent, (req, res) => {
   res.json({ ok: true });
 });
 
-// Upload agent avatar
-const AVATAR_DIR = path.join(__dirname, '..', 'shell', 'public', 'uploads', 'avatars');
+// Upload agent avatar — stored in gateway's own uploads dir and served statically
+const AVATAR_DIR = path.join(__dirname, 'uploads', 'avatars');
 if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+// Serve uploaded avatars statically (at both /uploads and /api/uploads for proxy compatibility)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/api/uploads', express.static(path.join(__dirname, 'uploads')));
+
 const avatarUpload = multer({
   storage: multer.diskStorage({
     destination: AVATAR_DIR,
@@ -1954,11 +1959,14 @@ app.post('/api/agents/:name/avatar', authenticateAgent, avatarUpload.single('ava
   const target = db.prepare('SELECT id, avatar_url FROM agent_accounts WHERE name = ?').get(req.params.name);
   if (!target) return res.status(404).json({ error: 'NOT_FOUND' });
   // Delete old avatar file if it exists
-  if (target.avatar_url && target.avatar_url.startsWith('/uploads/avatars/')) {
-    const oldPath = path.join(__dirname, '..', 'shell', 'public', target.avatar_url);
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  if (target.avatar_url && target.avatar_url.includes('/uploads/avatars/')) {
+    const filename = target.avatar_url.split('/uploads/avatars/').pop();
+    if (filename) {
+      const oldPath = path.join(AVATAR_DIR, filename);
+      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+    }
   }
-  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  const avatarUrl = `/api/gateway/uploads/avatars/${req.file.filename}`;
   db.prepare('UPDATE agent_accounts SET avatar_url = ?, updated_at = ? WHERE id = ?').run(avatarUrl, Date.now(), target.id);
   res.json({ ok: true, avatar_url: avatarUrl });
 });

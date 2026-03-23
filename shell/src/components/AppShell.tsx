@@ -103,41 +103,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         collapsed ? 'w-14' : 'w-40'
       )} style={{ backgroundColor: '#ECECEC' }}>
         {/* Logo */}
-        <div className={cn('h-[52px] flex items-center', collapsed ? 'px-2 justify-center' : 'px-3')}>
-          {!collapsed && (
-            <span className="text-xl text-foreground font-[family-name:var(--font-allura)]">Asuite</span>
-          )}
-          {collapsed && (
+        <div className="h-[52px] flex items-center px-1 overflow-hidden">
+          <span className="w-[48px] flex items-center justify-center shrink-0">
             <span className="text-lg text-foreground font-[family-name:var(--font-allura)]">A</span>
-          )}
+          </span>
+          <span className={cn('text-xl text-foreground font-[family-name:var(--font-allura)] whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>suite</span>
         </div>
 
         {/* Search + Add */}
-        <div className={cn('flex items-center gap-1 mb-1', collapsed ? 'px-1 justify-center' : 'px-2')}>
-          {collapsed ? (
-            <button
-              className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5"
-              title="Search"
-            >
-              <img src="/icons/icon-search.svg" alt="" className="h-4 w-4 opacity-50" />
-            </button>
-          ) : (
-            <>
-              <button
-                className="flex items-center gap-1.5 flex-1 h-8 px-2 rounded-lg bg-[#E1E2E3] text-muted-foreground text-xs border border-[#D7D9DA]"
-              >
-                <img src="/icons/icon-search.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
-                <span>Search</span>
-              </button>
-              <button className="flex items-center justify-center h-8 w-8 rounded-lg bg-[#E1E2E3] text-muted-foreground border border-[#D7D9DA]">
-                <img src="/icons/icon-plus.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
-              </button>
-            </>
-          )}
+        <div className="flex items-center gap-1 mb-1 px-1 overflow-hidden">
+          <button
+            className={cn(
+              'flex items-center h-8 rounded-lg text-muted-foreground text-xs transition-all duration-200',
+              collapsed ? 'w-[48px] justify-center' : 'flex-1 px-2 bg-[#E1E2E3] border border-[#D7D9DA]'
+            )}
+          >
+            <span className={cn(collapsed ? 'w-[48px]' : 'w-auto', 'flex items-center justify-center shrink-0')}>
+              <img src="/icons/icon-search.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
+            </span>
+            <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0 w-0' : 'opacity-100 ml-1.5')}>Search</span>
+          </button>
+          <button className={cn(
+            'flex items-center justify-center h-8 w-8 shrink-0 rounded-lg text-muted-foreground transition-all duration-200',
+            collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 bg-[#E1E2E3] border border-[#D7D9DA]'
+          )}>
+            <img src="/icons/icon-plus.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
+          </button>
         </div>
 
-        {/* Nav items */}
-        <div className={cn('flex flex-col gap-0.5 mt-1', collapsed ? 'px-1' : 'px-2')}>
+        {/* Nav items — icon always at fixed position to avoid jump on collapse */}
+        <div className="flex flex-col gap-0.5 mt-1 px-1">
           {NAV_ITEMS.map(item => {
             const isActive = activeModule === item.id;
             return (
@@ -146,23 +141,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={() => router.push(item.path)}
                 title={collapsed ? item.label : undefined}
                 className={cn(
-                  'relative flex items-center h-8 rounded-lg text-sm font-medium transition-colors',
-                  collapsed ? 'justify-center px-0' : 'gap-2.5 px-2',
+                  'relative flex items-center h-8 rounded-lg text-sm font-medium transition-colors overflow-hidden',
+                  'text-left px-0',
                   isActive
                     ? 'text-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-black/5'
                 )}
               >
-                <img
-                  src={item.icon}
-                  alt=""
-                  className={cn('h-4 w-4 shrink-0', isActive ? 'opacity-70' : 'opacity-50')}
-                />
-                {!collapsed && <span>{item.label}</span>}
+                {/* Fixed-width icon container — always centered in collapsed width */}
+                <span className="w-[48px] flex items-center justify-center shrink-0">
+                  <img
+                    src={item.icon}
+                    alt=""
+                    className={cn('h-4 w-4', isActive ? 'opacity-70' : 'opacity-50')}
+                  />
+                </span>
+                <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>{item.label}</span>
                 {item.id === 'im' && totalUnread > 0 && (
                   <span className={cn(
                     'absolute min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full',
-                    collapsed ? '-top-0.5 -right-0.5' : 'right-2'
+                    collapsed ? 'top-0 right-0' : 'right-2'
                   )}>
                     {totalUnread > 99 ? '99+' : totalUnread}
                   </span>
@@ -175,19 +173,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex-1" />
 
         {/* Settings + Collapse at bottom */}
-        <div className={cn('mb-3 flex flex-col gap-0.5', collapsed ? 'px-1' : 'px-2')}>
+        <div className="mb-3 flex flex-col gap-0.5 px-1">
           {/* Settings button with dropdown menu */}
           <div className="relative" ref={settingsRef}>
             <button
               onClick={() => setShowSettings(v => !v)}
               title={collapsed ? 'Settings' : undefined}
-              className={cn(
-                'flex items-center h-8 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 transition-colors w-full',
-                collapsed ? 'justify-center px-0' : 'gap-2.5 px-2'
-              )}
+              className="flex items-center h-8 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 transition-colors w-full overflow-hidden px-0"
             >
-              <img src="/icons/icon-settings.svg" alt="" className="h-4 w-4 shrink-0 opacity-50" />
-              {!collapsed && <span>Settings</span>}
+              <span className="w-[48px] flex items-center justify-center shrink-0">
+                <img src="/icons/icon-settings.svg" alt="" className="h-4 w-4 opacity-50" />
+              </span>
+              <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>Settings</span>
             </button>
 
             {/* Settings dropdown menu */}
@@ -267,19 +264,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             onClick={toggleCollapse}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className={cn(
-              'flex items-center h-8 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 transition-colors',
-              collapsed ? 'justify-center px-0' : 'gap-2.5 px-2'
-            )}
+            className="flex items-center h-8 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 transition-colors overflow-hidden px-0"
           >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4 shrink-0" />
-            ) : (
-              <>
-                <img src="/icons/icon-collapse.svg" alt="" className="h-4 w-4 shrink-0 opacity-50" />
-                <span>Collapse</span>
-              </>
-            )}
+            <span className="w-[48px] flex items-center justify-center shrink-0">
+              {collapsed
+                ? <ChevronRight className="h-4 w-4" />
+                : <img src="/icons/icon-collapse.svg" alt="" className="h-4 w-4 opacity-50" />
+              }
+            </span>
+            <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>Collapse</span>
           </button>
         </div>
       </nav>
