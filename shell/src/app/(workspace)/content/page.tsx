@@ -1229,36 +1229,56 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
       {/* Content area */}
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
         <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto">
-          {/* Title area — same layout as Outline: emoji + title inline */}
+          {/* Title area — Outline style: emoji inline when set, hover icon positioned outside */}
           <div
             className="doc-title-area group/title"
             onMouseEnter={() => setShowTitleIcon(true)}
             onMouseLeave={() => { if (!showEmojiPicker) setShowTitleIcon(false); }}
           >
-            <div className="flex items-center gap-3">
-              {/* Emoji — inline with title, only takes space when visible */}
+            <div className="relative flex items-center" ref={emojiPickerRef}>
+              {/* Hover icon — absolute positioned to the LEFT, outside content area */}
+              {!emoji && showTitleIcon && (
+                <button
+                  onClick={() => setShowEmojiPicker(v => !v)}
+                  className="absolute -left-10 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-black/5 transition-all"
+                  title="Add icon"
+                >
+                  <Smile className="h-6 w-6" />
+                </button>
+              )}
+              {/* Emoji — inline before title when set */}
               {emoji && (
-                <div className="relative shrink-0" ref={emojiPickerRef}>
-                  <button
-                    onClick={() => setShowEmojiPicker(v => !v)}
-                    className="text-5xl leading-none hover:opacity-70 transition-opacity"
-                    title="Change icon"
-                  >
-                    {emoji}
-                  </button>
-                  {showEmojiPicker && (
-                    <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-3 w-[280px]">
-                      <div className="grid grid-cols-10 gap-1">
-                        {COMMON_EMOJIS.map(em => (
-                          <button
-                            key={em}
-                            onClick={() => handleEmojiSelect(em)}
-                            className="w-7 h-7 flex items-center justify-center rounded hover:bg-accent text-lg leading-none"
-                          >
-                            {em}
-                          </button>
-                        ))}
-                      </div>
+                <button
+                  onClick={() => setShowEmojiPicker(v => !v)}
+                  className="text-4xl leading-none mr-3 hover:opacity-70 transition-opacity shrink-0"
+                  title="Change icon"
+                >
+                  {emoji}
+                </button>
+              )}
+              {/* Title input — left-aligned with body content */}
+              <input
+                value={title}
+                onChange={handleTitleChange}
+                placeholder={t('content.untitled')}
+                className="flex-1 min-w-0 text-[2.5rem] font-bold text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/30 leading-tight"
+              />
+              {/* Emoji picker dropdown */}
+              {showEmojiPicker && (
+                <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-3 w-[280px]">
+                  <div className="grid grid-cols-10 gap-1">
+                    {COMMON_EMOJIS.map(em => (
+                      <button
+                        key={em}
+                        onClick={() => handleEmojiSelect(em)}
+                        className="w-7 h-7 flex items-center justify-center rounded hover:bg-accent text-lg leading-none"
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                  {emoji && (
+                    <>
                       <div className="border-t border-border my-2" />
                       <button
                         onClick={() => handleEmojiSelect(null)}
@@ -1266,44 +1286,10 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                       >
                         Remove icon
                       </button>
-                    </div>
+                    </>
                   )}
                 </div>
               )}
-              {/* Add emoji button — only on hover when no emoji */}
-              {!emoji && showTitleIcon && (
-                <div className="relative shrink-0" ref={emojiPickerRef}>
-                  <button
-                    onClick={() => setShowEmojiPicker(v => !v)}
-                    className="p-1 rounded text-muted-foreground/40 hover:text-muted-foreground hover:bg-black/5 transition-all"
-                    title="Add icon"
-                  >
-                    <Smile className="h-7 w-7" />
-                  </button>
-                  {showEmojiPicker && (
-                    <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-3 w-[280px]">
-                      <div className="grid grid-cols-10 gap-1">
-                        {COMMON_EMOJIS.map(em => (
-                          <button
-                            key={em}
-                            onClick={() => handleEmojiSelect(em)}
-                            className="w-7 h-7 flex items-center justify-center rounded hover:bg-accent text-lg leading-none"
-                          >
-                            {em}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Title input */}
-              <input
-                value={title}
-                onChange={handleTitleChange}
-                placeholder={t('content.untitled')}
-                className="flex-1 min-w-0 text-[2.5rem] font-bold text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/30 leading-tight"
-              />
             </div>
             {/* Meta info below title */}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60 mt-3 mb-4">
