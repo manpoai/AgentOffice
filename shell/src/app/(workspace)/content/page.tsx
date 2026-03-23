@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
@@ -12,11 +12,67 @@ import { Comments } from '@/components/comments/Comments';
 import { TableEditor } from '@/components/table-editor/TableEditor';
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type DragStartEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
-type ContentItem = { type: 'doc'; id: string; title: string; subtitle: string; emoji?: string; updatedAt?: string; sortTime: number; parentDocumentId?: string | null }
-  | { type: 'table'; id: string; title: string; sortTime: number };
+// ═══════════════════════════════════════════════════
+// Types
+// ═══════════════════════════════════════════════════
+
+/** Unified content item (doc or table) */
+type ContentNode = {
+  id: string;         // doc:<id> or table:<id>
+  rawId: string;      // original id without prefix
+  type: 'doc' | 'table';
+  title: string;
+  emoji?: string;
+  createdAt: number;
+  updatedAt?: string;
+  parentId: string | null;  // parent node id (doc:<id> or table:<id>)
+};
 
 type Selection = { type: 'doc'; id: string } | { type: 'table'; id: string } | null;
+
+/** Tree ordering stored in localStorage */
+interface TreeState {
+  /** parentId → ordered child IDs */
+  children: Record<string, string[]>;
+  /** nodeId → parentId */
+  parents: Record<string, string>;
+}
+
+const TREE_STATE_KEY = 'asuite-content-tree';
+
+function loadTreeState(): TreeState {
+  try {
+    const raw = localStorage.getItem(TREE_STATE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { children: {}, parents: {} };
+}
+
+function saveTreeState(state: TreeState) {
+  localStorage.setItem(TREE_STATE_KEY, JSON.stringify(state));
+}
+
+// ═══════════════════════════════════════════════════
+// Main Page
+// ═══════════════════════════════════════════════════
 
 export default function ContentPage() {
   const { t } = useT();
@@ -26,6 +82,8 @@ export default function ContentPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [creating, setCreating] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [treeState, setTreeState] = useState<TreeState>(() => loadTreeState());
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: docs, isLoading: docsLoading } = useQuery({
@@ -58,35 +116,121 @@ export default function ContentPage() {
     enabled: !!selectedDocId,
   });
 
-  // Build tree structure from docs
-  const docItems = (docs || []).map(doc => ({
-    type: 'doc' as const,
-    id: doc.id,
-    title: doc.emoji ? `${doc.title || t('content.untitled')}` : (doc.title || t('content.untitled')),
-    subtitle: formatDate(doc.updatedAt),
-    emoji: doc.emoji,
-    updatedAt: doc.updatedAt,
-    sortTime: new Date(doc.updatedAt || 0).getTime(),
-    parentDocumentId: doc.parentDocumentId || null,
-  }));
+  // Build unified node map
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, ContentNode>();
+    (docs || []).forEach(doc => {
+      const nodeId = `doc:${doc.id}`;
+      map.set(nodeId, {
+        id: nodeId,
+        rawId: doc.id,
+        type: 'doc',
+        title: doc.title || t('content.untitled'),
+        emoji: doc.emoji,
+        createdAt: new Date(doc.createdAt || 0).getTime(),
+        updatedAt: doc.updatedAt,
+        parentId: doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null,
+      });
+    });
+    (tables || []).forEach(tbl => {
+      const nodeId = `table:${tbl.id}`;
+      map.set(nodeId, {
+        id: nodeId,
+        rawId: tbl.id,
+        type: 'table',
+        title: tbl.title || t('content.untitledTable'),
+        createdAt: new Date(tbl.created_at || 0).getTime(),
+        parentId: null, // tables don't have native parent; use treeState
+      });
+    });
+    return map;
+  }, [docs, tables, t]);
 
-  const tableItems = (tables || []).map(tbl => ({
-    type: 'table' as const,
-    id: tbl.id,
-    title: tbl.title,
-    sortTime: new Date(tbl.created_at || 0).getTime(),
-  }));
-
-  // Build tree: root docs (no parent) and children
-  const rootDocs = docItems.filter(d => !d.parentDocumentId);
-  const childDocsMap = new Map<string, typeof docItems>();
-  docItems.forEach(d => {
-    if (d.parentDocumentId) {
-      const children = childDocsMap.get(d.parentDocumentId) || [];
-      children.push(d);
-      childDocsMap.set(d.parentDocumentId, children);
+  // Apply treeState parents to nodes (for tables parented under docs, etc.)
+  const effectiveNodes = useMemo(() => {
+    const nodes = new Map(nodeMap);
+    // Apply localStorage parent overrides
+    for (const [nodeId, parentId] of Object.entries(treeState.parents)) {
+      const node = nodes.get(nodeId);
+      if (node && nodes.has(parentId)) {
+        nodes.set(nodeId, { ...node, parentId });
+      }
     }
-  });
+    return nodes;
+  }, [nodeMap, treeState]);
+
+  // Build children map and root items
+  const { childrenMap, rootIds } = useMemo(() => {
+    const cMap = new Map<string, string[]>();
+    const allIds = new Set(effectiveNodes.keys());
+    const hasParent = new Set<string>();
+
+    // First, populate from actual parent relationships
+    effectiveNodes.forEach((node) => {
+      if (node.parentId && allIds.has(node.parentId)) {
+        hasParent.add(node.id);
+        const children = cMap.get(node.parentId) || [];
+        children.push(node.id);
+        cMap.set(node.parentId, children);
+      }
+    });
+
+    // Sort children by treeState order, then by createdAt
+    cMap.forEach((children, parentId) => {
+      const order = treeState.children[parentId];
+      if (order) {
+        children.sort((a, b) => {
+          const ia = order.indexOf(a);
+          const ib = order.indexOf(b);
+          if (ia >= 0 && ib >= 0) return ia - ib;
+          if (ia >= 0) return -1;
+          if (ib >= 0) return 1;
+          return (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0);
+        });
+      } else {
+        children.sort((a, b) => (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0));
+      }
+    });
+
+    // Root items: no parent or parent not in set
+    const roots: string[] = [];
+    effectiveNodes.forEach((node) => {
+      if (!hasParent.has(node.id)) roots.push(node.id);
+    });
+
+    // Sort roots by treeState order, then by createdAt
+    const rootOrder = treeState.children['__root__'];
+    if (rootOrder) {
+      roots.sort((a, b) => {
+        const ia = rootOrder.indexOf(a);
+        const ib = rootOrder.indexOf(b);
+        if (ia >= 0 && ib >= 0) return ia - ib;
+        if (ia >= 0) return -1;
+        if (ib >= 0) return 1;
+        return (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0);
+      });
+    } else {
+      roots.sort((a, b) => (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0));
+    }
+
+    return { childrenMap: cMap, rootIds: roots };
+  }, [effectiveNodes, treeState]);
+
+  // Flatten tree for DnD sortable context (visible items only)
+  const flatVisibleIds = useMemo(() => {
+    const result: string[] = [];
+    const walk = (ids: string[]) => {
+      for (const id of ids) {
+        result.push(id);
+        if (expandedIds.has(id)) {
+          const children = childrenMap.get(id);
+          if (children) walk(children);
+        }
+      }
+    };
+    walk(rootIds);
+    return result;
+  }, [rootIds, childrenMap, expandedIds]);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -101,19 +245,21 @@ export default function ContentPage() {
   const displaySearchItems = searchQuery.length >= 2
     ? (searchResults
         ? searchResults.map(r => ({
+            id: `doc:${r.document.id}`,
+            rawId: r.document.id,
             type: 'doc' as const,
-            id: r.document.id,
             title: r.document.title,
-            subtitle: r.context?.slice(0, 60) || '',
             emoji: r.document.emoji,
-            sortTime: 0,
-            parentDocumentId: null,
+            createdAt: 0,
+            parentId: null,
           }))
         : [])
     : null;
 
-  const handleSelect = (item: { type: 'doc' | 'table'; id: string }) => {
-    setSelection({ type: item.type, id: item.id });
+  const handleSelect = (nodeId: string) => {
+    const node = effectiveNodes.get(nodeId);
+    if (!node) return;
+    setSelection({ type: node.type, id: node.rawId });
     setMobileView('detail');
   };
 
@@ -126,13 +272,33 @@ export default function ContentPage() {
     queryClient.invalidateQueries({ queryKey: ['nc-tables'] });
   };
 
-  const handleCreateDoc = async () => {
+  const handleCreateDoc = async (parentNodeId?: string) => {
     if (creating) return;
     const collectionId = collections?.[0]?.id;
     if (!collectionId) return;
     setCreating(true);
     try {
-      const doc = await ol.createDocument(t('content.untitled'), '', collectionId);
+      // Determine Outline parent document ID
+      let parentDocId: string | undefined;
+      if (parentNodeId) {
+        const parentNode = effectiveNodes.get(parentNodeId);
+        if (parentNode?.type === 'doc') {
+          parentDocId = parentNode.rawId;
+        }
+      }
+      const doc = await ol.createDocument(t('content.untitled'), '', collectionId, parentDocId);
+      const newNodeId = `doc:${doc.id}`;
+
+      // If parent is a table, store in treeState
+      if (parentNodeId) {
+        const parentNode = effectiveNodes.get(parentNodeId);
+        if (parentNode?.type === 'table') {
+          updateTreeParent(newNodeId, parentNodeId);
+        }
+        // Expand parent
+        setExpandedIds(prev => new Set(prev).add(parentNodeId));
+      }
+
       refreshDocs();
       setSelection({ type: 'doc', id: doc.id });
       setMobileView('detail');
@@ -143,7 +309,7 @@ export default function ContentPage() {
     }
   };
 
-  const handleCreateTable = async () => {
+  const handleCreateTable = async (parentNodeId?: string) => {
     if (creating) return;
     setCreating(true);
     try {
@@ -151,8 +317,16 @@ export default function ContentPage() {
         { title: 'Name', uidt: 'SingleLineText' },
         { title: 'Notes', uidt: 'LongText' },
       ]);
-      refreshTables();
       const tableId = table.id || (table as any).table_id;
+      const newNodeId = `table:${tableId}`;
+
+      // Store parent in treeState if creating as child
+      if (parentNodeId) {
+        updateTreeParent(newNodeId, parentNodeId);
+        setExpandedIds(prev => new Set(prev).add(parentNodeId));
+      }
+
+      refreshTables();
       setSelection({ type: 'table', id: tableId });
       setMobileView('detail');
     } catch (e) {
@@ -162,21 +336,90 @@ export default function ContentPage() {
     }
   };
 
+  const updateTreeParent = (nodeId: string, parentId: string) => {
+    setTreeState(prev => {
+      const next = {
+        children: { ...prev.children },
+        parents: { ...prev.parents, [nodeId]: parentId },
+      };
+      // Add to parent's children list
+      const parentChildren = [...(next.children[parentId] || [])];
+      if (!parentChildren.includes(nodeId)) parentChildren.push(nodeId);
+      next.children[parentId] = parentChildren;
+      saveTreeState(next);
+      return next;
+    });
+  };
+
   const isLoading = docsLoading || tablesLoading;
 
-  // Get breadcrumb path for selected doc
+  // DnD
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setDragActiveId(event.active.id as string);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDragActiveId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Find which list (root or parent's children) both belong to
+    const activeNode = effectiveNodes.get(activeId);
+    const overNode = effectiveNodes.get(overId);
+    if (!activeNode || !overNode) return;
+
+    // Determine the parent context: both must share the same parent for reorder
+    const activeParent = activeNode.parentId || '__root__';
+    const overParent = overNode.parentId || '__root__';
+
+    if (activeParent === overParent) {
+      // Same parent — reorder within
+      const siblings = activeParent === '__root__' ? [...rootIds] : [...(childrenMap.get(activeParent) || [])];
+      const oldIndex = siblings.indexOf(activeId);
+      const newIndex = siblings.indexOf(overId);
+      if (oldIndex < 0 || newIndex < 0) return;
+
+      const reordered = arrayMove(siblings, oldIndex, newIndex);
+      setTreeState(prev => {
+        const next = { ...prev, children: { ...prev.children, [activeParent]: reordered } };
+        saveTreeState(next);
+        return next;
+      });
+    }
+    // Cross-parent drag could be implemented later if needed
+  };
+
+  // Breadcrumb
   const getBreadcrumb = (docId: string): { id: string; title: string }[] => {
     const path: { id: string; title: string }[] = [];
-    let current = docItems.find(d => d.id === docId);
-    while (current) {
-      path.unshift({ id: current.id, title: current.title });
-      if (current.parentDocumentId) {
-        current = docItems.find(d => d.id === current!.parentDocumentId);
-      } else {
-        break;
-      }
+    let nodeId: string | null = `doc:${docId}`;
+    while (nodeId) {
+      const node = effectiveNodes.get(nodeId);
+      if (!node) break;
+      path.unshift({ id: node.rawId, title: node.title });
+      nodeId = node.parentId;
     }
     return path;
+  };
+
+  const dragActiveNode = dragActiveId ? effectiveNodes.get(dragActiveId) : null;
+
+  // Get depth of a node for rendering
+  const getDepth = (nodeId: string): number => {
+    let depth = 0;
+    let current = effectiveNodes.get(nodeId);
+    while (current?.parentId) {
+      depth++;
+      current = effectiveNodes.get(current.parentId);
+    }
+    return depth;
   };
 
   return (
@@ -192,7 +435,7 @@ export default function ContentPage() {
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-xs font-medium text-muted-foreground">Document Library</h2>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 relative">
             <button
               onClick={() => setShowNewMenu(v => !v)}
               className="p-1 text-muted-foreground hover:text-foreground"
@@ -200,13 +443,10 @@ export default function ContentPage() {
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
-            <button className="p-1 text-muted-foreground hover:text-foreground">
-              <Search className="h-3.5 w-3.5" />
-            </button>
             {showNewMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowNewMenu(false)} />
-                <div className="absolute right-4 top-12 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
+                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
                   <button
                     onClick={() => { setShowNewMenu(false); handleCreateDoc(); }}
                     disabled={creating}
@@ -248,42 +488,61 @@ export default function ContentPage() {
                 <p className="p-3 text-xs text-muted-foreground">{t('content.noMatch')}</p>
               ) : (
                 displaySearchItems.map(item => (
-                  <TreeItem
+                  <TreeNodeItem
                     key={item.id}
-                    item={item}
-                    isSelected={selection?.type === item.type && selection?.id === item.id}
-                    onSelect={() => handleSelect(item)}
+                    nodeId={item.id}
+                    node={item}
+                    isSelected={selection?.type === item.type && selection?.id === item.rawId}
+                    onSelect={() => handleSelect(item.id)}
+                    hasChildren={false}
+                    isExpanded={false}
+                    onToggle={() => {}}
                     depth={0}
+                    onCreateChild={() => {}}
                   />
                 ))
               )
             )}
 
-            {/* Tree mode */}
+            {/* Tree mode with DnD */}
             {!displaySearchItems && !isLoading && (
-              <>
-                {rootDocs.map(doc => (
-                  <TreeDocItem
-                    key={doc.id}
-                    doc={doc}
-                    selection={selection}
-                    onSelect={handleSelect}
-                    childDocsMap={childDocsMap}
-                    expandedIds={expandedIds}
-                    toggleExpand={toggleExpand}
-                    depth={0}
-                  />
-                ))}
-                {tableItems.map(tbl => (
-                  <TreeItem
-                    key={tbl.id}
-                    item={tbl}
-                    isSelected={selection?.type === 'table' && selection?.id === tbl.id}
-                    onSelect={() => handleSelect(tbl)}
-                    depth={0}
-                  />
-                ))}
-              </>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext items={flatVisibleIds} strategy={verticalListSortingStrategy}>
+                  {rootIds.map(nodeId => (
+                    <TreeNodeRecursive
+                      key={nodeId}
+                      nodeId={nodeId}
+                      nodes={effectiveNodes}
+                      childrenMap={childrenMap}
+                      selection={selection}
+                      expandedIds={expandedIds}
+                      onSelect={handleSelect}
+                      onToggle={toggleExpand}
+                      onCreateDoc={handleCreateDoc}
+                      onCreateTable={handleCreateTable}
+                      depth={0}
+                      creating={creating}
+                    />
+                  ))}
+                </SortableContext>
+
+                <DragOverlay>
+                  {dragActiveNode && (
+                    <div className="flex items-center gap-1.5 py-1.5 px-2 text-sm bg-card border border-border rounded-lg shadow-lg opacity-90">
+                      {dragActiveNode.type === 'table'
+                        ? <Table2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                        : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      }
+                      <span className="truncate">{dragActiveNode.title}</span>
+                    </div>
+                  )}
+                </DragOverlay>
+              </DndContext>
             )}
           </div>
         </ScrollArea>
@@ -324,61 +583,67 @@ export default function ContentPage() {
   );
 }
 
-// ════════════════════════════════════════════════════════════════
-// Tree components
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+// Recursive tree node
+// ═══════════════════════════════════════════════════
 
-function TreeDocItem({ doc, selection, onSelect, childDocsMap, expandedIds, toggleExpand, depth }: {
-  doc: { type: 'doc'; id: string; title: string; parentDocumentId?: string | null };
+function TreeNodeRecursive({
+  nodeId, nodes, childrenMap, selection, expandedIds, onSelect, onToggle,
+  onCreateDoc, onCreateTable, depth, creating,
+}: {
+  nodeId: string;
+  nodes: Map<string, ContentNode>;
+  childrenMap: Map<string, string[]>;
   selection: Selection;
-  onSelect: (item: { type: 'doc' | 'table'; id: string }) => void;
-  childDocsMap: Map<string, any[]>;
   expandedIds: Set<string>;
-  toggleExpand: (id: string) => void;
+  onSelect: (id: string) => void;
+  onToggle: (id: string) => void;
+  onCreateDoc: (parentId?: string) => void;
+  onCreateTable: (parentId?: string) => void;
   depth: number;
+  creating: boolean;
 }) {
-  const children = childDocsMap.get(doc.id) || [];
+  const node = nodes.get(nodeId);
+  if (!node) return null;
+
+  const children = childrenMap.get(nodeId) || [];
   const hasChildren = children.length > 0;
-  const isExpanded = expandedIds.has(doc.id);
-  const isSelected = selection?.type === 'doc' && selection?.id === doc.id;
+  const isExpanded = expandedIds.has(nodeId);
+  const isSelected = selection?.type === node.type && selection?.id === node.rawId;
 
   return (
     <div>
-      <button
-        onClick={() => onSelect(doc)}
-        className={cn(
-          'w-full flex items-center gap-1.5 py-1.5 px-2 text-left text-sm transition-colors rounded-lg',
-          isSelected
-            ? 'bg-[#D6DFF6] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
-            : 'text-foreground hover:bg-black/[0.03] dark:hover:bg-accent/50'
-        )}
-        style={{ paddingLeft: `${8 + depth * 16}px` }}
-      >
-        {hasChildren ? (
-          <button
-            onClick={(e) => { e.stopPropagation(); toggleExpand(doc.id); }}
-            className="p-0.5 shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            <ChevronRight className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')} />
-          </button>
-        ) : (
-          <span className="w-4 shrink-0" />
-        )}
-        <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
-        <span className="truncate">{doc.title}</span>
-      </button>
+      <SortableTreeNode
+        nodeId={nodeId}
+        node={node}
+        isSelected={isSelected}
+        onSelect={() => onSelect(nodeId)}
+        hasChildren={hasChildren}
+        isExpanded={isExpanded}
+        onToggle={() => onToggle(nodeId)}
+        depth={depth}
+        onCreateChild={(type) => {
+          if (type === 'doc') onCreateDoc(nodeId);
+          else onCreateTable(nodeId);
+        }}
+        creating={creating}
+      />
       {hasChildren && isExpanded && (
         <div>
-          {children.map((child: any) => (
-            <TreeDocItem
-              key={child.id}
-              doc={child}
+          {children.map(childId => (
+            <TreeNodeRecursive
+              key={childId}
+              nodeId={childId}
+              nodes={nodes}
+              childrenMap={childrenMap}
               selection={selection}
-              onSelect={onSelect}
-              childDocsMap={childDocsMap}
               expandedIds={expandedIds}
-              toggleExpand={toggleExpand}
+              onSelect={onSelect}
+              onToggle={onToggle}
+              onCreateDoc={onCreateDoc}
+              onCreateTable={onCreateTable}
               depth={depth + 1}
+              creating={creating}
             />
           ))}
         </div>
@@ -387,13 +652,127 @@ function TreeDocItem({ doc, selection, onSelect, childDocsMap, expandedIds, togg
   );
 }
 
-function TreeItem({ item, isSelected, onSelect, depth }: {
-  item: { type: 'doc' | 'table'; id: string; title: string };
+// ═══════════════════════════════════════════════════
+// Sortable tree node (with DnD + hover actions)
+// ═══════════════════════════════════════════════════
+
+function SortableTreeNode({
+  nodeId, node, isSelected, onSelect, hasChildren, isExpanded, onToggle, depth, onCreateChild, creating,
+}: {
+  nodeId: string;
+  node: ContentNode;
   isSelected: boolean;
   onSelect: () => void;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
   depth: number;
+  onCreateChild: (type: 'doc' | 'table') => void;
+  creating?: boolean;
 }) {
-  const isTable = item.type === 'table';
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: nodeId });
+  const [showAddMenu, setShowAddMenu] = useState(false);
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <div
+        className={cn(
+          'group relative flex items-center gap-1 py-1.5 px-1 text-sm transition-colors rounded-lg cursor-pointer',
+          isSelected
+            ? 'bg-[#D6DFF6] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
+            : 'text-foreground hover:bg-black/[0.03] dark:hover:bg-accent/50'
+        )}
+        style={{ paddingLeft: `${4 + depth * 16}px` }}
+        onClick={onSelect}
+      >
+        {/* Expand/collapse toggle */}
+        {hasChildren ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggle(); }}
+            className="p-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')} />
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" />
+        )}
+
+        {/* Icon */}
+        {node.type === 'table'
+          ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+          : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+        }
+
+        {/* Title */}
+        <span className="truncate flex-1" {...listeners}>{node.title}</span>
+
+        {/* Hover actions: Add + More */}
+        <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+          <div className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowAddMenu(v => !v); }}
+              className="p-0.5 text-muted-foreground hover:text-foreground rounded"
+              title="Add child"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            {showAddMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); }} />
+                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); onCreateChild('doc'); }}
+                    disabled={creating}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  >
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                    {t('content.newDoc')}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); onCreateChild('table'); }}
+                    disabled={creating}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  >
+                    <Table2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    {t('content.newTable')}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            onClick={(e) => e.stopPropagation()}
+            className="p-0.5 text-muted-foreground hover:text-foreground rounded"
+            title="More"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Non-sortable version for search results
+function TreeNodeItem({
+  nodeId, node, isSelected, onSelect, hasChildren, isExpanded, onToggle, depth, onCreateChild,
+}: {
+  nodeId: string;
+  node: { type: 'doc' | 'table'; title: string; emoji?: string };
+  isSelected: boolean;
+  onSelect: () => void;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  depth: number;
+  onCreateChild: () => void;
+}) {
   return (
     <button
       onClick={onSelect}
@@ -406,18 +785,18 @@ function TreeItem({ item, isSelected, onSelect, depth }: {
       style={{ paddingLeft: `${8 + depth * 16}px` }}
     >
       <span className="w-4 shrink-0" />
-      {isTable
+      {node.type === 'table'
         ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
         : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
       }
-      <span className="truncate">{item.title}</span>
+      <span className="truncate">{node.title}</span>
     </button>
   );
 }
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 // Document sub-components
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 
 function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   doc: ol.OLDocument;
@@ -438,7 +817,6 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef({ title: doc.title, text: doc.text });
 
-  // Listen for selection comment events from the floating toolbar
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -451,7 +829,6 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     return () => window.removeEventListener('editor-comment', handler);
   }, []);
 
-  // Reset state when doc changes
   useEffect(() => {
     setTitle(doc.title);
     setText(doc.text);
@@ -459,7 +836,6 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     setSaveStatus('saved');
   }, [doc.id, doc.title, doc.text]);
 
-  // Auto-save with debounce
   const scheduleSave = useCallback((newTitle: string, newText: string) => {
     latestRef.current = { title: newTitle, text: newText };
     setSaveStatus('unsaved');
@@ -478,9 +854,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   }, [doc.id, onSaved]);
 
   useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, []);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -511,24 +885,18 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
 
   return (
     <>
-      {/* Header with breadcrumb */}
       <div className="flex flex-col px-4 py-2 border-b border-border bg-white dark:bg-card shrink-0">
         <div className="flex items-center gap-2">
           <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-5 w-5" />
           </button>
-
-          {/* Breadcrumb */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1 text-sm">
               {breadcrumb.map((crumb, i) => (
                 <span key={crumb.id} className="flex items-center gap-1 min-w-0">
                   {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
                   {i < breadcrumb.length - 1 ? (
-                    <button
-                      onClick={() => onNavigate(crumb.id)}
-                      className="text-muted-foreground hover:text-foreground truncate"
-                    >
+                    <button onClick={() => onNavigate(crumb.id)} className="text-muted-foreground hover:text-foreground truncate">
                       {crumb.title}
                     </button>
                   ) : (
@@ -537,21 +905,13 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                 </span>
               ))}
             </div>
-            {/* Last modified info */}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
-              <span>
-                Last modified: {formatRelativeTime(doc.updatedAt)} by {doc.updatedBy?.name || '?'}
-              </span>
+              <span>Last modified: {formatRelativeTime(doc.updatedAt)} by {doc.updatedBy?.name || '?'}</span>
             </div>
           </div>
-
-          {/* Actions */}
           <div className="flex items-center gap-1.5 shrink-0">
             {statusText && (
-              <span className={cn(
-                'text-[10px]',
-                saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'
-              )}>{statusText}</span>
+              <span className={cn('text-[10px]', saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground')}>{statusText}</span>
             )}
             <button className="flex items-center gap-1.5 h-8 px-3 rounded bg-black/10 dark:bg-accent text-sm text-foreground/80 hover:bg-black/15 dark:hover:bg-accent/80 transition-colors">
               <Share2 className="h-3.5 w-3.5" />
@@ -559,20 +919,13 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
             </button>
             <button
               onClick={() => setShowComments(v => !v)}
-              className={cn(
-                'p-1.5 rounded transition-colors',
-                showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground'
-              )}
+              className={cn('p-1.5 rounded transition-colors', showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
               title={t('content.comments')}
             >
               <MessageSquareIcon className="h-4 w-4" />
             </button>
             <div className="relative">
-              <button
-                onClick={() => setShowDocMenu(v => !v)}
-                className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"
-                title={t('content.moreActions')}
-              >
+              <button onClick={() => setShowDocMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
                 <MoreHorizontal className="h-4 w-4" />
               </button>
               {showDocMenu && (
@@ -602,7 +955,6 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
         <div className="flex-1 min-h-0 min-w-0">
           <Editor key={doc.id} defaultValue={doc.text} onChange={handleTextChange} placeholder={t('content.editorPlaceholder')} />
         </div>
-        {/* Comments right panel */}
         {showComments && (
           <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
             <div className="px-3 py-2 border-b border-border flex items-center justify-between">
@@ -625,9 +977,9 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   );
 }
 
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 // Helpers
-// ════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 
 function DocMenuBtn({ icon: Icon, label, onClick, danger }: {
   icon: React.ComponentType<{ className?: string }>;

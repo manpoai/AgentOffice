@@ -74,9 +74,18 @@ export async function searchDocuments(query: string): Promise<{ document: OLDocu
   return data.data;
 }
 
-export async function createDocument(title: string, text: string, collectionId: string): Promise<OLDocument> {
-  const data = await olFetch<{ data: OLDocument }>('documents.create', { title, text, collectionId, publish: true });
+export async function createDocument(title: string, text: string, collectionId: string, parentDocumentId?: string): Promise<OLDocument> {
+  const body: Record<string, unknown> = { title, text, collectionId, publish: true };
+  if (parentDocumentId) body.parentDocumentId = parentDocumentId;
+  const data = await olFetch<{ data: OLDocument }>('documents.create', body);
   return data.data;
+}
+
+export async function moveDocument(id: string, parentDocumentId: string | null, collectionId?: string): Promise<void> {
+  const body: Record<string, unknown> = { id };
+  if (parentDocumentId) body.parentDocumentId = parentDocumentId;
+  if (collectionId) body.collectionId = collectionId;
+  await olFetch('documents.move', body);
 }
 
 export async function updateDocument(id: string, title?: string, text?: string): Promise<OLDocument> {
