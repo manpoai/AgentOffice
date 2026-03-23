@@ -108,6 +108,27 @@ export async function duplicateDocument(id: string): Promise<OLDocument> {
   return createDocument(newTitle, original.text, original.collectionId, original.parentDocumentId || undefined);
 }
 
+// ── Revisions ──
+
+export interface OLRevision {
+  id: string;
+  documentId: string;
+  title: string;
+  data: Record<string, unknown>; // ProseMirror JSON
+  createdAt: string;
+  createdBy: { id: string; name: string };
+}
+
+export async function listRevisions(documentId: string): Promise<OLRevision[]> {
+  const data = await olFetch<{ data: OLRevision[] }>('revisions.list', { documentId });
+  return data.data;
+}
+
+export async function restoreRevision(documentId: string, revisionId: string): Promise<OLDocument> {
+  const data = await olFetch<{ data: OLDocument }>('documents.restore', { id: documentId, revisionId });
+  return data.data;
+}
+
 /** Upload an attachment (image) to Outline using the two-step presigned upload flow.
  *  Step 1: POST /api/attachments.create (JSON) → get presigned S3 POST fields + attachment URL
  *  Step 2: POST to uploadUrl with presigned form fields + file

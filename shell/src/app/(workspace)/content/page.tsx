@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Editor } from '@/components/editor';
 import { Comments } from '@/components/comments/Comments';
+import RevisionHistory from '@/components/RevisionHistory';
 import { TableEditor } from '@/components/table-editor/TableEditor';
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
@@ -1126,6 +1127,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const queryClient = useQueryClient();
   const [showComments, setShowComments] = useState(false);
   const [showDocMenu, setShowDocMenu] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [commentQuote, setCommentQuote] = useState('');
   const [title, setTitle] = useState(doc.title);
   const [emoji, setEmoji] = useState<string | null>(doc.emoji?.trim() || null);
@@ -1296,7 +1298,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                 <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
                   <DocMenuBtn icon={Star} label={t('content.favorite')} onClick={() => setShowDocMenu(false)} />
-                  <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => setShowDocMenu(false)} />
+                  <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => { setShowDocMenu(false); setShowHistory(true); }} />
                   <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
                   <DocMenuBtn icon={CopyPlus} label={t('content.duplicate')} onClick={async () => {
                     setShowDocMenu(false);
@@ -1412,6 +1414,17 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
           </div>
         )}
       </div>
+
+      {showHistory && (
+        <RevisionHistory
+          doc={doc}
+          onClose={() => setShowHistory(false)}
+          onRestored={() => {
+            queryClient.invalidateQueries({ queryKey: ['outline-doc', doc.id] });
+            onSaved();
+          }}
+        />
+      )}
     </>
   );
 }
