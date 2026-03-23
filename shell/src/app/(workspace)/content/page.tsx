@@ -670,6 +670,7 @@ function SortableTreeNode({
   onCreateChild: (type: 'doc' | 'table') => void;
   creating?: boolean;
 }) {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: nodeId });
   const [showAddMenu, setShowAddMenu] = useState(false);
 
