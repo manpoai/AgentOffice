@@ -49,6 +49,12 @@ try {
   console.log('[gateway] DB migrated: added pending_approval column');
 } catch { /* already exists */ }
 
+// Migrate: add avatar_url column
+try {
+  db.exec('ALTER TABLE agent_accounts ADD COLUMN avatar_url TEXT');
+  console.log('[gateway] DB migrated: added avatar_url column');
+} catch { /* already exists */ }
+
 // Migrate: create thread_links table
 try {
   db.exec(`CREATE TABLE IF NOT EXISTS thread_links (
@@ -1886,10 +1892,10 @@ app.get('/api/admin/agents', authenticateAdmin, (req, res) => {
 
 // Agent-facing: list other agents (public info only)
 app.get('/api/agents', authenticateAgent, (req, res) => {
-  const agents = db.prepare('SELECT id, name, display_name, capabilities, online, last_seen_at FROM agent_accounts WHERE pending_approval = 0 OR pending_approval IS NULL').all();
+  const agents = db.prepare('SELECT id, name, display_name, avatar_url, capabilities, online, last_seen_at FROM agent_accounts WHERE pending_approval = 0 OR pending_approval IS NULL').all();
   res.json({
     agents: agents.map(a => ({
-      agent_id: a.id, name: a.name, display_name: a.display_name,
+      agent_id: a.id, name: a.name, display_name: a.display_name, avatar_url: a.avatar_url || null,
       capabilities: JSON.parse(a.capabilities || '[]'),
       online: !!a.online, last_seen_at: a.last_seen_at,
     })),
@@ -1898,13 +1904,30 @@ app.get('/api/agents', authenticateAgent, (req, res) => {
 
 // Agent-facing: get info about a specific agent
 app.get('/api/agents/:name', authenticateAgent, (req, res) => {
-  const agent = db.prepare('SELECT id, name, display_name, capabilities, online, last_seen_at FROM agent_accounts WHERE name = ? AND (pending_approval = 0 OR pending_approval IS NULL)').get(req.params.name);
+  const agent = db.prepare('SELECT id, name, display_name, avatar_url, capabilities, online, last_seen_at FROM agent_accounts WHERE name = ? AND (pending_approval = 0 OR pending_approval IS NULL)').get(req.params.name);
   if (!agent) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({
-    agent_id: agent.id, name: agent.name, display_name: agent.display_name,
+    agent_id: agent.id, name: agent.name, display_name: agent.display_name, avatar_url: agent.avatar_url || null,
     capabilities: JSON.parse(agent.capabilities || '[]'),
     online: !!agent.online, last_seen_at: agent.last_seen_at,
   });
+});
+
+// Update agent profile (display_name, avatar_url) — accessible to any authenticated agent
+app.patch('/api/agents/:name', authenticateAgent, (req, res) => {
+  const { display_name, avatar_url } = req.body;
+  const target = db.prepare('SELECT id FROM agent_accounts WHERE name = ?').get(req.params.name);
+  if (!target) return res.status(404).json({ error: 'NOT_FOUND' });
+  const updates = [];
+  const values = [];
+  if (display_name !== undefined) { updates.push('display_name = ?'); values.push(display_name); }
+  if (avatar_url !== undefined) { updates.push('avatar_url = ?'); values.push(avatar_url); }
+  if (updates.length === 0) return res.status(400).json({ error: 'NO_FIELDS' });
+  updates.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(target.id);
+  db.prepare(`UPDATE agent_accounts SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  res.json({ ok: true });
 });
 
 // Helper: find Town Square channel ID

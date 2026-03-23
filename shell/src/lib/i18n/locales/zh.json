@@ -9,6 +9,10 @@
     "toLight": "切换浅色",
     "toDark": "切换深色"
   },
+  "settings": {
+    "theme": "主题",
+    "language": "语言"
+  },
   "shortcuts": {
     "title": "键盘快捷键",
     "global": "全局",

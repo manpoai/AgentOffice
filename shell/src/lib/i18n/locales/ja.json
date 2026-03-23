@@ -9,6 +9,10 @@
     "toLight": "ライトモードに切替",
     "toDark": "ダークモードに切替"
   },
+  "settings": {
+    "theme": "テーマ",
+    "language": "言語"
+  },
   "shortcuts": {
     "title": "キーボードショートカット",
     "global": "グローバル",

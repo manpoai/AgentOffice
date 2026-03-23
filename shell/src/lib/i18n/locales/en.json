@@ -9,6 +9,10 @@
     "toLight": "Switch to Light",
     "toDark": "Switch to Dark"
   },
+  "settings": {
+    "theme": "Theme",
+    "language": "Language"
+  },
   "shortcuts": {
     "title": "Keyboard Shortcuts",
     "global": "Global",

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS agent_accounts (
   last_seen_at INTEGER,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL,
+  avatar_url  TEXT,
   ol_token    TEXT,   -- per-agent Outline API token
   plane_token TEXT,   -- per-agent Plane API token
   nc_password TEXT    -- per-agent NocoDB password (agent email = name@nc-agents.local)

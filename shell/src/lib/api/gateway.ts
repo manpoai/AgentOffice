@@ -16,6 +16,7 @@ export interface Agent {
   agent_id: string;
   name: string;
   display_name?: string;
+  avatar_url?: string | null;
   type?: string;
   online: boolean;
   capabilities?: string[];
@@ -47,6 +48,17 @@ export async function listAgents(): Promise<Agent[]> {
 
 export async function getAgent(name: string): Promise<Agent> {
   return gwFetch(`/agents/${name}`);
+}
+
+export async function updateAgentProfile(name: string, fields: {
+  display_name?: string;
+  avatar_url?: string;
+}): Promise<void> {
+  await gwFetch(`/agents/${name}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
 }
 
 // ── Tasks ──
