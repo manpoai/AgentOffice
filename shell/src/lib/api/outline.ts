@@ -102,20 +102,52 @@ export async function deleteDocument(id: string): Promise<void> {
   await olFetch('documents.delete', { id });
 }
 
-/** Upload an attachment (image) to Outline. Returns { url, ... } */
+/** Upload an attachment (image) to Outline using the two-step presigned upload flow.
+ *  Step 1: POST /api/attachments.create (JSON) → get presigned S3 POST fields + attachment URL
+ *  Step 2: POST to uploadUrl with presigned form fields + file
+ *  Returns the attachment URL for use in documents. */
 export async function uploadAttachment(file: File, documentId?: string): Promise<{ data: { url: string; name: string; size: number } }> {
-  const form = new FormData();
-  form.append('file', file);
-  form.append('name', file.name || 'image.png');
-  form.append('size', String(file.size));
-  if (documentId) form.append('documentId', documentId);
-  const res = await fetch(`${BASE}/attachments.create`, {
+  // Step 1: Create attachment record and get presigned upload details
+  const createBody: Record<string, unknown> = {
+    name: file.name || 'image.png',
+    size: file.size,
+    contentType: file.type || 'image/png',
+    preset: 'documentAttachment',
+  };
+  if (documentId) createBody.documentId = documentId;
+
+  const createRes = await fetch(`${BASE}/attachments.create`, {
     method: 'POST',
-    body: form,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(createBody),
   });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Outline attachment upload: ${res.status} ${errText}`);
+  if (!createRes.ok) {
+    const errText = await createRes.text().catch(() => '');
+    throw new Error(`Outline attachment create: ${createRes.status} ${errText}`);
   }
-  return res.json();
+  const createData = await createRes.json();
+  const { uploadUrl, form: formFields, attachment } = createData.data;
+
+  // Step 2: Upload file to S3 via presigned POST
+  const uploadForm = new FormData();
+  for (const [key, value] of Object.entries(formFields)) {
+    uploadForm.append(key, value as string);
+  }
+  uploadForm.append('file', file);
+
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST',
+    body: uploadForm,
+  });
+  if (!uploadRes.ok && uploadRes.status !== 204) {
+    const errText = await uploadRes.text().catch(() => '');
+    throw new Error(`S3 upload failed: ${uploadRes.status} ${errText}`);
+  }
+
+  // Return the attachment URL (rewrite to go through our proxy)
+  const url = attachment.url.startsWith('/api/')
+    ? `${BASE}/${attachment.url.slice(5)}`  // /api/X → /api/outline/X
+    : attachment.url;
+
+  return { data: { url, name: attachment.name, size: attachment.size } };
 }

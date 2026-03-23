@@ -238,13 +238,13 @@ export const markdownSerializer = new MarkdownSerializer(
       state.closeBlock(node);
     },
     bullet_list(state, node) {
-      state.renderList(node, '  ', () => '- ');
+      state.renderList(node, '   ', () => '- ');
     },
     ordered_list(state, node) {
       const start = node.attrs.order || 1;
       const maxW = String(start + node.childCount - 1).length;
-      const space = '  '.repeat(maxW + 2 > 4 ? 1 : 1);
-      state.renderList(node, space, (i: number) => {
+      const indent = ' '.repeat(maxW + 2); // match marker width: "1. " = 3, "10. " = 4
+      state.renderList(node, indent, (i: number) => {
         const nStr = String(start + i);
         return `${' '.repeat(maxW - nStr.length)}${nStr}. `;
       });
@@ -253,7 +253,7 @@ export const markdownSerializer = new MarkdownSerializer(
       state.renderContent(node);
     },
     checkbox_list(state, node) {
-      state.renderList(node, '  ', () => '- ');
+      state.renderList(node, '   ', () => '- ');
     },
     checkbox_item(state, node) {
       state.write(node.attrs.checked ? '[x] ' : '[ ] ');

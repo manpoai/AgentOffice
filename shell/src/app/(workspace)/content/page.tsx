@@ -772,6 +772,7 @@ export default function ContentPage() {
       )}>
         {selectedDoc && selection?.type === 'doc' ? (
           <DocPanel
+            key={selectedDoc.id}
             doc={selectedDoc}
             breadcrumb={getBreadcrumb(selectedDoc.id)}
             onBack={() => setMobileView('list')}
@@ -1064,6 +1065,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showTitleIcon, setShowTitleIcon] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docIdRef = useRef(doc.id);
   const latestRef = useRef({ title: doc.title, text: doc.text, emoji: doc.emoji || null as string | null });
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
@@ -1086,8 +1088,11 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     return () => window.removeEventListener('editor-comment', handler);
   }, []);
 
-  // Only reset local state when switching to a different document
+  // Reset local state and cancel pending saves when switching to a different document
   useEffect(() => {
+    // Cancel any pending save from previous doc
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    docIdRef.current = doc.id;
     setTitle(doc.title);
     setEmoji(doc.emoji?.trim() || null);
     setText(doc.text);
@@ -1112,18 +1117,24 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     latestRef.current = { title: newTitle, text: newText, emoji: newEmoji !== undefined ? newEmoji : latestRef.current.emoji };
     setSaveStatus('unsaved');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    const saveDocId = docIdRef.current; // capture current doc id
     saveTimerRef.current = setTimeout(async () => {
+      // Abort if doc changed since save was scheduled
+      if (saveDocId !== docIdRef.current) return;
       setSaveStatus('saving');
       try {
-        await ol.updateDocument(doc.id, latestRef.current.title, latestRef.current.text, latestRef.current.emoji);
-        setSaveStatus('saved');
-        onSaved();
+        await ol.updateDocument(saveDocId, latestRef.current.title, latestRef.current.text, latestRef.current.emoji);
+        // Only update status if still on the same doc
+        if (saveDocId === docIdRef.current) {
+          setSaveStatus('saved');
+          onSaved();
+        }
       } catch (e) {
         console.error('Auto-save failed:', e);
-        setSaveStatus('error');
+        if (saveDocId === docIdRef.current) setSaveStatus('error');
       }
     }, 1500);
-  }, [doc.id, onSaved]);
+  }, [onSaved]);
 
   useEffect(() => {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };

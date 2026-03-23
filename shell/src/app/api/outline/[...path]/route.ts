@@ -38,10 +38,24 @@ async function proxy(req: NextRequest, pathParts: string[], body?: string) {
     body: body || undefined,
   });
 
+  const contentType = resp.headers.get('Content-Type') || 'application/json';
+
+  // For binary responses (images, etc.), return as arrayBuffer
+  if (contentType.startsWith('image/') || contentType.startsWith('application/octet-stream')) {
+    const data = await resp.arrayBuffer();
+    return new NextResponse(data, {
+      status: resp.status,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': resp.headers.get('Cache-Control') || 'public, max-age=3600',
+      },
+    });
+  }
+
   const data = await resp.text();
   return new NextResponse(data, {
     status: resp.status,
-    headers: { 'Content-Type': resp.headers.get('Content-Type') || 'application/json' },
+    headers: { 'Content-Type': contentType },
   });
 }
 
