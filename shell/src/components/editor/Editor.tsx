@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import 'katex/dist/katex.min.css';
 
 interface EditorProps {
   defaultValue: string;
@@ -45,6 +46,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           { buildKeymap, buildBaseKeymap },
           { slashMenuPlugin },
           { floatingToolbarPlugin },
+          { createNodeViews },
         ] = await Promise.all([
           import('prosemirror-state'),
           import('prosemirror-view'),
@@ -58,6 +60,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           import('./keymap'),
           import('./slash-menu'),
           import('./floating-toolbar'),
+          import('./node-views'),
         ]);
 
         if (destroyed) return;
@@ -90,6 +93,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
         view = new EditorView(editorRef.current!, {
           state,
           editable: () => !readOnly,
+          nodeViews: createNodeViews(),
           dispatchTransaction(transaction) {
             if (!view || destroyed) return;
             const newState = view.state.apply(transaction);
