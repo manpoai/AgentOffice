@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Star, Copy, Download, ChevronRight, Share2, FolderOpen, Smile } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Star, Copy, CopyPlus, Download, ChevronRight, Share2, FolderOpen, Smile } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Editor } from '@/components/editor';
@@ -901,8 +901,10 @@ function DraggableTreeNode({
   isDragActive?: boolean;
 }) {
   const { t } = useT();
+  const queryClient = useQueryClient();
   const { attributes, listeners, setNodeRef } = useDraggable({ id: nodeId });
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   return (
     <div ref={setNodeRef} className="relative" data-tree-id={nodeId}>
@@ -979,13 +981,70 @@ function DraggableTreeNode({
               </>
             )}
           </div>
-          <button
-            onClick={(e) => e.stopPropagation()}
-            className="p-0.5 text-muted-foreground hover:text-foreground rounded"
-            title="More"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowMoreMenu(v => !v); }}
+              className="p-0.5 text-muted-foreground hover:text-foreground rounded"
+              title="More"
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </button>
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); }} />
+                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-40">
+                  {node.type === 'doc' && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setShowMoreMenu(false);
+                        try {
+                          const newDoc = await ol.duplicateDocument(node.rawId);
+                          queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old => [...(old || []), newDoc]);
+                        } catch (err) { console.error('Duplicate failed:', err); }
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors"
+                    >
+                      <CopyPlus className="h-3.5 w-3.5 text-muted-foreground" />
+                      {t('content.duplicate')}
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMoreMenu(false);
+                      // Copy to clipboard
+                      navigator.clipboard.writeText(node.title).catch(() => {});
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                    {t('content.copy')}
+                  </button>
+                  <div className="border-t border-border my-1" />
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setShowMoreMenu(false);
+                      if (!confirm(t('content.deleteConfirm'))) return;
+                      try {
+                        if (node.type === 'doc') {
+                          await ol.deleteDocument(node.rawId);
+                          queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
+                            (old || []).filter(d => d.id !== node.rawId)
+                          );
+                        }
+                      } catch (err) { console.error('Delete failed:', err); }
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {t('content.delete')}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
       {/* Drop indicator: after */}
@@ -1228,6 +1287,14 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                   <DocMenuBtn icon={Star} label={t('content.favorite')} onClick={() => setShowDocMenu(false)} />
                   <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => setShowDocMenu(false)} />
                   <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
+                  <DocMenuBtn icon={CopyPlus} label={t('content.duplicate')} onClick={async () => {
+                    setShowDocMenu(false);
+                    try {
+                      const newDoc = await ol.duplicateDocument(doc.id);
+                      queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old => [...(old || []), newDoc]);
+                      onNavigate(newDoc.id);
+                    } catch (e) { console.error('Duplicate failed:', e); }
+                  }} />
                   <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
                     const blob = new Blob([doc.text], { type: 'text/markdown' });
                     const url = URL.createObjectURL(blob);

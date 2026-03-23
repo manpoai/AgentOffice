@@ -102,6 +102,12 @@ export async function deleteDocument(id: string): Promise<void> {
   await olFetch('documents.delete', { id });
 }
 
+export async function duplicateDocument(id: string): Promise<OLDocument> {
+  const original = await getDocument(id);
+  const newTitle = `${original.title} (copy)`;
+  return createDocument(newTitle, original.text, original.collectionId, original.parentDocumentId || undefined);
+}
+
 /** Upload an attachment (image) to Outline using the two-step presigned upload flow.
  *  Step 1: POST /api/attachments.create (JSON) → get presigned S3 POST fields + attachment URL
  *  Step 2: POST to uploadUrl with presigned form fields + file
