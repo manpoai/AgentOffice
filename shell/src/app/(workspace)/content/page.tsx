@@ -482,23 +482,28 @@ export default function ContentPage() {
   }, []);
 
   const updateDropIntent = useCallback((event: DragOverEvent | DragMoveEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) {
+    const { active } = event;
+    const { x, y } = pointerPosRef.current;
+
+    // Find which tree node is under the cursor using DOM inspection
+    const els = document.elementsFromPoint(x, y);
+    let targetEl: Element | null = null;
+    for (const el of els) {
+      const treeId = (el as HTMLElement).closest?.('[data-tree-id]');
+      if (treeId && treeId.getAttribute('data-tree-id') !== active.id) {
+        targetEl = treeId;
+        break;
+      }
+    }
+
+    if (!targetEl) {
       setDropIntent(null);
       return;
     }
-    const overId = over.id as string;
 
-    // Find the actual DOM element for the over node to get its current rect
-    const overEl = document.querySelector(`[data-tree-id="${overId}"]`);
-    if (!overEl) {
-      setDropIntent({ overId, position: 'inside' });
-      return;
-    }
-
-    const rect = overEl.getBoundingClientRect();
-    const pointerY = pointerPosRef.current.y;
-    const relativeY = pointerY - rect.top;
+    const overId = targetEl.getAttribute('data-tree-id')!;
+    const rect = targetEl.getBoundingClientRect();
+    const relativeY = y - rect.top;
     const ratio = relativeY / rect.height;
 
     // Top 25% = before, bottom 25% = after, middle 50% = inside (become child)
@@ -515,16 +520,19 @@ export default function ContentPage() {
     setDragActiveId(null);
     setDropIntent(null);
 
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
+    const { active } = event;
     const activeId = active.id as string;
-    const overId = over.id as string;
+
+    // Use dropIntent as source of truth (not event.over which may differ due to sortable reordering)
+    if (!intent) return;
+    const overId = intent.overId;
+    if (activeId === overId) return;
+
     const activeNode = effectiveNodes.get(activeId);
     const overNode = effectiveNodes.get(overId);
     if (!activeNode || !overNode) return;
 
-    const position = intent?.overId === overId ? intent.position : 'after';
+    const position = intent.position;
 
     if (position === 'inside') {
       // Reparent: make activeNode a child of overNode
