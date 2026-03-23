@@ -50,6 +50,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           { createNodeViews },
           { imageUploadPlugin },
           { placeholderPlugin },
+          { blockHandlePlugin },
         ] = await Promise.all([
           import('prosemirror-state'),
           import('prosemirror-view'),
@@ -66,6 +67,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           import('./node-views'),
           import('./image-plugin'),
           import('./placeholder-plugin'),
+          import('./block-handle-plugin'),
         ]);
 
         if (destroyed) return;
@@ -93,6 +95,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           plugins.push(floatingToolbarPlugin());
           plugins.push(imageUploadPlugin(() => documentId));
           plugins.push(placeholderPlugin(placeholder || ''));
+          plugins.push(blockHandlePlugin());
         }
 
         const state = EditorState.create({ doc, plugins });
