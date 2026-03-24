@@ -157,38 +157,65 @@ md.use(mathBlockPlugin);
  * images have width or alignment attributes.
  */
 function htmlImgPlugin(mdInstance: MarkdownItType) {
-  mdInstance.core.ruler.after('inline', 'html_img', (state) => {
-    for (const blockToken of state.tokens) {
-      if (blockToken.type !== 'inline' || !blockToken.children) continue;
-      const newChildren: Token[] = [];
-      for (const tok of blockToken.children) {
-        if (tok.type === 'html_inline' && /^<img\s/i.test(tok.content)) {
-          const html = tok.content;
-          const srcMatch = html.match(/\bsrc="([^"]+)"/);
-          const altMatch = html.match(/\balt="([^"]+)"/);
-          const titleMatch = html.match(/\btitle="([^"]+)"/);
-          const widthMatch = html.match(/\bwidth="([^"]+)"/);
-          const alignMatch = html.match(/\bdata-align="([^"]+)"/);
-          if (srcMatch) {
-            const imgToken = new state.Token('image', 'img', 0);
-            imgToken.attrSet('src', srcMatch[1]);
-            if (titleMatch) imgToken.attrSet('title', titleMatch[1]);
-            if (widthMatch) imgToken.attrSet('width', widthMatch[1]);
-            if (alignMatch) imgToken.attrSet('data-align', alignMatch[1]);
-            imgToken.children = [];
-            if (altMatch) {
-              const textToken = new state.Token('text', '', 0);
-              textToken.content = altMatch[1];
-              imgToken.children.push(textToken);
-            }
-            newChildren.push(imgToken);
-            continue;
-          }
-        }
-        newChildren.push(tok);
-      }
-      blockToken.children = newChildren;
+  // Helper: create an image token from an HTML <img> string
+  function makeImgToken(state: any, html: string): Token | null {
+    const srcMatch = html.match(/\bsrc="([^"]+)"/);
+    if (!srcMatch) return null;
+    const altMatch = html.match(/\balt="([^"]+)"/);
+    const titleMatch = html.match(/\btitle="([^"]+)"/);
+    const widthMatch = html.match(/\bwidth="([^"]+)"/);
+    const alignMatch = html.match(/\bdata-align="([^"]+)"/);
+    const imgToken = new state.Token('image', 'img', 0);
+    imgToken.attrSet('src', srcMatch[1]);
+    if (titleMatch) imgToken.attrSet('title', titleMatch[1]);
+    if (widthMatch) imgToken.attrSet('width', widthMatch[1]);
+    if (alignMatch) imgToken.attrSet('data-align', alignMatch[1]);
+    imgToken.children = [];
+    if (altMatch) {
+      const textToken = new state.Token('text', '', 0);
+      textToken.content = altMatch[1];
+      imgToken.children.push(textToken);
     }
+    return imgToken;
+  }
+
+  mdInstance.core.ruler.after('inline', 'html_img', (state) => {
+    const newTokens: Token[] = [];
+    for (const blockToken of state.tokens) {
+      // Case 1: html_block containing <img> — convert to paragraph wrapping an image
+      // markdown-it emits html_block when <img> is on its own line or indented
+      if (blockToken.type === 'html_block' && /^[\s]*<img\s/i.test(blockToken.content)) {
+        const imgToken = makeImgToken(state, blockToken.content);
+        if (imgToken) {
+          const pOpen = new state.Token('paragraph_open', 'p', 1);
+          const inline = new state.Token('inline', '', 0);
+          inline.content = '';
+          inline.children = [imgToken];
+          const pClose = new state.Token('paragraph_close', 'p', -1);
+          newTokens.push(pOpen, inline, pClose);
+          continue;
+        }
+      }
+
+      // Case 2: inline children containing html_inline <img> tags
+      if (blockToken.type === 'inline' && blockToken.children) {
+        const newChildren: Token[] = [];
+        for (const tok of blockToken.children) {
+          if (tok.type === 'html_inline' && /^<img\s/i.test(tok.content)) {
+            const imgToken = makeImgToken(state, tok.content);
+            if (imgToken) {
+              newChildren.push(imgToken);
+              continue;
+            }
+          }
+          newChildren.push(tok);
+        }
+        blockToken.children = newChildren;
+      }
+
+      newTokens.push(blockToken);
+    }
+    state.tokens = newTokens;
   });
 }
 md.use(htmlImgPlugin);

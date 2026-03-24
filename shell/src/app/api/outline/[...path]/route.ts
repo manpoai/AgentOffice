@@ -53,6 +53,28 @@ async function proxy(req: NextRequest, pathParts: string[], body?: string) {
   }
 
   const data = await resp.text();
+
+  // Strip heavy `text` field from documents.list responses
+  // Sidebar only needs metadata (id, title, icon, parentDocumentId, etc.)
+  // Full text is fetched individually via documents.info when a doc is opened
+  const endpoint = pathParts.join('/');
+  if (endpoint === 'documents.list' && resp.status === 200) {
+    try {
+      const json = JSON.parse(data);
+      if (json.data && Array.isArray(json.data)) {
+        for (const doc of json.data) {
+          delete doc.text;
+        }
+      }
+      return new NextResponse(JSON.stringify(json), {
+        status: resp.status,
+        headers: { 'Content-Type': contentType },
+      });
+    } catch {
+      // If parsing fails, return original response
+    }
+  }
+
   return new NextResponse(data, {
     status: resp.status,
     headers: { 'Content-Type': contentType },
