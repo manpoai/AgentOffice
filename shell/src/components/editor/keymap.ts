@@ -173,15 +173,77 @@ function deleteEmptyFirstBlock(state: EditorState, dispatch?: (tr: Transaction) 
 function protectAtomOnBackspace(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   const { selection } = state;
 
-  // Case 1a: Cursor is right after an inline image atom → select the image
-  // instead of deleting it. This handles "empty line below image" backspace.
+  const { $from, empty } = selection;
+
+  // Case 1: Cursor is in an EMPTY block and previous sibling contains an image
+  // → delete the empty block AND select the image. Must come before Case 2
+  // because ProseMirror's $cursor.nodeBefore can resolve across block boundaries
+  // to the image, causing Case 2 to fire without deleting the empty block.
+  if (empty && $from.parentOffset === 0 && $from.parent.content.size === 0) {
+    // Find previous sibling at any depth
+    let prevNode: any = null;
+    let prevPos = -1;
+    let deleteFrom = -1;
+    let deleteTo = -1;
+
+    for (let d = $from.depth; d >= 1; d--) {
+      const indexInParent = $from.index(d - 1);
+      if (indexInParent > 0) {
+        const parent = $from.node(d - 1);
+        prevNode = parent.child(indexInParent - 1);
+        let p = $from.before(d - 1) + 1;
+        for (let i = 0; i < indexInParent - 1; i++) {
+          p += parent.child(i).nodeSize;
+        }
+        prevPos = p;
+        deleteFrom = $from.before(d);
+        deleteTo = $from.after(d);
+        break;
+      }
+    }
+
+    if (prevNode) {
+      let hasImage = false;
+      prevNode.descendants((node: any) => {
+        if (node.type === schema.nodes.image) hasImage = true;
+        return !hasImage;
+      });
+
+      if (hasImage && dispatch) {
+        const tr = state.tr.delete(deleteFrom, deleteTo);
+        const mappedPrevPos = tr.mapping.map(prevPos);
+        let imagePos = -1;
+        tr.doc.nodeAt(mappedPrevPos)?.descendants((node: any, pos: number) => {
+          if (node.type === schema.nodes.image && imagePos === -1) {
+            imagePos = mappedPrevPos + 1 + pos;
+          }
+          return imagePos === -1;
+        });
+        if (imagePos >= 0) {
+          try {
+            tr.setSelection(NodeSelection.create(tr.doc, imagePos));
+          } catch {
+            // fallback: place cursor at end of previous block
+            const $pos = tr.doc.resolve(Math.max(0, tr.mapping.map(deleteFrom)));
+            const sel = TextSelection.findFrom($pos, -1);
+            if (sel) tr.setSelection(sel);
+          }
+        }
+        dispatch(tr.scrollIntoView());
+        return true;
+      }
+      if (hasImage) return true; // block the backspace even without dispatch
+    }
+  }
+
+  // Case 2: Cursor is right after an inline image atom (same paragraph, non-empty)
+  // → select the image instead of deleting it
   if (selection instanceof TextSelection) {
     const { $cursor } = selection;
     if ($cursor) {
       const nodeBefore = $cursor.nodeBefore;
       const nodeAfter = $cursor.nodeAfter;
 
-      // If node before cursor is an inline atom (image), select it
       if (nodeBefore?.isAtom && nodeBefore.isInline && nodeBefore.type === schema.nodes.image) {
         if (dispatch) {
           const imagePos = $cursor.pos - nodeBefore.nodeSize;
@@ -190,8 +252,7 @@ function protectAtomOnBackspace(state: EditorState, dispatch?: (tr: Transaction)
         return true;
       }
 
-      // Case 1b: text node before cursor has only 1 char and after cursor is an inline atom
-      // → delete only the text character, not the atom
+      // Case 2b: text(1 char) before inline atom → delete text only
       if (nodeBefore?.isText && nodeBefore.nodeSize === 1 && nodeAfter?.isAtom && nodeAfter.isInline) {
         if (dispatch) {
           dispatch(state.tr.delete($cursor.pos - 1, $cursor.pos).scrollIntoView());
@@ -201,73 +262,7 @@ function protectAtomOnBackspace(state: EditorState, dispatch?: (tr: Transaction)
     }
   }
 
-  // Case 2: Block-level protection — cursor at start of empty block,
-  // previous block contains an image → delete empty block, select image
-  const { $from, empty } = selection;
-  if (!empty) return false;
-  if ($from.parentOffset !== 0) return false;
-
-  const currentBlock = $from.parent;
-  const currentIsEmpty = currentBlock.content.size === 0;
-  if (!currentIsEmpty) return false;
-
-  // Find the previous sibling block at any depth
-  // Walk up to find the level where we have a previous sibling
-  let prevNode: any = null;
-  let prevPos = -1;
-  let deleteFrom = -1;
-  let deleteTo = -1;
-
-  for (let d = $from.depth; d >= 1; d--) {
-    const indexInParent = $from.index(d - 1);
-    if (indexInParent > 0) {
-      // There's a previous sibling at this depth
-      const parent = $from.node(d - 1);
-      prevNode = parent.child(indexInParent - 1);
-      // Calculate position of previous sibling
-      prevPos = $from.before(d);
-      // Walk backwards to find the start of the previous sibling
-      let p = $from.before(d - 1) + 1; // start of parent's content
-      for (let i = 0; i < indexInParent - 1; i++) {
-        p += parent.child(i).nodeSize;
-      }
-      prevPos = p; // position of previous sibling
-      deleteFrom = $from.before(d);
-      deleteTo = $from.after(d);
-      break;
-    }
-  }
-
-  if (!prevNode) return false;
-
-  // Check if previous sibling contains an image
-  let hasImage = false;
-  prevNode.descendants((node: any) => {
-    if (node.type === schema.nodes.image) hasImage = true;
-    return !hasImage;
-  });
-
-  if (!hasImage) return false;
-
-  if (dispatch) {
-    // Delete the empty block and select the image in the previous block
-    const tr = state.tr.delete(deleteFrom, deleteTo);
-    // Find the image node position to select it
-    const mappedPrevPos = tr.mapping.map(prevPos);
-    let imagePos = -1;
-    tr.doc.nodeAt(mappedPrevPos)?.descendants((node: any, pos: number) => {
-      if (node.type === schema.nodes.image && imagePos === -1) {
-        imagePos = mappedPrevPos + 1 + pos; // +1 for paragraph open tag offset
-      }
-      return imagePos === -1;
-    });
-    if (imagePos >= 0) {
-      // Select the image node
-      tr.setSelection(NodeSelection.create(tr.doc, imagePos));
-    }
-    dispatch(tr.scrollIntoView());
-  }
-  return true;
+  return false;
 }
 
 /**
