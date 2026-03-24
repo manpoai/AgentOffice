@@ -115,6 +115,13 @@ export default function ContentPage() {
     queryFn: nc.listTables,
   });
 
+  // Custom doc icons stored in NocoDB (for image-based icons that Outline doesn't support)
+  const { data: customIcons } = useQuery({
+    queryKey: ['doc-icons'],
+    queryFn: nc.getDocIcons,
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: searchResults } = useQuery({
     queryKey: ['outline-search', searchQuery],
     queryFn: () => ol.searchDocuments(searchQuery),
@@ -141,7 +148,7 @@ export default function ContentPage() {
         rawId: doc.id,
         type: 'doc',
         title: doc.title || t('content.untitled'),
-        emoji: doc.emoji,
+        emoji: customIcons?.[doc.id] || doc.icon || doc.emoji,
         createdAt: new Date(doc.createdAt || 0).getTime(),
         updatedAt: doc.updatedAt,
         parentId: doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null,
@@ -159,7 +166,7 @@ export default function ContentPage() {
       });
     });
     return map;
-  }, [docs, tables, t]);
+  }, [docs, tables, customIcons, t]);
 
   // Apply treeState parents to nodes (for tables parented under docs, etc.)
   const effectiveNodes = useMemo(() => {
@@ -252,7 +259,7 @@ export default function ContentPage() {
             rawId: r.document.id,
             type: 'doc' as const,
             title: r.document.title,
-            emoji: r.document.emoji,
+            emoji: customIcons?.[r.document.id] || (r.document as any).icon || r.document.emoji,
             createdAt: 0,
             parentId: null,
           }))
@@ -808,6 +815,7 @@ export default function ContentPage() {
           <DocPanel
             key={selectedDoc.id}
             doc={selectedDoc}
+            customIcon={customIcons?.[selectedDoc.id]}
             breadcrumb={getBreadcrumb(selectedDoc.id)}
             onBack={() => setMobileView('list')}
             onSaved={refreshDocs}
@@ -1151,8 +1159,9 @@ function TreeNodeItem({
 
 /* Emoji picker is now a separate component: @/components/EmojiPicker */
 
-function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
+function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   doc: ol.OLDocument;
+  customIcon?: string;
   breadcrumb: { id: string; title: string }[];
   onBack: () => void;
   onSaved: () => void;
@@ -1195,7 +1204,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const [showHistory, setShowHistory] = useState(false);
   const [commentQuote, setCommentQuote] = useState('');
   const [title, setTitle] = useState(doc.title);
-  const [emoji, setEmoji] = useState<string | null>(doc.emoji?.trim() || null);
+  const [emoji, setEmoji] = useState<string | null>(customIcon || (doc as any).icon?.trim() || doc.emoji?.trim() || null);
   const [text, setText] = useState(doc.text);
   const [deleting, setDeleting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
@@ -1214,7 +1223,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveVersionRef = useRef(0); // Tracks which save version is latest
   const docIdRef = useRef(doc.id);
-  const latestRef = useRef({ title: doc.title, text: doc.text, emoji: doc.emoji || null as string | null });
+  const latestRef = useRef({ title: doc.title, text: doc.text, emoji: (customIcon || (doc as any).icon || doc.emoji || null) as string | null });
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   // Optimistically update sidebar doc list cache when title/emoji change
@@ -1320,9 +1329,9 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
     docIdRef.current = doc.id;
     setTitle(doc.title);
-    setEmoji(doc.emoji?.trim() || null);
+    setEmoji(customIcon || (doc as any).icon?.trim() || doc.emoji?.trim() || null);
     setText(doc.text);
-    latestRef.current = { title: doc.title, text: doc.text, emoji: doc.emoji?.trim() || null };
+    latestRef.current = { title: doc.title, text: doc.text, emoji: (customIcon || (doc as any).icon || doc.emoji || null) as string | null };
     setSaveStatus('saved');
     setShowHistory(false);
     setPreviewRevision(null);
@@ -1357,7 +1366,9 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
         const savingTitle = latestRef.current.title;
         const savingText = latestRef.current.text;
         const savingEmoji = latestRef.current.emoji;
-        await ol.updateDocument(saveDocId, savingTitle, savingText, savingEmoji);
+        // Don't send URL-based icons to Outline (they're stored in NocoDB)
+        const outlineEmoji = savingEmoji && (savingEmoji.startsWith('/api/') || savingEmoji.startsWith('http')) ? null : savingEmoji;
+        await ol.updateDocument(saveDocId, savingTitle, savingText, outlineEmoji);
         // Only update cache if no newer save has been scheduled since this one started
         if (saveVersionRef.current !== thisVersion) return;
         // Update the cached doc so switching away and back preserves edits
@@ -1391,11 +1402,33 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     scheduleSave(newTitle, text);
   };
 
-  const handleEmojiSelect = (selectedEmoji: string | null) => {
+  const handleEmojiSelect = async (selectedEmoji: string | null) => {
     setEmoji(selectedEmoji);
     setShowEmojiPicker(false);
     updateDocCache(title, selectedEmoji);
-    scheduleSave(title, text, selectedEmoji);
+
+    const isUrl = selectedEmoji && (selectedEmoji.startsWith('/api/') || selectedEmoji.startsWith('http'));
+
+    if (isUrl) {
+      // Image-based icon: save to NocoDB (Outline doesn't support URL icons)
+      // Clear Outline's native icon
+      scheduleSave(title, text, null);
+      try {
+        await nc.setDocIcon(doc.id, selectedEmoji);
+        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
+      } catch (e) {
+        console.error('Failed to save custom icon:', e);
+      }
+    } else {
+      // Unicode emoji or null (remove): save to Outline, remove custom icon
+      scheduleSave(title, text, selectedEmoji);
+      try {
+        await nc.removeDocIcon(doc.id);
+        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
+      } catch (e) {
+        // Ignore if no custom icon existed
+      }
+    }
   };
 
   const handleTextChange = (newText: string) => {
@@ -1697,7 +1730,7 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                 const restored = await queryClient.fetchQuery({ queryKey: ['outline-doc', doc.id], queryFn: () => ol.getDocument(doc.id) });
                 setTitle(restored.title);
                 setText(restored.text);
-                latestRef.current = { title: restored.title, text: restored.text, emoji: restored.emoji?.trim() || null };
+                latestRef.current = { title: restored.title, text: restored.text, emoji: ((restored as any).icon || restored.emoji || null) as string | null };
                 setEditorKey(k => k + 1);
                 onSaved();
               }}

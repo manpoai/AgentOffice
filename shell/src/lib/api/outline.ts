@@ -21,7 +21,8 @@ export interface OLDocument {
   id: string;
   title: string;
   text: string;
-  emoji?: string;
+  emoji?: string;  // deprecated — Outline now uses 'icon'
+  icon?: string;    // unicode emoji only (Outline rejects URLs)
   createdAt: string;
   updatedAt: string;
   publishedAt: string | null;
@@ -102,8 +103,8 @@ export async function updateDocument(id: string, title?: string, text?: string, 
   const body: Record<string, unknown> = { id };
   if (title !== undefined) body.title = title;
   if (text !== undefined) body.text = text;
-  // Outline expects emoji as string or null to remove
-  if (emoji !== undefined) body.emoji = emoji || null;
+  // Outline uses 'icon' field (unicode emoji only, rejects URLs)
+  if (emoji !== undefined) body.icon = emoji || null;
   if (opts?.fullWidth !== undefined) body.fullWidth = opts.fullWidth;
   if (opts?.insightsEnabled !== undefined) body.insightsEnabled = opts.insightsEnabled;
   const data = await olFetch<{ data: OLDocument }>('documents.update', body);

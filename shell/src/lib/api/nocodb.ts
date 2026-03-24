@@ -285,3 +285,38 @@ export async function createSort(viewId: string, sort: { fk_column_id: string; d
 export async function deleteSort(sortId: string): Promise<void> {
   await ncFetch(`/sorts/${sortId}`, { method: 'DELETE' });
 }
+
+// ── Doc custom icons (NocoDB table: doc_icons) ──
+
+const DOC_ICONS_TABLE = 'mhkn845dh93uuiv';
+
+/** Fetch all custom doc icon mappings: { [doc_id]: icon_url } */
+export async function getDocIcons(): Promise<Record<string, string>> {
+  const result = await queryRows(DOC_ICONS_TABLE, { limit: 1000 });
+  const map: Record<string, string> = {};
+  for (const row of result.list) {
+    const docId = row['doc_id'] as string;
+    const iconUrl = row['icon_url'] as string;
+    if (docId && iconUrl) map[docId] = iconUrl;
+  }
+  return map;
+}
+
+/** Set a custom icon URL for a document (upserts) */
+export async function setDocIcon(docId: string, iconUrl: string): Promise<void> {
+  // Check if entry already exists
+  const existing = await queryRows(DOC_ICONS_TABLE, { where: `(doc_id,eq,${docId})`, limit: 1 });
+  if (existing.list.length > 0) {
+    await updateRow(DOC_ICONS_TABLE, existing.list[0]['Id'] as number, { icon_url: iconUrl });
+  } else {
+    await insertRow(DOC_ICONS_TABLE, { doc_id: docId, icon_url: iconUrl });
+  }
+}
+
+/** Remove custom icon for a document */
+export async function removeDocIcon(docId: string): Promise<void> {
+  const existing = await queryRows(DOC_ICONS_TABLE, { where: `(doc_id,eq,${docId})`, limit: 1 });
+  if (existing.list.length > 0) {
+    await deleteRow(DOC_ICONS_TABLE, existing.list[0]['Id'] as number);
+  }
+}
