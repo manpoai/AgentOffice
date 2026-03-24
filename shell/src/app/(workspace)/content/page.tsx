@@ -1173,7 +1173,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
 
   // Fetch comments via Outline API (includes resolved status)
   const { data: olComments = [] } = useQuery({
-    queryKey: ['doc-comments', doc.id],
+    queryKey: ['doc-comments-raw', doc.id],
     queryFn: () => ol.listComments(doc.id),
   });
   // Convert Outline comments to the Comment shape expected by the Comments component
