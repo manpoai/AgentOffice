@@ -95,9 +95,11 @@ function smartListBackspace(state: EditorState, dispatch?: (tr: Transaction) => 
 }
 
 /**
- * Prevent joinBackward from merging an empty paragraph back into a preceding list.
- * When cursor is at the start of an empty paragraph right after a list,
- * delete the paragraph and move cursor to end of the list's last item.
+ * Prevent joinBackward from merging a paragraph back into a preceding list.
+ * joinBackward would re-wrap the paragraph as a new list item, causing cycling.
+ *
+ * - Empty paragraph after list: delete the paragraph, cursor to end of last list item.
+ * - Non-empty paragraph after list: join content into the last list item's last paragraph.
  */
 function preventJoinIntoList(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   const { $from, empty } = state.selection;
@@ -105,10 +107,8 @@ function preventJoinIntoList(state: EditorState, dispatch?: (tr: Transaction) =>
   if ($from.parentOffset !== 0) return false;
   // Must be a direct child of doc (top-level paragraph)
   if ($from.depth !== 1) return false;
-  // Current block must be an empty paragraph
   const currentBlock = $from.parent;
   if (currentBlock.type !== schema.nodes.paragraph) return false;
-  if (currentBlock.content.size !== 0) return false;
   // Previous sibling must be a list
   const topIndex = $from.index(0);
   if (topIndex === 0) return false;
@@ -119,15 +119,59 @@ function preventJoinIntoList(state: EditorState, dispatch?: (tr: Transaction) =>
   if (!isListType) return false;
 
   if (dispatch) {
-    // Delete the empty paragraph
     const blockStart = $from.before(1);
     const blockEnd = $from.after(1);
-    const tr = state.tr.delete(blockStart, blockEnd);
-    // Place cursor at the end of the last item in the previous list
-    const $pos = tr.doc.resolve(Math.max(0, blockStart));
-    const sel = TextSelection.findFrom($pos, -1);
-    if (sel) tr.setSelection(sel);
-    dispatch(tr.scrollIntoView());
+
+    if (currentBlock.content.size === 0) {
+      // Empty paragraph: just delete it and move cursor to end of last list item
+      const tr = state.tr.delete(blockStart, blockEnd);
+      const $pos = tr.doc.resolve(Math.max(0, blockStart));
+      const sel = TextSelection.findFrom($pos, -1);
+      if (sel) tr.setSelection(sel);
+      dispatch(tr.scrollIntoView());
+    } else {
+      // Non-empty paragraph: append its content to the last list item's last paragraph.
+      // Use replaceWith to delete paragraph and insert content at join point in one step.
+      const lastItem = prevBlock.child(prevBlock.childCount - 1);
+      const lastItemLastChild = lastItem.child(lastItem.childCount - 1);
+
+      // Calculate the join point: end of last paragraph content in last list item
+      // listStart = position of the list node (sum of all doc children before it)
+      let listStart = 0;
+      for (let i = 0; i < topIndex - 1; i++) {
+        listStart += state.doc.child(i).nodeSize;
+      }
+      let joinPos = listStart + 1; // inside the list
+      for (let i = 0; i < prevBlock.childCount - 1; i++) {
+        joinPos += prevBlock.child(i).nodeSize;
+      }
+      joinPos += 1; // inside last list_item
+      for (let i = 0; i < lastItem.childCount - 1; i++) {
+        joinPos += lastItem.child(i).nodeSize;
+      }
+      joinPos += 1; // inside last paragraph
+      joinPos += lastItemLastChild.content.size; // end of content
+
+      // Replace the range from joinPos to blockEnd with the paragraph's inline content.
+      // This effectively: closes the last paragraph at joinPos, skips the closing tags
+      // of list_item/list and the paragraph node, and replaces with inline content.
+      // But we can't do that directly — the range crosses node boundaries.
+      //
+      // Simpler approach: two-step transaction.
+      // 1. Insert content at joinPos
+      // 2. Delete the paragraph (now at shifted position)
+      const tr = state.tr;
+      // Step 1: insert content at joinPos (inside the list)
+      tr.insert(joinPos, currentBlock.content);
+      // Step 2: delete the standalone paragraph (position shifted by insert)
+      const newBlockStart = tr.mapping.map(blockStart);
+      const newBlockEnd = tr.mapping.map(blockEnd);
+      tr.delete(newBlockStart, newBlockEnd);
+      // Cursor at the join point: use mapResult with bias -1 to stay before inserted content
+      const cursorPos = tr.mapping.map(joinPos, -1);
+      tr.setSelection(TextSelection.create(tr.doc, cursorPos));
+      dispatch(tr.scrollIntoView());
+    }
   }
   return true;
 }
