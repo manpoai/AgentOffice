@@ -14,7 +14,16 @@ const QUICK_EMOJIS = ['👍', '❤️', '😄', '🎉', '👀', '🚀'];
 
 export function MessageArea({ channelId }: { channelId: string }) {
   const { t } = useT();
-  const { messages, setMessages, setUsers, users, channels, setMobileView, addMessage, myUserId } = useIMStore();
+  const { messages, setMessages, setUsers, users, channels, setMobileView, addMessage, myUserId, agentAvatars } = useIMStore();
+
+  /** Get avatar URL for a user — checks Gateway agent avatars first, falls back to Mattermost */
+  const getAvatarUrl = useCallback((userId: string): string => {
+    const user = users[userId];
+    if (user?.username && agentAvatars[user.username]) {
+      return agentAvatars[user.username];
+    }
+    return mm.getProfileImageUrl(userId);
+  }, [users, agentAvatars]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -22,10 +31,12 @@ export function MessageArea({ channelId }: { channelId: string }) {
   const [menuPostId, setMenuPostId] = useState<string | null>(null);
   const [emojiPickerPostId, setEmojiPickerPostId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<mm.MMPost | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<{ file: File; info?: mm.MMFileInfo; uploading: boolean }[]>([]);
   const [cursorPos, setCursorPos] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const channel = channels.find(c => c.id === channelId);
@@ -124,15 +135,36 @@ export function MessageArea({ channelId }: { channelId: string }) {
 
   const channelMessages = messages[channelId] || [];
 
+  const handleFileSelect = async (files: FileList) => {
+    const newPending = Array.from(files).map(file => ({ file, uploading: true }));
+    setPendingFiles(prev => [...prev, ...newPending]);
+
+    for (let i = 0; i < newPending.length; i++) {
+      try {
+        const info = await mm.uploadFile(channelId, newPending[i].file);
+        setPendingFiles(prev => prev.map(p =>
+          p.file === newPending[i].file ? { ...p, info, uploading: false } : p
+        ));
+      } catch (e) {
+        console.error('File upload failed:', e);
+        setPendingFiles(prev => prev.filter(p => p.file !== newPending[i].file));
+      }
+    }
+  };
+
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    const fileIds = pendingFiles.filter(p => p.info).map(p => p.info!.id);
+    if ((!text && fileIds.length === 0) || sending) return;
     setSending(true);
     try {
-      const post = await mm.createPost(channelId, text, replyTo?.id);
+      const post = fileIds.length > 0
+        ? await mm.createPostWithFiles(channelId, text, fileIds, replyTo?.id)
+        : await mm.createPost(channelId, text, replyTo?.id);
       addMessage(post);
       setInput('');
       setReplyTo(null);
+      setPendingFiles([]);
     } catch (e) {
       console.error('Send failed:', e);
     } finally {
@@ -206,7 +238,7 @@ export function MessageArea({ channelId }: { channelId: string }) {
             const parts = channel.name?.split('__') || [];
             const otherUid = parts.find(id => id !== myUserId) || parts[0];
             return otherUid ? (
-              <img src={mm.getProfileImageUrl(otherUid)} alt="" className="w-10 h-10 rounded-full bg-muted border border-black/10 shrink-0" />
+              <img src={getAvatarUrl(otherUid)} alt="" className="w-10 h-10 rounded-full bg-muted border border-black/10 shrink-0" />
             ) : null;
           })() : null}
           <div className="flex-1 min-w-0">
@@ -292,7 +324,7 @@ export function MessageArea({ channelId }: { channelId: string }) {
                 {showHeader && (
                   <div className="flex items-center gap-2 mb-0.5">
                     <img
-                      src={mm.getProfileImageUrl(post.user_id)}
+                      src={getAvatarUrl(post.user_id)}
                       alt=""
                       className="w-8 h-8 rounded-full bg-muted shrink-0"
                     />
@@ -311,7 +343,7 @@ export function MessageArea({ channelId }: { channelId: string }) {
                 {replyParent && (
                   <div className="pl-10 flex items-center gap-1.5 mb-0.5 group/reply cursor-pointer hover:bg-accent/20 rounded py-0.5 -mx-1 px-1 transition-colors">
                     <div className="w-4 h-3 border-l-2 border-t-2 border-sidebar-primary/40 rounded-tl shrink-0" />
-                    <img src={mm.getProfileImageUrl(replyParent.user_id)} alt="" className="w-3.5 h-3.5 rounded-full bg-muted shrink-0" />
+                    <img src={getAvatarUrl(replyParent.user_id)} alt="" className="w-3.5 h-3.5 rounded-full bg-muted shrink-0" />
                     <span className="text-[10px] text-sidebar-primary/80 font-medium shrink-0">
                       {replyUser?.nickname || replyUser?.username || '...'}
                     </span>
@@ -431,7 +463,29 @@ export function MessageArea({ channelId }: { channelId: string }) {
             </button>
           </div>
         )}
-        <div className="bg-white dark:bg-muted rounded-lg border border-[#BCC0C2] dark:border-border focus-within:border-sidebar-primary/50 transition-colors">
+        {/* Pending file attachments */}
+        {pendingFiles.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-accent/30 rounded-t-lg flex-wrap">
+            {pendingFiles.map((pf, i) => (
+              <div key={i} className="flex items-center gap-1.5 bg-card border border-border rounded px-2 py-1 text-xs">
+                {pf.file.type.startsWith('image/') ? (
+                  <img src={URL.createObjectURL(pf.file)} alt="" className="w-8 h-8 rounded object-cover" />
+                ) : (
+                  <File className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+                <span className="truncate max-w-[100px]">{pf.file.name}</span>
+                {pf.uploading && <span className="text-[10px] text-muted-foreground animate-pulse">...</span>}
+                <button
+                  onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={cn("bg-white dark:bg-muted rounded-lg border border-[#BCC0C2] dark:border-border focus-within:border-sidebar-primary/50 transition-colors", pendingFiles.length > 0 && "rounded-t-none border-t-0")}>
           <div className="relative">
             <textarea
               ref={textareaRef}
@@ -481,11 +535,21 @@ export function MessageArea({ channelId }: { channelId: string }) {
               <FmtBtn icon={ListOrdered} title="有序列表" onClick={() => insertPrefix('1. ')} />
             </div>
             <div className="flex items-center gap-0.5">
-              <FmtBtn icon={Paperclip} title="附件" onClick={() => {}} />
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={e => {
+                  if (e.target.files?.length) handleFileSelect(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              <FmtBtn icon={Paperclip} title="附件" onClick={() => fileInputRef.current?.click()} />
               <FmtBtn icon={Smile} title="表情" onClick={() => {}} />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || sending}
+                disabled={(!input.trim() && pendingFiles.filter(p => p.info).length === 0) || sending}
                 className="ml-1 p-1.5 text-sidebar-primary hover:bg-sidebar-primary/10 disabled:text-muted-foreground/40 rounded transition-colors"
                 title="发送 (Enter)"
               >
@@ -535,12 +599,28 @@ function FmtBtn({ icon: Icon, title, onClick }: { icon: React.ComponentType<{ cl
 }
 
 function MessageContent({ text, files }: { text: string; files?: mm.MMFileInfo[] }) {
+  const imageFiles = files?.filter(f => ['jpg','jpeg','png','gif','webp','svg'].includes(f.extension)) || [];
+  const otherFiles = files?.filter(f => !['jpg','jpeg','png','gif','webp','svg'].includes(f.extension)) || [];
+
   return (
     <>
       {text && <MarkdownText text={text} />}
-      {files && files.length > 0 && (
+      {imageFiles.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-1.5">
+          {imageFiles.map(f => (
+            <a key={f.id} href={`/api/mm/files/${f.id}`} target="_blank" rel="noopener noreferrer">
+              <img
+                src={`/api/mm/files/${f.id}/preview`}
+                alt={f.name}
+                className="max-w-[300px] max-h-[200px] rounded-lg border border-border object-cover hover:opacity-90 transition-opacity cursor-pointer"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {otherFiles.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-1">
-          {files.map(f => (
+          {otherFiles.map(f => (
             <a
               key={f.id}
               href={`/api/mm/files/${f.id}`}

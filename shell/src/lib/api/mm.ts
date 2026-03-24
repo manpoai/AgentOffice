@@ -187,6 +187,41 @@ export async function autocompleteUsers(term: string, teamId?: string): Promise<
   return data.users || [];
 }
 
+// ── File uploads ──
+
+export async function uploadFile(channelId: string, file: File): Promise<MMFileInfo> {
+  const form = new FormData();
+  form.append('files', file);
+  form.append('channel_id', channelId);
+  const res = await fetch(`${BASE}/files`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error(`MM file upload: ${res.status}`);
+  const data = await res.json();
+  return data.file_infos[0];
+}
+
+export async function createPostWithFiles(channelId: string, message: string, fileIds: string[], rootId?: string): Promise<MMPost> {
+  return mmFetch('/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel_id: channelId, message, file_ids: fileIds, root_id: rootId || '' }),
+  });
+}
+
+export function getFileUrl(fileId: string): string {
+  return `${BASE}/files/${fileId}`;
+}
+
+export function getFileThumbnailUrl(fileId: string): string {
+  return `${BASE}/files/${fileId}/thumbnail`;
+}
+
+export function getFilePreviewUrl(fileId: string): string {
+  return `${BASE}/files/${fileId}/preview`;
+}
+
 export async function getChannelMembersList(channelId: string): Promise<MMUser[]> {
   const members = await mmFetch<MMChannelMember[]>(`/channels/${channelId}/members?per_page=200`);
   if (members.length === 0) return [];
