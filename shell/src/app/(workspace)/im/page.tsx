@@ -4,13 +4,14 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useIMStore } from '@/lib/stores/im';
 import * as mm from '@/lib/api/mm';
+import * as gw from '@/lib/api/gateway';
 import { ChannelList } from './channel-list';
 import { MessageArea } from './message-area';
 import { useMMPolling } from '@/lib/hooks/use-mm-websocket';
 import { useT } from '@/lib/i18n';
 
 export default function IMPage() {
-  const { setChannels, setChannelMembers, setUsers, setMyUserId, activeChannelId, mobileView } = useIMStore();
+  const { setChannels, setChannelMembers, setUsers, setMyUserId, setAgentAvatars, activeChannelId, mobileView } = useIMStore();
   const { t } = useT();
 
   // Real-time message polling
@@ -28,6 +29,17 @@ export default function IMPage() {
       setUsers([me]);
     }
   }, [me, setMyUserId, setUsers]);
+
+  // Fetch agent avatars from Gateway for use in IM
+  useEffect(() => {
+    gw.listAgents().then(agents => {
+      const avatars: Record<string, string> = {};
+      agents.forEach(a => {
+        if (a.avatar_url) avatars[a.name] = a.avatar_url;
+      });
+      setAgentAvatars(avatars);
+    }).catch(() => {});
+  }, [setAgentAvatars]);
 
   // Fetch teams → channels
   const { data: teams } = useQuery({
@@ -68,7 +80,7 @@ export default function IMPage() {
       // Restore or auto-select channel
       if (!activeChannelId) {
         try {
-          const saved = localStorage.getItem('asuite-im-active-channel');
+          const saved = sessionStorage.getItem('asuite-im-active-channel');
           if (saved && channels.some(ch => ch.id === saved)) {
             setActiveChannel(saved);
             return;

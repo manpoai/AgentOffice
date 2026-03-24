@@ -9,7 +9,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useT } from '@/lib/i18n';
 
 export function ChannelList() {
-  const { channels, activeChannelId, setActiveChannel, users, channelMembers, setMobileView, myUserId } = useIMStore();
+  const { channels, activeChannelId, setActiveChannel, users, channelMembers, setMobileView, myUserId, agentAvatars } = useIMStore();
+
+  const getAvatarUrl = (userId: string): string => {
+    const user = users[userId];
+    if (user?.username && agentAvatars[user.username]) {
+      return agentAvatars[user.username];
+    }
+    return mm.getProfileImageUrl(userId);
+  };
   const [search, setSearch] = useState('');
   const { t } = useT();
 
@@ -96,7 +104,7 @@ export function ChannelList() {
                   {/* Avatar */}
                   {otherUid ? (
                     <img
-                      src={mm.getProfileImageUrl(otherUid)}
+                      src={getAvatarUrl(otherUid)}
                       alt=""
                       className="w-9 h-9 rounded-full bg-muted shrink-0 border border-black/10"
                     />

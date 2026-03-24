@@ -51,8 +51,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
-        const tag = (e.target as HTMLElement)?.tagName;
+        const el = e.target as HTMLElement;
+        const tag = el?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (el?.isContentEditable || el?.closest('[contenteditable]')) return;
         e.preventDefault();
         setShowSettings(v => !v);
       }
@@ -184,12 +186,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>Settings</span>
             </button>
 
-            {/* Settings dropdown menu */}
+            {/* Settings dropdown menu — uses fixed positioning to escape overflow-hidden sidebar */}
             {showSettings && (
-              <div className={cn(
-                'absolute bottom-full mb-1 bg-card border border-border rounded-lg shadow-lg z-50 py-1 min-w-[200px]',
-                collapsed ? 'left-full ml-1' : 'left-0'
-              )}>
+              <div
+                className="fixed bg-card border border-border rounded-lg shadow-lg z-50 py-1 min-w-[200px]"
+                style={{
+                  bottom: settingsRef.current ? `${window.innerHeight - settingsRef.current.getBoundingClientRect().top + 4}px` : 'auto',
+                  left: collapsed
+                    ? `${(settingsRef.current?.getBoundingClientRect().right ?? 0) + 4}px`
+                    : `${settingsRef.current?.getBoundingClientRect().left ?? 0}px`,
+                }}
+              >
                 {/* Theme toggle */}
                 <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
                   {t('settings.theme') || 'Theme'}

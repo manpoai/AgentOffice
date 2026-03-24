@@ -2061,6 +2061,44 @@ app.post('/api/me/events/ack', authenticateAgent, (req, res) => {
   res.json({ acknowledged: result.changes });
 });
 
+// ─── Preferences (key-value store) ────────────────
+const PREFS_DIR = path.join(__dirname, 'data', 'preferences');
+fs.mkdirSync(PREFS_DIR, { recursive: true });
+
+function prefsPath(key) {
+  // Sanitize key to prevent path traversal
+  const safe = key.replace(/[^a-zA-Z0-9_\-:.]/g, '_');
+  return path.join(PREFS_DIR, `${safe}.json`);
+}
+
+app.get('/api/preferences/:key', authenticateAgent, (req, res) => {
+  const filePath = prefsPath(req.params.key);
+  try {
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const data = JSON.parse(raw);
+      return res.json({ key: req.params.key, value: data.value });
+    }
+    return res.status(404).json({ error: 'NOT_FOUND', message: `Preference "${req.params.key}" not found` });
+  } catch (e) {
+    return res.status(500).json({ error: 'READ_ERROR', message: e.message });
+  }
+});
+
+app.put('/api/preferences/:key', authenticateAgent, (req, res) => {
+  const filePath = prefsPath(req.params.key);
+  const { value } = req.body;
+  if (value === undefined) {
+    return res.status(400).json({ error: 'INVALID_PAYLOAD', message: '"value" field required' });
+  }
+  try {
+    fs.writeFileSync(filePath, JSON.stringify({ key: req.params.key, value, updated_at: Date.now() }), 'utf8');
+    return res.json({ key: req.params.key, value, updated_at: Date.now() });
+  } catch (e) {
+    return res.status(500).json({ error: 'WRITE_ERROR', message: e.message });
+  }
+});
+
 // ─── Health Check ─────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });

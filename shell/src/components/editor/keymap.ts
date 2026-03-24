@@ -2,7 +2,7 @@
  * Keyboard shortcuts for the editor.
  */
 import { keymap } from 'prosemirror-keymap';
-import { baseKeymap, toggleMark, setBlockType, wrapIn, chainCommands, exitCode, joinUp, joinDown, lift, selectParentNode, deleteSelection, joinBackward, selectNodeBackward, joinForward, selectNodeForward } from 'prosemirror-commands';
+import { baseKeymap, toggleMark, setBlockType, wrapIn, chainCommands, exitCode, joinUp, joinDown, lift, selectParentNode, deleteSelection, joinBackward, selectNodeBackward, joinForward, selectNodeForward, newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock } from 'prosemirror-commands';
 import { TextSelection, NodeSelection } from 'prosemirror-state';
 import { undo, redo } from 'prosemirror-history';
 import { liftListItem, sinkListItem, splitListItem } from 'prosemirror-schema-list';
@@ -17,6 +17,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
  */
 function smartListEnter(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   const { $from } = state.selection;
+  const LIST_NAMES = new Set(['bullet_list', 'ordered_list', 'checkbox_list']);
+
   // Walk up the depth to find list_item or checkbox_item
   let nodeType = null;
   let listItem = null;
@@ -28,7 +30,31 @@ function smartListEnter(state: EditorState, dispatch?: (tr: Transaction) => void
       break;
     }
   }
-  if (!listItem || !nodeType) return false;
+
+  if (!listItem || !nodeType) {
+    // Check if cursor is at a boundary inside a list (but not in any list_item)
+    // This happens when cursor lands between heading and list's first item
+    for (let d = $from.depth; d >= 1; d--) {
+      const node = $from.node(d);
+      if (LIST_NAMES.has(node.type.name)) {
+        // Cursor is inside a list but not in a list_item — insert a new empty item
+        if (dispatch) {
+          const itemType = node.type === schema.nodes.checkbox_list
+            ? schema.nodes.checkbox_item : schema.nodes.list_item;
+          const newItem = itemType.create(
+            node.type === schema.nodes.checkbox_list ? { checked: false } : null,
+            schema.nodes.paragraph.create(),
+          );
+          const tr = state.tr.insert($from.pos, newItem);
+          // Place cursor inside the new item's paragraph
+          tr.setSelection(TextSelection.create(tr.doc, $from.pos + 2));
+          dispatch(tr.scrollIntoView());
+        }
+        return true;
+      }
+    }
+    return false;
+  }
 
   // Check if the list item content is empty (just an empty paragraph)
   if (listItem.childCount === 1 && listItem.firstChild!.type === schema.nodes.paragraph && listItem.firstChild!.content.size === 0) {
@@ -95,6 +121,43 @@ function smartListBackspace(state: EditorState, dispatch?: (tr: Transaction) => 
 }
 
 /**
+ * Recursively find the end position of the deepest last paragraph in a node tree.
+ * Walks: list → last list_item → last child (if it's a list, recurse; if paragraph, return end).
+ */
+function findDeepestLastParagraphEnd(doc: any, node: any, nodePos: number): number {
+  const LIST_NAMES = new Set(['bullet_list', 'ordered_list', 'checkbox_list']);
+  const ITEM_NAMES = new Set(['list_item', 'checkbox_item']);
+
+  if (node.type.name === 'paragraph' || node.type.name === 'heading') {
+    // Return the end of content inside this paragraph
+    return nodePos + 1 + node.content.size;
+  }
+
+  if (LIST_NAMES.has(node.type.name)) {
+    // Go to last list_item
+    const lastItem = node.child(node.childCount - 1);
+    let childPos = nodePos + 1; // inside list
+    for (let i = 0; i < node.childCount - 1; i++) {
+      childPos += node.child(i).nodeSize;
+    }
+    return findDeepestLastParagraphEnd(doc, lastItem, childPos);
+  }
+
+  if (ITEM_NAMES.has(node.type.name)) {
+    // Last child of list_item — could be paragraph or nested list
+    const lastChild = node.child(node.childCount - 1);
+    let childPos = nodePos + 1; // inside list_item
+    for (let i = 0; i < node.childCount - 1; i++) {
+      childPos += node.child(i).nodeSize;
+    }
+    return findDeepestLastParagraphEnd(doc, lastChild, childPos);
+  }
+
+  // Fallback: return end of this node's content
+  return nodePos + 1 + node.content.size;
+}
+
+/**
  * Prevent joinBackward from merging a paragraph back into a preceding list.
  * joinBackward would re-wrap the paragraph as a new list item, causing cycling.
  *
@@ -130,44 +193,18 @@ function preventJoinIntoList(state: EditorState, dispatch?: (tr: Transaction) =>
       if (sel) tr.setSelection(sel);
       dispatch(tr.scrollIntoView());
     } else {
-      // Non-empty paragraph: append its content to the last list item's last paragraph.
-      // Use replaceWith to delete paragraph and insert content at join point in one step.
-      const lastItem = prevBlock.child(prevBlock.childCount - 1);
-      const lastItemLastChild = lastItem.child(lastItem.childCount - 1);
+      // Non-empty paragraph: append its content to the deepest last paragraph in the list.
+      // Must recursively descend through nested lists to find the actual last text paragraph.
 
-      // Calculate the join point: end of last paragraph content in last list item
-      // listStart = position of the list node (sum of all doc children before it)
-      let listStart = 0;
-      for (let i = 0; i < topIndex - 1; i++) {
-        listStart += state.doc.child(i).nodeSize;
-      }
-      let joinPos = listStart + 1; // inside the list
-      for (let i = 0; i < prevBlock.childCount - 1; i++) {
-        joinPos += prevBlock.child(i).nodeSize;
-      }
-      joinPos += 1; // inside last list_item
-      for (let i = 0; i < lastItem.childCount - 1; i++) {
-        joinPos += lastItem.child(i).nodeSize;
-      }
-      joinPos += 1; // inside last paragraph
-      joinPos += lastItemLastChild.content.size; // end of content
+      // Find the deepest last paragraph position by walking the tree
+      let joinPos = findDeepestLastParagraphEnd(state.doc, prevBlock, blockStart - prevBlock.nodeSize);
+      if (joinPos < 0) return false; // shouldn't happen
 
-      // Replace the range from joinPos to blockEnd with the paragraph's inline content.
-      // This effectively: closes the last paragraph at joinPos, skips the closing tags
-      // of list_item/list and the paragraph node, and replaces with inline content.
-      // But we can't do that directly — the range crosses node boundaries.
-      //
-      // Simpler approach: two-step transaction.
-      // 1. Insert content at joinPos
-      // 2. Delete the paragraph (now at shifted position)
       const tr = state.tr;
-      // Step 1: insert content at joinPos (inside the list)
       tr.insert(joinPos, currentBlock.content);
-      // Step 2: delete the standalone paragraph (position shifted by insert)
       const newBlockStart = tr.mapping.map(blockStart);
       const newBlockEnd = tr.mapping.map(blockEnd);
       tr.delete(newBlockStart, newBlockEnd);
-      // Cursor at the join point: use mapResult with bias -1 to stay before inserted content
       const cursorPos = tr.mapping.map(joinPos, -1);
       tr.setSelection(TextSelection.create(tr.doc, cursorPos));
       dispatch(tr.scrollIntoView());
@@ -396,9 +433,17 @@ export function buildKeymap() {
   keys['Mod-Shift-3'] = setBlockType(schema.nodes.heading, { level: 3 });
 
   // Lists — smart handlers for both list_item and checkbox_item
-  keys['Enter'] = smartListEnter;
-  keys['Tab'] = smartListSink;
-  keys['Shift-Tab'] = smartListLift;
+  keys['Enter'] = chainCommands(smartListEnter, newlineInCode, createParagraphNear, liftEmptyBlock, splitBlock);
+  // Tab: indent in lists, otherwise just prevent default (keep focus in editor)
+  keys['Tab'] = (state: EditorState, dispatch?: (tr: Transaction) => void) => {
+    if (smartListSink(state, dispatch)) return true;
+    // Not in a list — still capture Tab to prevent focus leaving the editor
+    return true;
+  };
+  keys['Shift-Tab'] = (state: EditorState, dispatch?: (tr: Transaction) => void) => {
+    if (smartListLift(state, dispatch)) return true;
+    return true;
+  };
   keys['Mod-Shift-7'] = wrapIn(schema.nodes.ordered_list);
   keys['Mod-Shift-8'] = wrapIn(schema.nodes.bullet_list);
 

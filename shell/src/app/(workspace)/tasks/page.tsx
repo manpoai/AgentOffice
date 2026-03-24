@@ -77,8 +77,10 @@ export default function TasksPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const tag = (e.target as HTMLElement)?.tagName;
+        const el = e.target as HTMLElement;
+        const tag = el?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if (el?.isContentEditable || el?.closest('[contenteditable]')) return;
         e.preventDefault();
         setShowCreate(true);
         setSelectedTaskId(null);

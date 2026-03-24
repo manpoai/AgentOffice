@@ -121,24 +121,42 @@ md.enable('table');
 // Add plugins
 md.use(markdownItMark); // ==highlight==
 
-// Convert <mark style="background-color: ..."> HTML inline tokens to mark_open/mark_close
-// so ProseMirror parser can map them to highlight marks with color
-md.core.ruler.after('inline', 'mark_html_to_mark', (state) => {
+// Convert known HTML inline tags to proper tokens:
+// <mark data-color="..."> → highlight mark, <u> → underline mark, <br> → softbreak
+md.core.ruler.after('text_join', 'html_inline_to_tokens', (state) => {
   for (const blockToken of state.tokens) {
     if (blockToken.type !== 'inline' || !blockToken.children) continue;
     const newChildren: Token[] = [];
     for (const tok of blockToken.children) {
       if (tok.type === 'html_inline') {
-        const openMatch = tok.content.match(/^<mark\s[^>]*data-color="([^"]*)"[^>]*>/i);
-        if (openMatch) {
+        // <mark data-color="..."> → mark_open
+        const markMatch = tok.content.match(/^<mark\s[^>]*data-color="([^"]*)"[^>]*>/i);
+        if (markMatch) {
           const t = new state.Token('mark_open', 'mark', 1);
-          t.attrSet('data-color', openMatch[1]);
+          t.attrSet('data-color', markMatch[1]);
           newChildren.push(t);
           continue;
         }
         if (tok.content.toLowerCase() === '</mark>') {
           const t = new state.Token('mark_close', 'mark', -1);
           newChildren.push(t);
+          continue;
+        }
+        // <u> → underline open/close
+        if (/^<u\s*>$/i.test(tok.content.trim())) {
+          const t = new state.Token('underline_open', 'u', 1);
+          newChildren.push(t);
+          continue;
+        }
+        if (/^<\/u\s*>$/i.test(tok.content.trim())) {
+          const t = new state.Token('underline_close', 'u', -1);
+          newChildren.push(t);
+          continue;
+        }
+        // <br> → softbreak (will be ignored or treated as line break)
+        if (/^<br\s*\/?>$/i.test(tok.content.trim())) {
+          // Keep as html_inline for table_cell_paragraph rule to split on
+          newChildren.push(tok);
           continue;
         }
       }
@@ -220,6 +238,248 @@ function htmlImgPlugin(mdInstance: MarkdownItType) {
 }
 md.use(htmlImgPlugin);
 
+// Wrap table cell inline content in paragraph tokens.
+// markdown-it emits: th_open → inline → th_close (no paragraph wrapper).
+// With cellContent: 'block+', ProseMirror expects block nodes inside cells.
+// Also splits on <br> to create multiple paragraphs within a cell.
+md.core.ruler.after('text_join', 'table_cell_paragraph', (state) => {
+  const tokens = state.tokens;
+  const newTokens: Token[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (tok.type === 'inline' && i > 0 && i < tokens.length - 1) {
+      const prev = tokens[i - 1];
+      const next = tokens[i + 1];
+      const isInCell = (prev.type === 'th_open' || prev.type === 'td_open') &&
+                       (next.type === 'th_close' || next.type === 'td_close');
+      if (isInCell && tok.children) {
+        // Split children on <br> (html_inline) to create separate paragraphs
+        const segments: Token[][] = [[]];
+        for (const child of tok.children) {
+          if (child.type === 'html_inline' && /^<br\s*\/?>$/i.test(child.content.trim())) {
+            segments.push([]);
+          } else {
+            segments[segments.length - 1].push(child);
+          }
+        }
+
+        // Helper: trim whitespace tokens from segment edges and leading/trailing spaces
+        function trimSeg(seg: Token[]) {
+          while (seg.length > 0 && seg[0].type === 'text' && seg[0].content.trim() === '') seg.shift();
+          while (seg.length > 0 && seg[seg.length - 1].type === 'text' && seg[seg.length - 1].content.trim() === '') seg.pop();
+          // Also trim leading whitespace from first text token
+          if (seg.length > 0 && seg[0].type === 'text') {
+            seg[0].content = seg[0].content.replace(/^\s+/, '');
+            if (seg[0].content === '') seg.shift();
+          }
+          // Trim trailing whitespace from last text token
+          if (seg.length > 0 && seg[seg.length - 1].type === 'text') {
+            seg[seg.length - 1].content = seg[seg.length - 1].content.replace(/\s+$/, '');
+            if (seg[seg.length - 1].content === '') seg.pop();
+          }
+        }
+
+        // Helper: emit a paragraph or heading wrapping the segment's inline tokens.
+        // Auto-detects heading if segment starts with # prefix.
+        function emitBlock(seg: Token[]) {
+          // Check for heading prefix: # , ## , etc.
+          const hMatch = seg[0]?.type === 'text' && seg[0].content.match(/^(#{1,6})\s+/);
+          if (hMatch) {
+            const level = hMatch[1].length;
+            stripPrefix(seg, /^#{1,6}\s+/);
+            const hOpen = new state.Token('heading_open', `h${level}`, 1);
+            hOpen.block = true;
+            hOpen.markup = hMatch[1];
+            const inline = new state.Token('inline', '', 0);
+            inline.children = seg;
+            inline.content = seg.map(t => t.content).join('');
+            const hClose = new state.Token('heading_close', `h${level}`, -1);
+            hClose.block = true;
+            newTokens.push(hOpen, inline, hClose);
+          } else {
+            const pOpen = new state.Token('paragraph_open', 'p', 1);
+            pOpen.block = true;
+            const inline = new state.Token('inline', '', 0);
+            inline.children = seg;
+            inline.content = seg.map(t => t.content).join('');
+            const pClose = new state.Token('paragraph_close', 'p', -1);
+            pClose.block = true;
+            newTokens.push(pOpen, inline, pClose);
+          }
+        }
+
+        // Helper: strip a prefix pattern from the first text token in a segment
+        function stripPrefix(seg: Token[], pattern: RegExp): RegExpMatchArray | null {
+          if (seg.length === 0) return null;
+          const first = seg[0];
+          if (first.type !== 'text') return null;
+          const m = first.content.match(pattern);
+          if (!m) return null;
+          // Modify the first token's content to remove the prefix
+          first.content = first.content.slice(m[0].length);
+          if (first.content === '') seg.shift();
+          return m;
+        }
+
+        // Detect block type from segment content and emit appropriate tokens
+        // Accumulate consecutive list items into proper list wrappers
+        let pendingListType: string | null = null; // 'bullet_list' | 'ordered_list' | 'checkbox_list'
+        function flushPendingList() {
+          if (pendingListType) {
+            const closeTag = pendingListType === 'bullet_list' ? 'ul' :
+                             pendingListType === 'ordered_list' ? 'ol' : 'ul';
+            const close = new state.Token(pendingListType === 'checkbox_list' ? 'checkbox_list_close' :
+                          pendingListType === 'bullet_list' ? 'bullet_list_close' : 'ordered_list_close', closeTag, -1);
+            close.block = true;
+            newTokens.push(close);
+            pendingListType = null;
+          }
+        }
+
+        let addedAny = false;
+        for (const seg of segments) {
+          const hasContent = seg.some(t => t.type !== 'text' || t.content.trim() !== '');
+          if (!hasContent) continue;
+          trimSeg(seg);
+          if (seg.length === 0) continue;
+
+          // Check for heading: # , ## , ### , etc.
+          const headingMatch = seg[0]?.type === 'text' && seg[0].content.match(/^(#{1,6})\s+/);
+          if (headingMatch) {
+            flushPendingList();
+            const level = headingMatch[1].length;
+            stripPrefix(seg, /^#{1,6}\s+/);
+            const hOpen = new state.Token('heading_open', `h${level}`, 1);
+            hOpen.block = true;
+            hOpen.markup = headingMatch[1];
+            const inline = new state.Token('inline', '', 0);
+            inline.children = seg;
+            inline.content = seg.map(t => t.content).join('');
+            const hClose = new state.Token('heading_close', `h${level}`, -1);
+            hClose.block = true;
+            newTokens.push(hOpen, inline, hClose);
+            addedAny = true;
+            continue;
+          }
+
+          // Check for checkbox list item: - [x] or - [ ] (also handle escaped \[ \] from old data)
+          const checkboxMatch = seg[0]?.type === 'text' && seg[0].content.match(/^- \\?\[([ x])\\?\]\s*/);
+          if (checkboxMatch) {
+            if (pendingListType !== 'checkbox_list') {
+              flushPendingList();
+              const open = new state.Token('checkbox_list_open', 'ul', 1);
+              open.block = true;
+              newTokens.push(open);
+              pendingListType = 'checkbox_list';
+            }
+            const checked = checkboxMatch[1] === 'x';
+            stripPrefix(seg, /^- \\?\[[ x]\\?\]\s*/);
+            // Clean up duplicate [ ] / [x] from old escaped format (\[ \] → [ ] [ ] after unescape)
+            if (seg[0]?.type === 'text') {
+              seg[0].content = seg[0].content.replace(/^\\?\[[ x]\\?\]\s*/, '');
+              if (seg[0].content === '') seg.shift();
+            }
+            const itemOpen = new state.Token('checkbox_item_open', 'li', 1);
+            itemOpen.block = true;
+            itemOpen.attrSet('checked', checked ? 'true' : 'false');
+            newTokens.push(itemOpen);
+            emitBlock(seg);
+            const itemClose = new state.Token('checkbox_item_close', 'li', -1);
+            itemClose.block = true;
+            newTokens.push(itemClose);
+            addedAny = true;
+            continue;
+          }
+
+          // Check for bullet list: - text
+          const bulletMatch = seg[0]?.type === 'text' && seg[0].content.match(/^- /);
+          if (bulletMatch) {
+            if (pendingListType !== 'bullet_list') {
+              flushPendingList();
+              const open = new state.Token('bullet_list_open', 'ul', 1);
+              open.block = true;
+              newTokens.push(open);
+              pendingListType = 'bullet_list';
+            }
+            stripPrefix(seg, /^- /);
+            const itemOpen = new state.Token('list_item_open', 'li', 1);
+            itemOpen.block = true;
+            newTokens.push(itemOpen);
+            emitBlock(seg);
+            const itemClose = new state.Token('list_item_close', 'li', -1);
+            itemClose.block = true;
+            newTokens.push(itemClose);
+            addedAny = true;
+            continue;
+          }
+
+          // Check for ordered list: 1. text
+          const orderedMatch = seg[0]?.type === 'text' && seg[0].content.match(/^(\d+)\.\s+/);
+          if (orderedMatch) {
+            if (pendingListType !== 'ordered_list') {
+              flushPendingList();
+              const open = new state.Token('ordered_list_open', 'ol', 1);
+              open.block = true;
+              open.attrSet('start', orderedMatch[1]);
+              newTokens.push(open);
+              pendingListType = 'ordered_list';
+            }
+            stripPrefix(seg, /^\d+\.\s+/);
+            const itemOpen = new state.Token('list_item_open', 'li', 1);
+            itemOpen.block = true;
+            newTokens.push(itemOpen);
+            emitBlock(seg);
+            const itemClose = new state.Token('list_item_close', 'li', -1);
+            itemClose.block = true;
+            newTokens.push(itemClose);
+            addedAny = true;
+            continue;
+          }
+
+          // Check for blockquote: > text
+          const quoteMatch = seg[0]?.type === 'text' && seg[0].content.match(/^>\s*/);
+          if (quoteMatch) {
+            flushPendingList();
+            stripPrefix(seg, /^>\s*/);
+            const bqOpen = new state.Token('blockquote_open', 'blockquote', 1);
+            bqOpen.block = true;
+            newTokens.push(bqOpen);
+            emitBlock(seg);
+            const bqClose = new state.Token('blockquote_close', 'blockquote', -1);
+            bqClose.block = true;
+            newTokens.push(bqClose);
+            addedAny = true;
+            continue;
+          }
+
+          // Default: paragraph (or heading if starts with #)
+          flushPendingList();
+          emitBlock(seg);
+          addedAny = true;
+        }
+        flushPendingList();
+
+        // If no content at all, still add an empty paragraph (block+ requires at least 1)
+        if (!addedAny) {
+          const pOpen = new state.Token('paragraph_open', 'p', 1);
+          pOpen.block = true;
+          const inline = new state.Token('inline', '', 0);
+          inline.children = [];
+          inline.content = '';
+          const pClose = new state.Token('paragraph_close', 'p', -1);
+          pClose.block = true;
+          newTokens.push(pOpen);
+          newTokens.push(inline);
+          newTokens.push(pClose);
+        }
+        continue;
+      }
+    }
+    newTokens.push(tok);
+  }
+  state.tokens = newTokens;
+});
+
 // Notice blocks: :::info, :::warning, :::success, :::tip
 const noticeStyles = ['info', 'warning', 'success', 'tip'];
 for (const style of noticeStyles) {
@@ -273,6 +533,7 @@ export const markdownParser = new MarkdownParser(schema, md, {
     title: tok.attrGet('title') || null,
   })},
   code_inline: { mark: 'code' },
+  underline: { mark: 'underline' },
   mark: { mark: 'highlight', getAttrs: (tok) => ({ color: tok.attrGet('data-color') || '' }) },
 
   // Checkbox lists
@@ -299,6 +560,11 @@ export const markdownParser = new MarkdownParser(schema, md, {
   tr: { block: 'table_row' },
   th: { block: 'table_header' },
   td: { block: 'table_cell' },
+
+  // HTML inline/block tokens (e.g. <br>) — ignore to prevent parse errors
+  // noCloseToken needed because these are single tokens, not open/close pairs
+  html_inline: { ignore: true, noCloseToken: true },
+  html_block: { ignore: true, noCloseToken: true },
 });
 
 export function parseMarkdown(markdown: string): PMNode | null {
@@ -397,18 +663,129 @@ export const markdownSerializer = new MarkdownSerializer(
       state.text(node.text || '');
     },
     table(state, node) {
+      // Serialize inline content of a single node (paragraph, heading, list_item child, etc.)
+      function serializeInline(block: PMNode): string {
+        const parts: string[] = [];
+        block.forEach((child) => {
+          if (child.type.name === 'image') {
+            const { src, alt, title, width, align } = child.attrs;
+            if (width || align) {
+              const p = [`<img src="${state.esc(src)}"`];
+              if (alt) p.push(` alt="${state.esc(alt)}"`);
+              if (title) p.push(` title="${state.esc(title)}"`);
+              if (width) p.push(` width="${state.esc(String(width))}"`);
+              if (align) p.push(` data-align="${state.esc(align)}"`);
+              p.push(' />');
+              parts.push(p.join(''));
+            } else {
+              parts.push(`![${state.esc(alt || '')}](${state.esc(src)}${title ? ` "${state.esc(title)}"` : ''})`);
+            }
+          } else if (child.isText) {
+            let text = state.esc(child.text || '');
+            if (child.marks) {
+              for (const mark of child.marks) {
+                if (mark.type.name === 'strong') text = `**${text}**`;
+                else if (mark.type.name === 'em') text = `*${text}*`;
+                else if (mark.type.name === 'code') text = `\`${text}\``;
+                else if (mark.type.name === 'strikethrough') text = `~~${text}~~`;
+                else if (mark.type.name === 'underline') text = `<u>${text}</u>`;
+                else if (mark.type.name === 'link') text = `[${text}](${mark.attrs.href})`;
+                else if (mark.type.name === 'highlight') {
+                  if (mark.attrs.color) {
+                    text = `<mark style="background-color: ${mark.attrs.color}" data-color="${mark.attrs.color}">${text}</mark>`;
+                  } else {
+                    text = `==${text}==`;
+                  }
+                }
+              }
+            }
+            parts.push(text);
+          } else if (child.type.name === 'hard_break') {
+            parts.push('<br>');
+          }
+        });
+        return parts.join('');
+      }
+
+      // Recursively serialize block content for table cells.
+      // Multiple blocks separated by <br>; lists rendered inline.
+      function serializeBlocks(container: PMNode): string {
+        const lines: string[] = [];
+        container.forEach((block) => {
+          const typeName = block.type.name;
+          if (typeName === 'paragraph') {
+            const text = serializeInline(block);
+            if (text.trim()) lines.push(text);
+          } else if (typeName === 'heading') {
+            const text = serializeInline(block);
+            const level = block.attrs.level || 1;
+            if (text.trim()) lines.push('#'.repeat(level) + ' ' + text);
+          } else if (typeName === 'bullet_list' || typeName === 'ordered_list' || typeName === 'checkbox_list') {
+            block.forEach((item, _offset, idx) => {
+              let marker = '- ';
+              if (typeName === 'ordered_list') marker = `${(block.attrs.order || 1) + idx}. `;
+              if (typeName === 'checkbox_list') marker = item.attrs?.checked ? '- [x] ' : '- [ ] ';
+              const itemParts: string[] = [];
+              item.forEach((child) => {
+                const text = serializeInline(child);
+                if (!text.trim()) return;
+                if (child.type.name === 'heading') {
+                  const level = child.attrs.level || 1;
+                  itemParts.push('#'.repeat(level) + ' ' + text);
+                } else {
+                  itemParts.push(text);
+                }
+              });
+              if (itemParts.length > 0) lines.push(marker + itemParts.join(' '));
+            });
+          } else if (typeName === 'blockquote') {
+            // Serialize blockquote children, prefix each line with >
+            const innerLines: string[] = [];
+            block.forEach((child) => {
+              const text = serializeInline(child);
+              if (text.trim()) innerLines.push(text);
+            });
+            if (innerLines.length > 0) lines.push('> ' + innerLines.join(' '));
+          } else if (typeName === 'code_block') {
+            lines.push('`' + block.textContent + '`');
+          } else if (typeName === 'horizontal_rule') {
+            lines.push('---');
+          } else {
+            // Fallback: extract text content
+            const text = block.textContent;
+            if (text.trim()) lines.push(text);
+          }
+        });
+        // Escape pipe characters, join with <br>
+        return lines.join(' <br> ').replace(/\|/g, '\\|');
+      }
+
+      function serializeCell(cell: PMNode): string {
+        return serializeBlocks(cell);
+      }
+
       const rows: string[][] = [];
       node.forEach((row) => {
         const cells: string[] = [];
-        row.forEach((cell) => {
-          cells.push(cell.textContent);
-        });
+        row.forEach((cell) => { cells.push(serializeCell(cell)); });
         rows.push(cells);
       });
       if (rows.length === 0) return;
       const colCount = rows[0]?.length || 0;
+
+      // Build alignment separators from header cell attributes
+      const alignSeps: string[] = [];
+      node.child(0).forEach((cell) => {
+        const align = cell.attrs?.alignment;
+        if (align === 'left') alignSeps.push(':---');
+        else if (align === 'center') alignSeps.push(':---:');
+        else if (align === 'right') alignSeps.push('---:');
+        else alignSeps.push('---');
+      });
+      while (alignSeps.length < colCount) alignSeps.push('---');
+
       state.write('| ' + rows[0].join(' | ') + ' |\n');
-      state.write('| ' + Array(colCount).fill('---').join(' | ') + ' |\n');
+      state.write('| ' + alignSeps.join(' | ') + ' |\n');
       for (let i = 1; i < rows.length; i++) {
         state.write('| ' + rows[i].join(' | ') + ' |\n');
       }
@@ -434,7 +811,7 @@ export const markdownSerializer = new MarkdownSerializer(
   {
     em: { open: '*', close: '*', mixable: true, expelEnclosingWhitespace: true },
     strong: { open: '**', close: '**', mixable: true, expelEnclosingWhitespace: true },
-    underline: { open: '__', close: '__', mixable: true, expelEnclosingWhitespace: true },
+    underline: { open: '<u>', close: '</u>', mixable: true, expelEnclosingWhitespace: true },
     strikethrough: { open: '~~', close: '~~', mixable: true, expelEnclosingWhitespace: true },
     link: {
       open(_state, mark) { return '['; },

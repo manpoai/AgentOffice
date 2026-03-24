@@ -223,7 +223,10 @@
     "open": "Open",
     "resolved": "Resolved",
     "noResolved": "No resolved comments",
-    "resolvedBy": "Resolved by {name}"
+    "resolvedBy": "Resolved by {name}",
+    "reply": "Reply",
+    "replyTo": "Replying to {name}",
+    "repliesCount": "{n} replies"
   },
   "table": {
     "alignLeft": "Align left",
@@ -232,7 +235,9 @@
     "sortAsc": "Sort ascending",
     "sortDesc": "Sort descending",
     "cellColor": "Cell color",
-    "toggleHeader": "Toggle header",
+    "toggleHeader": "Toggle header row",
+    "toggleHeaderCol": "Toggle header column",
+    "alignment": "Alignment",
     "insertBefore": "Insert before",
     "insertAfter": "Insert after",
     "insertAbove": "Insert above",

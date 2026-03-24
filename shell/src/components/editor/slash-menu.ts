@@ -270,8 +270,18 @@ export function slashMenuPlugin(): Plugin {
     try {
       const coords = view.coordsAtPos(slashPos);
       const editorRect = view.dom.closest('.outline-editor')?.getBoundingClientRect() || view.dom.getBoundingClientRect();
-      menuEl.style.left = `${coords.left - editorRect.left}px`;
-      menuEl.style.top = `${coords.bottom - editorRect.top + 4}px`;
+      const menuHeight = menuEl.offsetHeight || 420; // fallback to max-height
+      const leftPos = coords.left - editorRect.left;
+
+      // Check if menu would overflow below the viewport
+      if (coords.bottom + menuHeight + 4 > window.innerHeight) {
+        // Position above the cursor
+        menuEl.style.top = `${coords.top - editorRect.top - menuHeight - 4}px`;
+      } else {
+        // Position below the cursor (default)
+        menuEl.style.top = `${coords.bottom - editorRect.top + 4}px`;
+      }
+      menuEl.style.left = `${leftPos}px`;
     } catch {
       // Position may be invalid if doc changed
     }
@@ -378,9 +388,12 @@ export function slashMenuPlugin(): Plugin {
       handleTextInput(view, from, to, text) {
         if (text === '/') {
           const { $from } = view.state.selection;
-          // Only trigger at start of line (or after whitespace)
+          // Only trigger on empty, top-level paragraphs (not inside lists, blockquotes, etc.)
           const before = $from.parent.textContent.slice(0, $from.parentOffset);
-          if (before.trim() === '') {
+          const isEmptyLine = before.trim() === '';
+          // Check that the parent paragraph is a direct child of doc (depth == 1)
+          const isTopLevel = $from.depth === 1 && $from.parent.type.name === 'paragraph';
+          if (isEmptyLine && isTopLevel) {
             // Wait for the "/" to be inserted, then activate
             setTimeout(() => {
               slashPos = view.state.selection.from - 1;

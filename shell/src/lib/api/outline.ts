@@ -99,7 +99,7 @@ export async function moveDocument(id: string, parentDocumentId: string | null, 
   await olFetch('documents.move', body);
 }
 
-export async function updateDocument(id: string, title?: string, text?: string, emoji?: string | null, opts?: { fullWidth?: boolean; insightsEnabled?: boolean }): Promise<OLDocument> {
+export async function updateDocument(id: string, title?: string, text?: string, emoji?: string | null, opts?: { fullWidth?: boolean; insightsEnabled?: boolean; done?: boolean }): Promise<OLDocument> {
   const body: Record<string, unknown> = { id };
   if (title !== undefined) body.title = title;
   if (text !== undefined) body.text = text;
@@ -107,12 +107,35 @@ export async function updateDocument(id: string, title?: string, text?: string, 
   if (emoji !== undefined) body.icon = emoji || null;
   if (opts?.fullWidth !== undefined) body.fullWidth = opts.fullWidth;
   if (opts?.insightsEnabled !== undefined) body.insightsEnabled = opts.insightsEnabled;
+  if (opts?.done) body.done = true;
   const data = await olFetch<{ data: OLDocument }>('documents.update', body);
   return data.data;
 }
 
 export async function deleteDocument(id: string): Promise<void> {
   await olFetch('documents.delete', { id });
+}
+
+export async function listDeletedDocuments(): Promise<OLDocument[]> {
+  const allDocs: OLDocument[] = [];
+  let offset = 0;
+  const limit = 100;
+  while (true) {
+    const data = await olFetch<{ data: OLDocument[]; pagination: { total: number } }>('documents.deleted', { limit, offset });
+    allDocs.push(...data.data);
+    if (data.data.length < limit) break;
+    offset += limit;
+  }
+  return allDocs;
+}
+
+export async function restoreDeletedDocument(id: string): Promise<OLDocument> {
+  const data = await olFetch<{ data: OLDocument }>('documents.restore', { id });
+  return data.data;
+}
+
+export async function permanentlyDeleteDocument(id: string): Promise<void> {
+  await olFetch('documents.delete', { id, permanent: true });
 }
 
 export async function duplicateDocument(id: string): Promise<OLDocument> {

@@ -1,24 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, RotateCcw, Clock, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { RotateCcw, Clock, ChevronRight, X } from 'lucide-react';
 import * as ol from '@/lib/api/outline';
 import type { OLRevision, OLDocument } from '@/lib/api/outline';
 import { useT } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 
 interface Props {
   doc: OLDocument;
   onClose: () => void;
   onRestored: () => void | Promise<void>;
+  /** Called when a revision is selected — parent shows preview in editor area */
+  onSelect: (revision: OLRevision | null, prevRevision: OLRevision | null) => void;
+  /** Whether highlight changes is on */
+  highlightChanges: boolean;
+  onHighlightChangesToggle: () => void;
 }
 
-export default function RevisionHistory({ doc, onClose, onRestored }: Props) {
+export default function RevisionHistory({ doc, onClose, onRestored, onSelect, highlightChanges, onHighlightChangesToggle }: Props) {
   const { t } = useT();
   const [revisions, setRevisions] = useState<OLRevision[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
@@ -40,12 +45,21 @@ export default function RevisionHistory({ doc, onClose, onRestored }: Props) {
     return () => { cancelled = true; };
   }, [doc.id]);
 
-  const selectRevision = useCallback((rev: OLRevision) => {
-    setSelectedId(rev.id);
-    // Extract text preview from ProseMirror JSON data
-    const text = extractTextFromPMData(rev.data);
-    setPreviewContent(text);
-  }, []);
+  // Use ref for onSelect to avoid re-triggering on parent re-renders
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  // Notify parent when selection changes
+  useEffect(() => {
+    if (!selectedId) {
+      onSelectRef.current(null, null);
+      return;
+    }
+    const rev = revisions.find(r => r.id === selectedId) || null;
+    const idx = revisions.findIndex(r => r.id === selectedId);
+    const prev = (idx >= 0 && idx < revisions.length - 1) ? revisions[idx + 1] : null;
+    onSelectRef.current(rev, prev);
+  }, [selectedId, revisions]);
 
   const handleRestore = useCallback(async () => {
     if (!selectedId) return;
@@ -77,213 +91,104 @@ export default function RevisionHistory({ doc, onClose, onRestored }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-
-      {/* Panel */}
-      <div className="relative ml-auto flex h-full w-full max-w-[900px] bg-background shadow-2xl">
-        {/* Preview area */}
-        <div className="flex-1 overflow-auto p-8">
-          <div className="mx-auto max-w-[48rem]">
-            {selectedId && previewContent ? (
-              <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground/80">
-                {previewContent}
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                <p>{t('content.selectRevision') || 'Select a version to preview'}</p>
-              </div>
-            )}
-          </div>
+    <div className="flex flex-col h-full">
+      {/* Header — compact */}
+      <div className="flex items-center justify-between border-b border-border px-4 py-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Clock size={14} />
+          {t('content.versionHistory') || 'Version History'}
         </div>
-
-        {/* Sidebar: revision list */}
-        <div className="w-72 flex-shrink-0 border-l border-border bg-card">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Clock size={16} />
-              {t('content.versionHistory') || 'Version History'}
-            </div>
-            <button
-              onClick={onClose}
-              className="rounded-md p-1 hover:bg-accent"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Current version */}
-          <div className="border-b border-border px-4 py-3">
-            <div className="text-xs font-medium text-muted-foreground uppercase">
-              {t('content.currentVersion') || 'Current'}
-            </div>
-            <div className="mt-1 text-sm">{doc.title}</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              {doc.updatedBy?.name} · {formatTime(doc.updatedAt)}
-            </div>
-          </div>
-
-          {/* Revision list */}
-          <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 160px)' }}>
-            {loading && (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                {t('content.loading') || 'Loading...'}
-              </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onHighlightChangesToggle}
+            className={cn(
+              'relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full transition-colors',
+              highlightChanges ? 'bg-sidebar-primary' : 'bg-muted'
             )}
-            {error && (
-              <div className="px-4 py-4 text-sm text-destructive">{error}</div>
-            )}
-            {!loading && revisions.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                {t('content.noRevisions') || 'No previous versions'}
-              </div>
-            )}
-            {revisions.map((rev) => (
-              <button
-                key={rev.id}
-                onClick={() => selectRevision(rev)}
-                className={`w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50 ${
-                  selectedId === rev.id ? 'bg-accent' : ''
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">
-                    {formatTime(rev.createdAt)}
-                  </span>
-                  <ChevronRight size={14} className="text-muted-foreground" />
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {rev.createdBy?.name || 'Unknown'}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* Restore button */}
-          {selectedId && (
-            <div className="border-t border-border p-4">
-              <button
-                onClick={handleRestore}
-                disabled={restoring}
-                className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                <RotateCcw size={14} />
-                {restoring
-                  ? (t('content.restoring') || 'Restoring...')
-                  : (t('content.restoreVersion') || 'Restore this version')}
-              </button>
-            </div>
-          )}
+            title={t('content.highlightChanges') || 'Highlight changes'}
+          >
+            <span className={cn(
+              'pointer-events-none inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform mt-0.5 ml-0.5',
+              highlightChanges ? 'translate-x-3' : 'translate-x-0'
+            )} />
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 hover:bg-accent"
+            title={t('common.close') || 'Close'}
+          >
+            <X size={14} />
+          </button>
         </div>
       </div>
+
+      {/* Current version — compact inline */}
+      <button
+        onClick={() => setSelectedId(null)}
+        className={cn(
+          'w-full text-left border-b border-border px-4 py-2 transition-colors',
+          selectedId === null ? 'bg-accent' : 'hover:bg-accent/50'
+        )}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium">{t('content.currentVersion') || 'Current'}</span>
+          <span className="text-[10px] text-muted-foreground">{formatTime(doc.updatedAt)}</span>
+        </div>
+        <div className="text-[11px] text-muted-foreground mt-0.5">{doc.updatedBy?.name}</div>
+      </button>
+
+      {/* Revision list */}
+      <div className="overflow-y-auto flex-1">
+        {loading && (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            {t('content.loading') || 'Loading...'}
+          </div>
+        )}
+        {error && (
+          <div className="px-4 py-4 text-sm text-destructive">{error}</div>
+        )}
+        {!loading && revisions.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            {t('content.noRevisions') || 'No previous versions'}
+          </div>
+        )}
+        {revisions.map((rev) => (
+          <button
+            key={rev.id}
+            onClick={() => setSelectedId(rev.id)}
+            className={cn(
+              'w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/50',
+              selectedId === rev.id && 'bg-accent'
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">
+                {rev.title || t('content.untitled')}
+              </span>
+              <ChevronRight size={14} className="text-muted-foreground" />
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              {rev.createdBy?.name || 'Unknown'} · {formatTime(rev.createdAt)}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Restore button */}
+      {selectedId && (
+        <div className="border-t border-border p-4">
+          <button
+            onClick={handleRestore}
+            disabled={restoring}
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            <RotateCcw size={14} />
+            {restoring
+              ? (t('content.restoring') || 'Restoring...')
+              : (t('content.restoreVersion') || 'Restore this version')}
+          </button>
+        </div>
+      )}
     </div>
   );
-}
-
-/** Extract plain text from ProseMirror JSON data for preview */
-function extractTextFromPMData(data: Record<string, unknown>): string {
-  const lines: string[] = [];
-
-  function walk(node: Record<string, unknown>, depth = 0) {
-    const type = node.type as string;
-    const content = node.content as Record<string, unknown>[] | undefined;
-    const attrs = node.attrs as Record<string, unknown> | undefined;
-
-    // Block-level formatting
-    if (type === 'heading') {
-      const level = (attrs?.level as number) || 1;
-      const prefix = '#'.repeat(level) + ' ';
-      const text = extractInlineText(content);
-      lines.push(prefix + text);
-      lines.push('');
-      return;
-    }
-
-    if (type === 'paragraph') {
-      const text = extractInlineText(content);
-      lines.push(text);
-      lines.push('');
-      return;
-    }
-
-    if (type === 'bullet_list' || type === 'ordered_list' || type === 'checkbox_list') {
-      if (content) {
-        content.forEach((child, i) => {
-          const prefix = type === 'ordered_list' ? `${i + 1}. ` : type === 'checkbox_list' ? '☐ ' : '• ';
-          const text = extractBlockText(child);
-          lines.push('  '.repeat(depth) + prefix + text);
-        });
-      }
-      lines.push('');
-      return;
-    }
-
-    if (type === 'blockquote') {
-      if (content) {
-        content.forEach((child) => {
-          const text = extractBlockText(child);
-          lines.push('> ' + text);
-        });
-      }
-      lines.push('');
-      return;
-    }
-
-    if (type === 'code_block') {
-      lines.push('```');
-      const text = extractInlineText(content);
-      lines.push(text);
-      lines.push('```');
-      lines.push('');
-      return;
-    }
-
-    if (type === 'horizontal_rule') {
-      lines.push('---');
-      lines.push('');
-      return;
-    }
-
-    if (type === 'image') {
-      const src = (attrs?.src as string) || '';
-      const alt = (attrs?.alt as string) || '';
-      lines.push(`[Image: ${alt || src.substring(0, 40)}]`);
-      lines.push('');
-      return;
-    }
-
-    // Recurse into children
-    if (content) {
-      content.forEach((child) => walk(child, depth));
-    }
-  }
-
-  function extractInlineText(content?: Record<string, unknown>[]): string {
-    if (!content) return '';
-    return content.map((node) => {
-      if (node.type === 'text') return (node.text as string) || '';
-      if (node.type === 'hard_break') return '\n';
-      if (node.type === 'image') return `[Image]`;
-      if (node.content) return extractInlineText(node.content as Record<string, unknown>[]);
-      return '';
-    }).join('');
-  }
-
-  function extractBlockText(node: Record<string, unknown>): string {
-    const content = node.content as Record<string, unknown>[] | undefined;
-    if (!content) return '';
-    return content.map((child) => {
-      if (child.type === 'paragraph') return extractInlineText(child.content as Record<string, unknown>[]);
-      if (child.type === 'text') return (child.text as string) || '';
-      return extractBlockText(child);
-    }).join(' ');
-  }
-
-  if (data.content) {
-    (data.content as Record<string, unknown>[]).forEach((node) => walk(node));
-  }
-
-  return lines.join('\n').trim();
 }

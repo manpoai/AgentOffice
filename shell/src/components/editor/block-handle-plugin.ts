@@ -110,64 +110,219 @@ interface BlockMenuItem {
   danger?: boolean;
   /** If set, only show this item for these block type categories */
   scope?: 'all' | 'opaque-only';
+  /** Key for matching current block type to highlight active state */
+  matchKey?: string;
 }
+
+/** Determine the matchKey for the current block at pos */
+function getBlockMatchKey(view: EditorView, pos: number): string {
+  const node = view.state.doc.nodeAt(pos);
+  if (!node) return 'paragraph';
+  if (node.type.name === 'paragraph') return 'paragraph';
+  if (node.type.name === 'heading') return `heading${node.attrs.level}`;
+  if (node.type.name === 'code_block') return 'code_block';
+  if (node.type.name === 'blockquote') return 'blockquote';
+  if (node.type.name === 'container_notice') return `notice_${node.attrs.style}`;
+  if (LIST_TYPES.has(node.type.name)) return node.type.name;
+  // For list items, check parent list type
+  if (LIST_ITEM_TYPES.has(node.type.name)) {
+    const $pos = view.state.doc.resolve(pos);
+    for (let d = $pos.depth; d >= 1; d--) {
+      const ancestor = $pos.node(d);
+      if (LIST_TYPES.has(ancestor.type.name)) return ancestor.type.name;
+    }
+  }
+  return node.type.name;
+}
+
+// Lucide icon SVGs (strict Lucide icons as specified)
+const LUCIDE_BLOCK = {
+  type: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>',
+  'heading-1': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="m17 12 3-2v8"/></svg>',
+  'heading-2': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M21 18h-4c0-4 4-3 4-6 0-1.5-2-2.5-4-1"/></svg>',
+  'heading-3': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2"/><path d="M17 17.5c2 1.5 4 .3 4-1.5a2 2 0 0 0-2-2"/></svg>',
+  'list-todo': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3.5 5.5 1.5 1.5 2.5-2.5"/><line x1="13" y1="8" x2="21" y2="8"/><rect x="3" y="14" width="6" height="6" rx="1"/><line x1="13" y1="17" x2="21" y2="17"/></svg>',
+  'list-ordered': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>',
+  list: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  quote: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/></svg>',
+  'code-xml': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>',
+  'badge-info': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(210, 60%, 55%)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  smile: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(142, 50%, 45%)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',
+  'octagon-alert': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(38, 90%, 50%)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  'square-asterisk': '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="hsl(270, 50%, 55%)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8"/><path d="m8.5 9.5 7 5"/><path d="m8.5 14.5 7-5"/></svg>',
+};
 
 function buildMenuItems(): BlockMenuItem[] {
   const t = getT();
   return [
     {
-      label: t('editor.paragraph') || 'Text',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 4v16"/><path d="M17 4v16"/><path d="M13 4H9a4 4 0 0 0 0 8h4"/></svg>`,
+      label: 'Text',
+      matchKey: 'paragraph',
+      icon: LUCIDE_BLOCK.type,
       action: (view, pos) => {
         const node = view.state.doc.nodeAt(pos);
         if (!node || node.type.name === 'paragraph') return;
+        const listInfo = resolveListItem(view, pos);
+        if (listInfo) {
+          const para = view.state.schema.nodes.paragraph.create(null, listInfo.contentNode.content);
+          view.dispatch(view.state.tr.replaceWith(listInfo.replacePos, listInfo.replaceEnd, para));
+          return;
+        }
         view.dispatch(view.state.tr.setBlockType(pos, pos + node.nodeSize, view.state.schema.nodes.paragraph));
       },
     },
     {
-      label: t('editor.heading1') || 'Heading 1',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17 12l3-2v8"/></svg>`,
+      label: 'H1',
+      matchKey: 'heading1',
+      icon: LUCIDE_BLOCK['heading-1'],
       action: (view, pos) => {
+        const listInfo = resolveListItem(view, pos);
+        if (listInfo) {
+          const h = view.state.schema.nodes.heading.create({ level: 1 }, listInfo.contentNode.content);
+          view.dispatch(view.state.tr.replaceWith(listInfo.replacePos, listInfo.replaceEnd, h));
+          return;
+        }
         const node = view.state.doc.nodeAt(pos)!;
         view.dispatch(view.state.tr.setBlockType(pos, pos + node.nodeSize, view.state.schema.nodes.heading, { level: 1 }));
       },
     },
     {
-      label: t('editor.heading2') || 'Heading 2',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17 12h4"/><path d="M21 18h-4c0-4 4-3 4-6"/></svg>`,
+      label: 'H2',
+      matchKey: 'heading2',
+      icon: LUCIDE_BLOCK['heading-2'],
       action: (view, pos) => {
+        const listInfo = resolveListItem(view, pos);
+        if (listInfo) {
+          const h = view.state.schema.nodes.heading.create({ level: 2 }, listInfo.contentNode.content);
+          view.dispatch(view.state.tr.replaceWith(listInfo.replacePos, listInfo.replaceEnd, h));
+          return;
+        }
         const node = view.state.doc.nodeAt(pos)!;
         view.dispatch(view.state.tr.setBlockType(pos, pos + node.nodeSize, view.state.schema.nodes.heading, { level: 2 }));
       },
     },
     {
-      label: t('editor.heading3') || 'Heading 3',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h8"/><path d="M4 18V6"/><path d="M12 18V6"/><path d="M17.5 10.5c1.7-1 3.5 0 3.5 1.5a2 2 0 0 1-2 2"/><path d="M17 17.5c2 1.5 4 .3 4-1.5a2 2 0 0 0-2-2"/></svg>`,
+      label: 'H3',
+      matchKey: 'heading3',
+      icon: LUCIDE_BLOCK['heading-3'],
       action: (view, pos) => {
+        const listInfo = resolveListItem(view, pos);
+        if (listInfo) {
+          const h = view.state.schema.nodes.heading.create({ level: 3 }, listInfo.contentNode.content);
+          view.dispatch(view.state.tr.replaceWith(listInfo.replacePos, listInfo.replaceEnd, h));
+          return;
+        }
         const node = view.state.doc.nodeAt(pos)!;
         view.dispatch(view.state.tr.setBlockType(pos, pos + node.nodeSize, view.state.schema.nodes.heading, { level: 3 }));
       },
     },
     {
-      label: t('editor.bulletList') || 'Bullet list',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/></svg>`,
-      separator: true,
-      action: (view, pos) => wrapBlockInList(view, pos, 'bullet_list'),
-    },
-    {
-      label: t('editor.orderedList') || 'Ordered list',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><text x="1" y="8" font-size="7" fill="currentColor" stroke="none" font-family="system-ui">1.</text><text x="1" y="14" font-size="7" fill="currentColor" stroke="none" font-family="system-ui">2.</text><text x="1" y="20" font-size="7" fill="currentColor" stroke="none" font-family="system-ui">3.</text></svg>`,
-      action: (view, pos) => wrapBlockInList(view, pos, 'ordered_list'),
-    },
-    {
-      label: t('editor.checkboxList') || 'Checkbox list',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="M5 8l1.5 1.5L9 7"/><line x1="12" y1="8" x2="21" y2="8"/><rect x="3" y="14" width="6" height="6" rx="1"/><line x1="12" y1="17" x2="21" y2="17"/></svg>`,
+      label: 'Todo',
+      matchKey: 'checkbox_list',
+      icon: LUCIDE_BLOCK['list-todo'],
       action: (view, pos) => wrapBlockInList(view, pos, 'checkbox_list'),
     },
     {
-      label: t('editor.quote') || 'Quote',
-      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3"/></svg>`,
+      label: 'Ordered',
+      matchKey: 'ordered_list',
+      icon: LUCIDE_BLOCK['list-ordered'],
+      action: (view, pos) => wrapBlockInList(view, pos, 'ordered_list'),
+    },
+    {
+      label: 'Bullet',
+      matchKey: 'bullet_list',
+      icon: LUCIDE_BLOCK.list,
+      action: (view, pos) => wrapBlockInList(view, pos, 'bullet_list'),
+    },
+    {
+      label: 'Quote',
+      matchKey: 'blockquote',
+      icon: LUCIDE_BLOCK.quote,
       action: (view, pos) => wrapBlockInNode(view, pos, 'blockquote'),
+    },
+    {
+      label: 'Code',
+      matchKey: 'code_block',
+      icon: LUCIDE_BLOCK['code-xml'],
+      action: (view, pos) => {
+        const node = view.state.doc.nodeAt(pos)!;
+        if (node.type.name === 'code_block') {
+          const text = node.textContent;
+          const para = view.state.schema.nodes.paragraph.create(null, text ? view.state.schema.text(text) : undefined);
+          view.dispatch(view.state.tr.replaceWith(pos, pos + node.nodeSize, para));
+          return;
+        }
+        // Handle list items
+        const listInfo = resolveListItem(view, pos);
+        if (listInfo) {
+          const text = listInfo.contentNode.textContent;
+          const codeBlock = view.state.schema.nodes.code_block.create(null, text ? view.state.schema.text(text) : undefined);
+          view.dispatch(view.state.tr.replaceWith(listInfo.replacePos, listInfo.replaceEnd, codeBlock));
+          return;
+        }
+        const text = node.textContent;
+        const codeBlock = view.state.schema.nodes.code_block.create(null, text ? view.state.schema.text(text) : undefined);
+        view.dispatch(view.state.tr.replaceWith(pos, pos + node.nodeSize, codeBlock));
+      },
+    },
+    {
+      label: 'Info',
+      matchKey: 'notice_info',
+      icon: LUCIDE_BLOCK['badge-info'],
+      action: (view, pos) => insertNoticeBlock(view, pos, 'info'),
+    },
+    {
+      label: 'Success',
+      matchKey: 'notice_success',
+      icon: LUCIDE_BLOCK.smile,
+      action: (view, pos) => insertNoticeBlock(view, pos, 'success'),
+    },
+    {
+      label: 'Warning',
+      matchKey: 'notice_warning',
+      icon: LUCIDE_BLOCK['octagon-alert'],
+      action: (view, pos) => insertNoticeBlock(view, pos, 'warning'),
+    },
+    {
+      label: 'Tip',
+      matchKey: 'notice_tip',
+      icon: LUCIDE_BLOCK['square-asterisk'],
+      action: (view, pos) => insertNoticeBlock(view, pos, 'tip'),
+    },
+    {
+      label: t('editor.comment') || 'Comment',
+      icon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/></svg>`,
+      separator: true,
+      action: (view, pos) => {
+        const node = view.state.doc.nodeAt(pos);
+        if (!node) return;
+        let text = '';
+        const name = node.type.name;
+        if (name === 'image') {
+          text = node.attrs.alt || node.attrs.title || 'Image';
+        } else if (name === 'table') {
+          const cells: string[] = [];
+          node.firstChild?.forEach((cell: any) => { cells.push(cell.textContent); });
+          text = cells.join(' | ') || 'Table';
+        } else if (name === 'mermaid_block') {
+          text = 'Mermaid diagram';
+        } else if (name === 'math_block') {
+          text = node.textContent || 'Math block';
+        } else if (name === 'code_block') {
+          text = node.textContent || 'Code block';
+        } else if (name === 'horizontal_rule') {
+          text = '---';
+        } else if (name === 'container_notice') {
+          text = node.textContent || 'Notice';
+        } else {
+          text = node.textContent || '';
+        }
+        if (text.length > 100) text = text.slice(0, 100) + '…';
+        // Include block DOM rect for sidebar positioning (selection may not be on the block)
+        const blockDom = view.nodeDOM(pos) as HTMLElement | null;
+        const blockRect = blockDom?.getBoundingClientRect() || null;
+        window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text, blockRect } }));
+      },
     },
     {
       label: t('editor.copy') || 'Copy',
@@ -192,6 +347,73 @@ function buildMenuItems(): BlockMenuItem[] {
       },
     },
   ];
+}
+
+/**
+ * If pos points to a list_item/checkbox_item, resolve to the parent list and extract
+ * the item's paragraph content. Returns { replacePos, replaceEnd, contentNode } for
+ * the caller to use, or null if not inside a list.
+ */
+function resolveListItem(view: EditorView, pos: number): { replacePos: number; replaceEnd: number; contentNode: any } | null {
+  const node = view.state.doc.nodeAt(pos);
+  if (!node) return null;
+  if (!LIST_ITEM_TYPES.has(node.type.name) && !LIST_TYPES.has(node.type.name)) return null;
+
+  // If pos is a list container, use the whole list
+  if (LIST_TYPES.has(node.type.name)) {
+    // Extract all paragraph content from all items
+    const paragraphs: any[] = [];
+    node.forEach((item: any) => {
+      item.forEach((child: any) => {
+        if (!LIST_TYPES.has(child.type.name)) paragraphs.push(child);
+      });
+    });
+    return { replacePos: pos, replaceEnd: pos + node.nodeSize, contentNode: paragraphs[0] || view.state.schema.nodes.paragraph.create() };
+  }
+
+  // pos is a list_item — find the parent list
+  const $pos = view.state.doc.resolve(pos);
+  for (let d = $pos.depth; d >= 1; d--) {
+    const ancestor = $pos.node(d);
+    if (LIST_TYPES.has(ancestor.type.name)) {
+      const listPos = $pos.before(d);
+      // Extract paragraph content from the item
+      const contentNode = node.firstChild || view.state.schema.nodes.paragraph.create();
+      return { replacePos: listPos, replaceEnd: listPos + ancestor.nodeSize, contentNode };
+    }
+  }
+  return null;
+}
+
+function insertNoticeBlock(view: EditorView, pos: number, style: string) {
+  const { state } = view;
+  const node = state.doc.nodeAt(pos);
+  if (!node) return;
+  const noticeType = state.schema.nodes.container_notice;
+  if (!noticeType) return;
+  if (node.type.name === 'container_notice') {
+    if (node.attrs.style === style) {
+      if (node.firstChild) {
+        view.dispatch(state.tr.replaceWith(pos, pos + node.nodeSize, node.firstChild));
+      }
+    } else {
+      view.dispatch(state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, style }));
+    }
+    return;
+  }
+  // Handle list items — extract content from list, replace whole list
+  const listInfo = resolveListItem(view, pos);
+  if (listInfo) {
+    const inner = listInfo.contentNode.type.name === 'paragraph'
+      ? listInfo.contentNode
+      : state.schema.nodes.paragraph.create(null, listInfo.contentNode.content);
+    view.dispatch(state.tr.replaceWith(listInfo.replacePos, listInfo.replaceEnd, noticeType.create({ style }, inner)));
+    return;
+  }
+  const inner = (node.type.name === 'paragraph' || node.type.name === 'heading')
+    ? state.schema.nodes.paragraph.create(null, node.content)
+    : state.schema.nodes.paragraph.create();
+  view.dispatch(state.tr.replaceWith(pos, pos + node.nodeSize, noticeType.create({ style }, inner)));
 }
 
 function wrapBlockInList(view: EditorView, pos: number, listType: string) {
@@ -224,6 +446,42 @@ function wrapBlockInList(view: EditorView, pos: number, listType: string) {
     const newList = listNodeType.create(node.attrs, convertedItems);
     view.dispatch(state.tr.replaceWith(pos, pos + node.nodeSize, newList));
     return;
+  }
+
+  // If pos is a list_item/checkbox_item, find the parent list and toggle/convert it
+  if (LIST_ITEM_TYPES.has(node.type.name)) {
+    const $pos = state.doc.resolve(pos);
+    for (let d = $pos.depth; d >= 1; d--) {
+      const ancestor = $pos.node(d);
+      if (LIST_TYPES.has(ancestor.type.name)) {
+        const listPos = $pos.before(d);
+        // Toggle: same list type → unwrap all items to paragraphs
+        if (ancestor.type.name === listType) {
+          const paragraphs: any[] = [];
+          ancestor.forEach((item: any) => {
+            item.forEach((child: any) => {
+              if (!LIST_TYPES.has(child.type.name)) paragraphs.push(child);
+            });
+          });
+          if (paragraphs.length > 0) {
+            view.dispatch(state.tr.replaceWith(listPos, listPos + ancestor.nodeSize, paragraphs));
+          }
+          return;
+        }
+        // Convert to different list type
+        const convertedItems: any[] = [];
+        ancestor.forEach((item: any) => {
+          const newItem = targetItemType.create(
+            listType === 'checkbox_list' ? { checked: (item.attrs as any)?.checked ?? false } : null,
+            convertListContent(item.content, schema, listType),
+          );
+          convertedItems.push(newItem);
+        });
+        const newList = listNodeType.create(ancestor.attrs, convertedItems);
+        view.dispatch(state.tr.replaceWith(listPos, listPos + ancestor.nodeSize, newList));
+        return;
+      }
+    }
   }
 
   // Wrap paragraph or heading in a new list (preserve content including heading marks)
@@ -265,6 +523,15 @@ function wrapBlockInNode(view: EditorView, pos: number, wrapperType: string) {
   if (!wrapper) return;
   if (node.type.name === wrapperType) {
     if (node.firstChild) view.dispatch(state.tr.replaceWith(pos, pos + node.nodeSize, node.firstChild));
+    return;
+  }
+  // Handle list items — extract content from list, replace whole list
+  const listInfo = resolveListItem(view, pos);
+  if (listInfo) {
+    const inner = listInfo.contentNode.type.name === 'paragraph'
+      ? listInfo.contentNode
+      : state.schema.nodes.paragraph.create(null, listInfo.contentNode.content);
+    view.dispatch(state.tr.replaceWith(listInfo.replacePos, listInfo.replaceEnd, wrapper.create(null, inner)));
     return;
   }
   const inner = (node.type.name === 'paragraph' || node.type.name === 'heading')
@@ -429,7 +696,7 @@ export function blockHandlePlugin(): Plugin {
     menu.contentEditable = 'false';
     menu.style.cssText = `
       position: fixed;
-      min-width: 200px;
+      min-width: 220px;
       background: hsl(var(--card, 0 0% 100%));
       border: 1px solid hsl(var(--border, 0 0% 90%));
       border-radius: 8px;
@@ -452,37 +719,83 @@ export function blockHandlePlugin(): Plugin {
     if (isOpaque) {
       items = items.filter(item => {
         const label = item.label.toLowerCase();
-        return item.danger || label.includes('copy') || label.includes('复制');
+        return item.danger || label.includes('copy') || label.includes('复制') || label.includes('comment') || label.includes('评论') || label.includes('コメント') || label.includes('댓글');
       });
     }
-    for (const item of items) {
-      if (item.separator) {
-        const sep = document.createElement('div');
-        sep.style.cssText = 'height: 1px; background: hsl(var(--border, 0 0% 90%)); margin: 4px 0;';
-        menu.appendChild(sep);
+
+    // Determine which block type is currently active
+    const activeKey = getBlockMatchKey(view, blockPos);
+
+    // Split items: block type items (grid) vs action items (list)
+    const actionLabels = new Set(['Copy', 'Delete', 'Comment', '复制', '删除', '评论', 'コメント', '댓글']);
+    const gridItems = items.filter(item => !item.danger && !actionLabels.has(item.label));
+    const actionItems = items.filter(item => item.danger || actionLabels.has(item.label));
+
+    const activeBg = 'hsl(var(--sidebar-primary, 220 80% 60%) / 0.15)';
+    const activeColor = 'hsl(var(--sidebar-primary, 220 80% 60%))';
+
+    // Render grid section for block types
+    if (gridItems.length > 0 && !isOpaque) {
+      const grid = document.createElement('div');
+      grid.style.cssText = 'display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 4px 6px;';
+      for (const item of gridItems) {
+        const isActive = item.matchKey === activeKey;
+        const btn = document.createElement('button');
+        btn.title = item.label;
+        btn.style.cssText = `
+          display: flex; align-items: center; justify-content: center;
+          padding: 7px; border: none; cursor: pointer;
+          border-radius: 6px; line-height: 1;
+          background: ${isActive ? activeBg : 'transparent'};
+          color: ${isActive ? activeColor : 'hsl(var(--foreground, 0 0% 9%))'};
+        `;
+        const defaultBg = isActive ? activeBg : 'transparent';
+        const defaultColor = isActive ? activeColor : 'hsl(var(--foreground, 0 0% 9%))';
+        btn.addEventListener('mouseenter', () => { btn.style.background = isActive ? activeBg : 'hsl(var(--accent, 0 0% 96%))'; });
+        btn.addEventListener('mouseleave', () => { btn.style.background = defaultBg; btn.style.color = defaultColor; });
+        const iconSpan = document.createElement('span');
+        iconSpan.innerHTML = item.icon;
+        iconSpan.style.cssText = 'width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;';
+        btn.appendChild(iconSpan);
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          item.action(view, blockPos);
+          hideMenu();
+        });
+        grid.appendChild(btn);
       }
-      const btn = document.createElement('button');
-      btn.style.cssText = `
-        display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 12px;
-        border: none; background: transparent; cursor: pointer; font-size: 13px;
-        color: ${item.danger ? 'hsl(var(--destructive, 0 72% 51%))' : 'hsl(var(--foreground, 0 0% 9%))'};
-        text-align: left; border-radius: 0; line-height: 1.4;
-      `;
-      btn.addEventListener('mouseenter', () => { btn.style.background = 'hsl(var(--accent, 0 0% 96%))'; });
-      btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
-      const iconSpan = document.createElement('span');
-      iconSpan.innerHTML = item.icon;
-      iconSpan.style.cssText = 'width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;';
-      const labelSpan = document.createElement('span');
-      labelSpan.textContent = item.label;
-      btn.appendChild(iconSpan);
-      btn.appendChild(labelSpan);
-      btn.addEventListener('mousedown', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        item.action(view, blockPos);
-        hideMenu();
-      });
-      menu.appendChild(btn);
+      menu.appendChild(grid);
+    }
+
+    // Render action items as list below
+    if (actionItems.length > 0) {
+      const sep = document.createElement('div');
+      sep.style.cssText = 'height: 1px; background: hsl(var(--border, 0 0% 90%)); margin: 4px 0;';
+      menu.appendChild(sep);
+      for (const item of actionItems) {
+        const btn = document.createElement('button');
+        btn.style.cssText = `
+          display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 12px;
+          border: none; background: transparent; cursor: pointer; font-size: 13px;
+          color: ${item.danger ? 'hsl(var(--destructive, 0 72% 51%))' : 'hsl(var(--foreground, 0 0% 9%))'};
+          text-align: left; border-radius: 0; line-height: 1.4;
+        `;
+        btn.addEventListener('mouseenter', () => { btn.style.background = 'hsl(var(--accent, 0 0% 96%))'; });
+        btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
+        const iconSpan = document.createElement('span');
+        iconSpan.innerHTML = item.icon;
+        iconSpan.style.cssText = 'width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;';
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = item.label;
+        btn.appendChild(iconSpan);
+        btn.appendChild(labelSpan);
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault(); e.stopPropagation();
+          item.action(view, blockPos);
+          hideMenu();
+        });
+        menu.appendChild(btn);
+      }
     }
 
     overlay.appendChild(menu);
@@ -517,7 +830,21 @@ export function blockHandlePlugin(): Plugin {
       }
     }
 
-    const result = blockAtCoords(view, y);
+    let result = blockAtCoords(view, y);
+    // If mouse is below all content, show handle on the last block
+    if (!result || !result.dom) {
+      const editorRect = view.dom.getBoundingClientRect();
+      if (y > editorRect.bottom && view.state.doc.childCount > 0) {
+        const lastChild = view.state.doc.lastChild;
+        if (lastChild) {
+          const lastPos = view.state.doc.content.size - lastChild.nodeSize;
+          const dom = view.nodeDOM(lastPos) as HTMLElement | null;
+          if (dom && lastChild) {
+            result = { pos: lastPos, end: lastPos + lastChild.nodeSize, node: lastChild, dom, depth: 1, parentListPos: null };
+          }
+        }
+      }
+    }
     if (!result || !result.dom) {
       handleEl.style.opacity = '0';
       currentBlockPos = null;

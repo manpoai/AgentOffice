@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Copy, CopyPlus, Download, ChevronRight, FolderOpen, Smile, Eye, Code2, Maximize2 } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Copy, CopyPlus, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine } from 'lucide-react';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -63,6 +63,7 @@ interface TreeState {
 }
 
 const TREE_STATE_KEY = 'asuite-content-tree';
+const DELETED_TABLES_KEY = 'asuite-deleted-tables';
 
 function loadTreeState(): TreeState {
   try {
@@ -74,6 +75,34 @@ function loadTreeState(): TreeState {
 
 function saveTreeState(state: TreeState) {
   localStorage.setItem(TREE_STATE_KEY, JSON.stringify(state));
+  // Debounced write to Gateway
+  saveTreeStateToGateway(state);
+}
+
+// Debounced Gateway persistence for tree state
+let _gwSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function saveTreeStateToGateway(state: TreeState) {
+  if (_gwSaveTimer) clearTimeout(_gwSaveTimer);
+  _gwSaveTimer = setTimeout(() => {
+    gw.setPreference('content-tree-state', state).catch(err => {
+      console.warn('[TreeState] Failed to save to Gateway:', err);
+    });
+  }, 500);
+}
+
+/** Soft-deleted tables stored in localStorage (NocoDB has no native trash) */
+interface DeletedTable { id: string; title: string; deletedAt: string; }
+
+function loadDeletedTables(): DeletedTable[] {
+  try {
+    const raw = localStorage.getItem(DELETED_TABLES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveDeletedTables(tables: DeletedTable[]) {
+  localStorage.setItem(DELETED_TABLES_KEY, JSON.stringify(tables));
 }
 
 // ═══════════════════════════════════════════════════
@@ -84,7 +113,7 @@ export default function ContentPage() {
   const { t } = useT();
   const [selection, setSelection] = useState<Selection>(() => {
     try {
-      const saved = localStorage.getItem('asuite-content-selection');
+      const saved = sessionStorage.getItem('asuite-content-selection');
       if (saved) return JSON.parse(saved);
     } catch { /* ignore */ }
     return null;
@@ -97,7 +126,22 @@ export default function ContentPage() {
   const [treeState, setTreeState] = useState<TreeState>(() => loadTreeState());
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<DropIntent>(null);
+  const [sidebarView, setSidebarView] = useState<'library' | 'trash'>('library');
+  const [showViewMenu, setShowViewMenu] = useState(false);
+  const [deletedTables, setDeletedTables] = useState<DeletedTable[]>(() => loadDeletedTables());
+  const [deleteDialog, setDeleteDialog] = useState<{ nodeId: string; hasChildren: boolean } | null>(null);
+  const [docListVisible, setDocListVisible] = useState(true);
   const queryClient = useQueryClient();
+
+  // On mount: fetch tree state from Gateway (migration from localStorage)
+  useEffect(() => {
+    gw.getPreference<TreeState>('content-tree-state').then(remote => {
+      if (remote && (Object.keys(remote.children).length > 0 || Object.keys(remote.parents).length > 0)) {
+        setTreeState(remote);
+        localStorage.setItem(TREE_STATE_KEY, JSON.stringify(remote));
+      }
+    }).catch(() => { /* Gateway unavailable — use localStorage */ });
+  }, []);
 
   const { data: docs, isLoading: docsLoading } = useQuery({
     queryKey: ['outline-docs'],
@@ -120,6 +164,13 @@ export default function ContentPage() {
     queryKey: ['doc-icons'],
     queryFn: nc.getDocIcons,
     staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: deletedDocs, isLoading: deletedLoading } = useQuery({
+    queryKey: ['outline-deleted-docs'],
+    queryFn: () => ol.listDeletedDocuments(),
+    enabled: sidebarView === 'trash',
+    staleTime: 30 * 1000,
   });
 
   const { data: searchResults } = useQuery({
@@ -154,7 +205,9 @@ export default function ContentPage() {
         parentId: doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null,
       });
     });
+    const deletedTableIds = new Set(deletedTables.map(dt => dt.id));
     (tables || []).forEach(tbl => {
+      if (deletedTableIds.has(tbl.id)) return; // skip soft-deleted tables
       const nodeId = `table:${tbl.id}`;
       map.set(nodeId, {
         id: nodeId,
@@ -166,7 +219,7 @@ export default function ContentPage() {
       });
     });
     return map;
-  }, [docs, tables, customIcons, t]);
+  }, [docs, tables, customIcons, deletedTables, t]);
 
   // Apply treeState parents to nodes (for tables parented under docs, etc.)
   const effectiveNodes = useMemo(() => {
@@ -201,7 +254,7 @@ export default function ContentPage() {
       }
     });
 
-    // Sort children by treeState order, then by createdAt
+    // Sort children by treeState order, then by createdAt (oldest first)
     cMap.forEach((children, parentId) => {
       const order = treeState.children[parentId];
       if (order) {
@@ -211,7 +264,7 @@ export default function ContentPage() {
           if (ia >= 0 && ib >= 0) return ia - ib;
           if (ia >= 0) return -1;
           if (ib >= 0) return 1;
-          return (effectiveNodes.get(b)?.createdAt || 0) - (effectiveNodes.get(a)?.createdAt || 0);
+          return (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0);
         });
       } else {
         children.sort((a, b) => (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0));
@@ -224,7 +277,7 @@ export default function ContentPage() {
       if (!hasParent.has(node.id)) roots.push(node.id);
     });
 
-    // Sort roots by treeState order, then by createdAt
+    // Sort roots by treeState order, then by createdAt (oldest first)
     const rootOrder = treeState.children['__root__'];
     if (rootOrder) {
       roots.sort((a, b) => {
@@ -266,12 +319,139 @@ export default function ContentPage() {
         : [])
     : null;
 
+  // Select a nearby document when the current one is deleted
+  const selectNearbyDoc = (deletedNodeId: string) => {
+    // Find the deleted node's parent and siblings
+    const deletedNode = effectiveNodes.get(deletedNodeId);
+    const siblings = deletedNode?.parentId
+      ? childrenMap.get(deletedNode.parentId) || []
+      : rootIds;
+    const idx = siblings.indexOf(deletedNodeId);
+
+    // Try next sibling, then previous sibling, then parent
+    let nextId: string | null = null;
+    if (idx >= 0 && idx < siblings.length - 1) {
+      nextId = siblings[idx + 1];
+    } else if (idx > 0) {
+      nextId = siblings[idx - 1];
+    } else if (deletedNode?.parentId) {
+      nextId = deletedNode.parentId;
+    }
+
+    if (nextId) {
+      const nextNode = effectiveNodes.get(nextId);
+      if (nextNode) {
+        const sel = { type: nextNode.type, id: nextNode.rawId } as Selection;
+        setSelection(sel);
+        sessionStorage.setItem('asuite-content-selection', JSON.stringify(sel));
+        return;
+      }
+    }
+    setSelection(null);
+    setMobileView('list');
+  };
+
+  // Request deletion of a node — shows dialog for docs with children, or confirms directly
+  const requestDelete = (nodeId: string) => {
+    const node = effectiveNodes.get(nodeId);
+    if (!node) return;
+    const children = childrenMap.get(nodeId) || [];
+    if (node.type === 'doc' && children.length > 0) {
+      setDeleteDialog({ nodeId, hasChildren: true });
+    } else {
+      // No children — simple confirm
+      if (!confirm(t('content.deleteConfirm'))) return;
+      executeDelete(nodeId, 'only');
+    }
+  };
+
+  // Execute deletion: mode = 'only' (just this node) | 'all' (with descendants)
+  const executeDelete = async (nodeId: string, mode: 'only' | 'all') => {
+    const node = effectiveNodes.get(nodeId);
+    if (!node) return;
+    const isSelected = selection?.type === node.type && selection?.id === node.rawId;
+    if (isSelected) selectNearbyDoc(nodeId);
+
+    try {
+      if (node.type === 'table') {
+        // Soft-delete table
+        const next = [...deletedTables, { id: node.rawId, title: node.title, deletedAt: new Date().toISOString() }];
+        setDeletedTables(next);
+        saveDeletedTables(next);
+        return;
+      }
+
+      // Doc deletion
+      if (mode === 'all') {
+        // Collect all descendant doc IDs recursively
+        const collectDescendants = (nid: string): string[] => {
+          const kids = childrenMap.get(nid) || [];
+          const result: string[] = [];
+          for (const kid of kids) {
+            const kidNode = effectiveNodes.get(kid);
+            if (kidNode?.type === 'doc') {
+              result.push(kidNode.rawId);
+              result.push(...collectDescendants(kid));
+            } else if (kidNode?.type === 'table') {
+              // Soft-delete child tables too
+              const nextDt = [...deletedTables, { id: kidNode.rawId, title: kidNode.title, deletedAt: new Date().toISOString() }];
+              setDeletedTables(nextDt);
+              saveDeletedTables(nextDt);
+            }
+          }
+          return result;
+        };
+        const descendantIds = collectDescendants(nodeId);
+        // Delete parent first, then descendants
+        await ol.deleteDocument(node.rawId);
+        for (const did of descendantIds) {
+          await ol.deleteDocument(did).catch(e => console.error('Delete descendant failed:', e));
+        }
+        queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
+          (old || []).filter(d => d.id !== node.rawId && !descendantIds.includes(d.id))
+        );
+      } else {
+        // Mode: 'only' — move children up one level before deleting
+        const children = childrenMap.get(nodeId) || [];
+        const parentRawId = node.parentId
+          ? (effectiveNodes.get(node.parentId)?.type === 'doc' ? effectiveNodes.get(node.parentId)!.rawId : null)
+          : null;
+        // Move each child doc to the parent's level
+        for (const childId of children) {
+          const childNode = effectiveNodes.get(childId);
+          if (!childNode) continue;
+          if (childNode.type === 'doc') {
+            await ol.moveDocument(childNode.rawId, parentRawId).catch(e => console.error('Move child failed:', e));
+          } else if (childNode.type === 'table') {
+            // Update treeState parent for table
+            setTreeState(prev => {
+              const next = { children: { ...prev.children }, parents: { ...prev.parents } };
+              if (node.parentId) {
+                next.parents[childId] = node.parentId;
+              } else {
+                delete next.parents[childId];
+              }
+              saveTreeState(next);
+              return next;
+            });
+          }
+        }
+        // Now delete the parent doc
+        await ol.deleteDocument(node.rawId);
+        queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
+    setDeleteDialog(null);
+  };
+
   const handleSelect = (nodeId: string) => {
     const node = effectiveNodes.get(nodeId);
     if (!node) return;
     const sel = { type: node.type, id: node.rawId };
     setSelection(sel);
-    localStorage.setItem('asuite-content-selection', JSON.stringify(sel));
+    sessionStorage.setItem('asuite-content-selection', JSON.stringify(sel));
     setMobileView('detail');
     // Auto-expand selected item's children
     const children = childrenMap.get(nodeId);
@@ -285,20 +465,42 @@ export default function ContentPage() {
     }
   };
 
-  // Auto-expand selected item's children on load
+  // Auto-expand selected item and all its ancestors on load
   useEffect(() => {
     if (!selection) return;
     const nodeId = selection.type === 'doc' ? `doc:${selection.id}` : `table:${selection.id}`;
+    const toExpand: string[] = [];
+
+    // Expand the selected node's children if any
     const children = childrenMap.get(nodeId);
     if (children && children.length > 0) {
+      toExpand.push(nodeId);
+    }
+
+    // Walk up the tree to expand all parent ancestors
+    let current = effectiveNodes.get(nodeId);
+    while (current?.parentId) {
+      toExpand.push(current.parentId);
+      current = effectiveNodes.get(current.parentId);
+    }
+
+    if (toExpand.length > 0) {
       setExpandedIds(prev => {
-        if (prev.has(nodeId)) return prev;
         const next = new Set(prev);
-        next.add(nodeId);
-        return next;
+        let changed = false;
+        for (const id of toExpand) {
+          if (!next.has(id)) { next.add(id); changed = true; }
+        }
+        return changed ? next : prev;
       });
     }
-  }, [selection, childrenMap]);
+
+    // Scroll the selected node into view after DOM updates (delay for expand animation)
+    setTimeout(() => {
+      const el = document.querySelector(`[data-tree-id="${CSS.escape(nodeId)}"]`);
+      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 100);
+  }, [selection, childrenMap, effectiveNodes]);
 
   // Auto-select first item if nothing is selected
   useEffect(() => {
@@ -308,7 +510,7 @@ export default function ContentPage() {
     if (firstNode) {
       const sel = { type: firstNode.type, id: firstNode.rawId } as Selection;
       setSelection(sel);
-      localStorage.setItem('asuite-content-selection', JSON.stringify(sel));
+      sessionStorage.setItem('asuite-content-selection', JSON.stringify(sel));
     }
   }, [rootIds, selection, effectiveNodes]);
 
@@ -332,7 +534,7 @@ export default function ContentPage() {
     const tempId = `temp-${Date.now()}`;
     const optimisticDoc: ol.OLDocument = {
       id: tempId,
-      title: t('content.untitled'),
+      title: '',
       text: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -363,7 +565,7 @@ export default function ContentPage() {
         const parentNode = effectiveNodes.get(parentNodeId);
         if (parentNode?.type === 'doc') parentDocId = parentNode.rawId;
       }
-      const doc = await ol.createDocument(t('content.untitled'), '', collectionId, parentDocId);
+      const doc = await ol.createDocument('', '', collectionId, parentDocId);
 
       // Replace temp doc with real one in cache
       queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
@@ -682,125 +884,252 @@ export default function ContentPage() {
     <div className="flex h-full overflow-hidden flex-col md:flex-row">
       {/* Document Library sidebar */}
       <div className={cn(
-        'w-full md:w-[260px] border-r border-border bg-[#F5F5F5] dark:bg-sidebar flex flex-col md:shrink-0 min-h-0 overflow-hidden',
-        mobileView === 'list' ? 'flex' : 'hidden md:flex'
+        'w-full md:w-[260px] border-r border-border bg-[#F5F5F5] dark:bg-sidebar flex flex-col md:shrink-0 min-h-0 overflow-hidden transition-all duration-200',
+        mobileView === 'list' ? 'flex' : 'hidden md:flex',
+        !docListVisible && 'md:w-0 md:border-r-0 md:hidden'
       )}>
         {/* Header */}
         <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FolderOpen className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-xs font-medium text-muted-foreground">Document Library</h2>
-          </div>
-          <div className="flex items-center gap-1 relative">
+          <div className="relative">
             <button
-              onClick={() => setShowNewMenu(v => !v)}
-              className="p-1 text-muted-foreground hover:text-foreground"
-              title={t('common.new')}
+              onClick={() => setShowViewMenu(v => !v)}
+              className="flex items-center gap-1.5 hover:bg-black/[0.04] dark:hover:bg-accent/50 rounded px-1 py-0.5 -mx-1 transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" />
+              {sidebarView === 'library' ? (
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Trash2 className="h-4 w-4 text-muted-foreground" />
+              )}
+              <h2 className="text-xs font-medium text-muted-foreground">
+                {sidebarView === 'library' ? 'Document Library' : t('content.trash') || 'Trash'}
+              </h2>
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </button>
-            {showNewMenu && (
+            {showViewMenu && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowNewMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
+                <div className="fixed inset-0 z-10" onClick={() => setShowViewMenu(false)} />
+                <div className="absolute left-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-44">
                   <button
-                    onClick={() => { setShowNewMenu(false); handleCreateDoc(); }}
-                    disabled={creating}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                    onClick={() => { setShowViewMenu(false); setSidebarView('library'); }}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors',
+                      sidebarView === 'library' ? 'text-foreground bg-accent' : 'text-foreground hover:bg-accent'
+                    )}
                   >
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    {t('content.newDoc')}
+                    <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                    Document Library
                   </button>
                   <button
-                    onClick={() => { setShowNewMenu(false); handleCreateTable(); }}
-                    disabled={creating}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                    onClick={() => { setShowViewMenu(false); setSidebarView('trash'); }}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors',
+                      sidebarView === 'trash' ? 'text-foreground bg-accent' : 'text-foreground hover:bg-accent'
+                    )}
                   >
-                    <Table2 className="h-4 w-4 text-muted-foreground" />
-                    {t('content.newTable')}
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    {t('content.trash') || 'Trash'}
                   </button>
                 </div>
               </>
             )}
           </div>
+          {sidebarView === 'library' && (
+            <div className="flex items-center gap-1 relative">
+              <button
+                onClick={() => setShowNewMenu(v => !v)}
+                className="p-1 text-muted-foreground hover:text-foreground"
+                title={t('common.new')}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              {showNewMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowNewMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
+                    <button
+                      onClick={() => { setShowNewMenu(false); handleCreateDoc(); }}
+                      disabled={creating}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                      {t('content.newDoc')}
+                    </button>
+                    <button
+                      onClick={() => { setShowNewMenu(false); handleCreateTable(); }}
+                      disabled={creating}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                    >
+                      <Table2 className="h-4 w-4 text-muted-foreground" />
+                      {t('content.newTable')}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <ScrollArea className="flex-1 min-h-0">
           <div className="px-2 py-1">
-            {isLoading && (
-              <div className="space-y-1 px-1 py-2">
-                {[...Array(6)].map((_, i) => (
-                  <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
-                    <div className="w-4 h-4 rounded bg-muted shrink-0" />
-                    <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
+            {sidebarView === 'library' ? (
+              <>
+                {isLoading && (
+                  <div className="space-y-1 px-1 py-2">
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
+                        <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                        <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                )}
 
-            {/* Search mode */}
-            {displaySearchItems && (
-              displaySearchItems.length === 0 ? (
-                <p className="p-3 text-xs text-muted-foreground">{t('content.noMatch')}</p>
-              ) : (
-                displaySearchItems.map(item => (
-                  <TreeNodeItem
-                    key={item.id}
-                    nodeId={item.id}
-                    node={item}
-                    isSelected={selection?.type === item.type && selection?.id === item.rawId}
-                    onSelect={() => handleSelect(item.id)}
-                    hasChildren={false}
-                    isExpanded={false}
-                    onToggle={() => {}}
-                    depth={0}
-                    onCreateChild={() => {}}
-                  />
-                ))
-              )
-            )}
+                {/* Search mode */}
+                {displaySearchItems && (
+                  displaySearchItems.length === 0 ? (
+                    <p className="p-3 text-xs text-muted-foreground">{t('content.noMatch')}</p>
+                  ) : (
+                    displaySearchItems.map(item => (
+                      <TreeNodeItem
+                        key={item.id}
+                        nodeId={item.id}
+                        node={item}
+                        isSelected={selection?.type === item.type && selection?.id === item.rawId}
+                        onSelect={() => handleSelect(item.id)}
+                        hasChildren={false}
+                        isExpanded={false}
+                        onToggle={() => {}}
+                        depth={0}
+                        onCreateChild={() => {}}
+                      />
+                    ))
+                  )
+                )}
 
-            {/* Tree mode with DnD */}
-            {!displaySearchItems && !isLoading && (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleDragStart}
-                onDragOver={updateDropIntent}
-                onDragMove={updateDropIntent}
-                onDragEnd={handleDragEnd}
-              >
-                {rootIds.map(nodeId => (
-                  <TreeNodeRecursive
-                    key={nodeId}
-                    nodeId={nodeId}
-                    nodes={effectiveNodes}
-                    childrenMap={childrenMap}
-                    selection={selection}
-                    expandedIds={expandedIds}
-                    onSelect={handleSelect}
-                    onToggle={toggleExpand}
-                    onCreateDoc={handleCreateDoc}
-                    onCreateTable={handleCreateTable}
-                    depth={0}
-                    creating={creating}
-                    dropIntent={dropIntent}
-                    dragActiveId={dragActiveId}
-                  />
-                ))}
+                {/* Tree mode with DnD */}
+                {!displaySearchItems && !isLoading && (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragOver={updateDropIntent}
+                    onDragMove={updateDropIntent}
+                    onDragEnd={handleDragEnd}
+                  >
+                    {rootIds.map(nodeId => (
+                      <TreeNodeRecursive
+                        key={nodeId}
+                        nodeId={nodeId}
+                        nodes={effectiveNodes}
+                        childrenMap={childrenMap}
+                        selection={selection}
+                        expandedIds={expandedIds}
+                        onSelect={handleSelect}
+                        onToggle={toggleExpand}
+                        onCreateDoc={handleCreateDoc}
+                        onCreateTable={handleCreateTable}
+                        onRequestDelete={requestDelete}
+                        depth={0}
+                        creating={creating}
+                        dropIntent={dropIntent}
+                        dragActiveId={dragActiveId}
+                      />
+                    ))}
 
-                <DragOverlay dropAnimation={null}>
-                  {dragActiveNode && (
-                    <div className="flex items-center gap-1.5 py-1.5 px-2 text-sm bg-card border border-border rounded-lg shadow-lg opacity-90">
-                      {dragActiveNode.type === 'table'
+                    <DragOverlay dropAnimation={null}>
+                      {dragActiveNode && (
+                        <div className="flex items-center gap-1.5 py-1.5 px-2 text-sm bg-card border border-border rounded-lg shadow-lg opacity-90">
+                          {dragActiveNode.type === 'table'
+                            ? <Table2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                            : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                          }
+                          <span className="truncate">{dragActiveNode.title}</span>
+                        </div>
+                      )}
+                    </DragOverlay>
+                  </DndContext>
+                )}
+              </>
+            ) : (
+              /* Trash view */
+              <>
+                {deletedLoading && (
+                  <div className="space-y-1 px-1 py-2">
+                    {[...Array(4)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
+                        <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                        <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {(() => {
+                  if (deletedLoading) return null;
+                  // Merge docs + tables into a single sorted list by delete time (newest first)
+                  type TrashEntry = { key: string; type: 'doc' | 'table'; id: string; title: string; deletedAt: string };
+                  const entries: TrashEntry[] = [];
+                  (deletedDocs || []).forEach(doc => {
+                    entries.push({ key: `doc:${doc.id}`, type: 'doc', id: doc.id, title: doc.title, deletedAt: doc.deletedAt || doc.updatedAt || '' });
+                  });
+                  deletedTables.forEach(tbl => {
+                    entries.push({ key: `table:${tbl.id}`, type: 'table', id: tbl.id, title: tbl.title, deletedAt: tbl.deletedAt });
+                  });
+                  entries.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+
+                  if (entries.length === 0) {
+                    return (
+                      <p className="p-3 text-xs text-muted-foreground text-center">
+                        {t('content.trashEmpty') || 'Trash is empty'}
+                      </p>
+                    );
+                  }
+
+                  return entries.map(entry => (
+                    <TrashItem
+                      key={entry.key}
+                      title={entry.title}
+                      icon={entry.type === 'table'
                         ? <Table2 className="h-4 w-4 text-muted-foreground shrink-0" />
                         : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                       }
-                      <span className="truncate">{dragActiveNode.title}</span>
-                    </div>
-                  )}
-                </DragOverlay>
-              </DndContext>
+                      deletedAt={entry.deletedAt}
+                      onRestore={async () => {
+                        try {
+                          if (entry.type === 'doc') {
+                            await ol.restoreDeletedDocument(entry.id);
+                            queryClient.invalidateQueries({ queryKey: ['outline-deleted-docs'] });
+                            queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
+                          } else {
+                            const next = deletedTables.filter(dt => dt.id !== entry.id);
+                            setDeletedTables(next);
+                            saveDeletedTables(next);
+                          }
+                        } catch (err) { console.error('Restore failed:', err); }
+                      }}
+                      onPermanentDelete={async () => {
+                        const msg = entry.type === 'doc'
+                          ? (t('content.permanentDeleteConfirm') || 'Permanently delete this document? This cannot be undone.')
+                          : (t('content.permanentDeleteConfirm') || 'Permanently delete this table? This cannot be undone.');
+                        if (!confirm(msg)) return;
+                        try {
+                          if (entry.type === 'doc') {
+                            await ol.permanentlyDeleteDocument(entry.id);
+                            queryClient.setQueryData<ol.OLDocument[]>(['outline-deleted-docs'], old =>
+                              (old || []).filter(d => d.id !== entry.id)
+                            );
+                          } else {
+                            await nc.deleteTable(entry.id);
+                            const next = deletedTables.filter(dt => dt.id !== entry.id);
+                            setDeletedTables(next);
+                            saveDeletedTables(next);
+                            queryClient.invalidateQueries({ queryKey: ['nc-tables'] });
+                          }
+                        } catch (err) { console.error('Permanent delete failed:', err); }
+                      }}
+                    />
+                  ));
+                })()}
+              </>
             )}
           </div>
         </ScrollArea>
@@ -819,8 +1148,10 @@ export default function ContentPage() {
             breadcrumb={getBreadcrumb(selectedDoc.id)}
             onBack={() => setMobileView('list')}
             onSaved={refreshDocs}
-            onDeleted={() => { setSelection(null); refreshDocs(); setMobileView('list'); }}
+            onDeleted={() => { requestDelete(`doc:${selectedDoc.id}`); }}
             onNavigate={(docId) => setSelection({ type: 'doc', id: docId })}
+            docListVisible={docListVisible}
+            onToggleDocList={() => setDocListVisible(v => !v)}
           />
         ) : selectedTableId ? (
           <TableEditor
@@ -839,6 +1170,42 @@ export default function ContentPage() {
           </div>
         )}
       </div>
+
+      {/* Delete dialog for docs with children */}
+      {deleteDialog && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setDeleteDialog(null)} />
+          <div className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-card border border-border rounded-xl shadow-2xl p-5 w-[340px]">
+            <h3 className="text-sm font-medium mb-3">{t('content.deleteDocWithChildren') || 'This document has sub-documents'}</h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => { executeDelete(deleteDialog.nodeId, 'only'); }}
+                className="w-full text-left px-3 py-2.5 text-sm rounded-lg border border-border hover:bg-accent transition-colors"
+              >
+                <div className="font-medium">{t('content.deleteOnly') || 'Delete this document only'}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {t('content.deleteOnlyDesc') || 'Sub-documents will be moved up one level'}
+                </div>
+              </button>
+              <button
+                onClick={() => { executeDelete(deleteDialog.nodeId, 'all'); }}
+                className="w-full text-left px-3 py-2.5 text-sm rounded-lg border border-destructive/30 hover:bg-destructive/5 text-destructive transition-colors"
+              >
+                <div className="font-medium">{t('content.deleteAll') || 'Delete with all sub-documents'}</div>
+                <div className="text-xs text-destructive/70 mt-0.5">
+                  {t('content.deleteAllDesc') || 'All sub-documents will also be moved to trash'}
+                </div>
+              </button>
+            </div>
+            <button
+              onClick={() => setDeleteDialog(null)}
+              className="w-full mt-3 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-lg hover:bg-accent transition-colors"
+            >
+              {t('common.cancel') || 'Cancel'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -849,7 +1216,7 @@ export default function ContentPage() {
 
 function TreeNodeRecursive({
   nodeId, nodes, childrenMap, selection, expandedIds, onSelect, onToggle,
-  onCreateDoc, onCreateTable, depth, creating, dropIntent, dragActiveId,
+  onCreateDoc, onCreateTable, onRequestDelete, depth, creating, dropIntent, dragActiveId,
 }: {
   nodeId: string;
   nodes: Map<string, ContentNode>;
@@ -860,6 +1227,7 @@ function TreeNodeRecursive({
   onToggle: (id: string) => void;
   onCreateDoc: (parentId?: string) => void;
   onCreateTable: (parentId?: string) => void;
+  onRequestDelete: (nodeId: string) => void;
   depth: number;
   creating: boolean;
   dropIntent: DropIntent;
@@ -892,6 +1260,7 @@ function TreeNodeRecursive({
           if (type === 'doc') onCreateDoc(nodeId);
           else onCreateTable(nodeId);
         }}
+        onRequestDelete={onRequestDelete}
         creating={creating}
         dropPosition={dropPosition}
         isDragActive={dragActiveId === nodeId}
@@ -910,6 +1279,7 @@ function TreeNodeRecursive({
               onToggle={onToggle}
               onCreateDoc={onCreateDoc}
               onCreateTable={onCreateTable}
+              onRequestDelete={onRequestDelete}
               depth={depth + 1}
               creating={creating}
               dropIntent={dropIntent}
@@ -927,7 +1297,7 @@ function TreeNodeRecursive({
 // ═══════════════════════════════════════════════════
 
 function DraggableTreeNode({
-  nodeId, node, isSelected, onSelect, hasChildren, isExpanded, onToggle, depth, onCreateChild, creating, dropPosition, isDragActive,
+  nodeId, node, isSelected, onSelect, hasChildren, isExpanded, onToggle, depth, onCreateChild, onRequestDelete, creating, dropPosition, isDragActive,
 }: {
   nodeId: string;
   node: ContentNode;
@@ -938,6 +1308,7 @@ function DraggableTreeNode({
   onToggle: () => void;
   depth: number;
   onCreateChild: (type: 'doc' | 'table') => void;
+  onRequestDelete: (nodeId: string) => void;
   creating?: boolean;
   dropPosition?: 'before' | 'after' | 'inside' | null;
   isDragActive?: boolean;
@@ -947,8 +1318,46 @@ function DraggableTreeNode({
   const { attributes, listeners, setNodeRef } = useDraggable({ id: nodeId });
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showIconPicker, setShowIconPicker] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const iconPickerRef = useRef<HTMLDivElement>(null);
+
+  // Close icon picker on outside click
+  useEffect(() => {
+    if (!showIconPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (iconPickerRef.current && !iconPickerRef.current.contains(e.target as Node)) {
+        setShowIconPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showIconPicker]);
+
+  const handleIconSelect = async (selectedEmoji: string | null) => {
+    setShowIconPicker(false);
+    if (node.type !== 'doc') return;
+    const docId = node.rawId;
+    // Optimistic update
+    queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
+      (old || []).map(d => d.id === docId ? { ...d, emoji: selectedEmoji || undefined } : d)
+    );
+    const isUrl = selectedEmoji && (selectedEmoji.startsWith('/api/') || selectedEmoji.startsWith('http'));
+    try {
+      if (isUrl) {
+        await ol.updateDocument(docId, undefined, undefined, null);
+        await nc.setDocIcon(docId, selectedEmoji);
+        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
+      } else {
+        await ol.updateDocument(docId, undefined, undefined, selectedEmoji);
+        try { await nc.removeDocIcon(docId); } catch { /* ignore */ }
+        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
+      }
+    } catch (e) {
+      console.error('Failed to update icon:', e);
+    }
+  };
 
   // Calculate fixed position for dropdown menus to avoid overflow clipping
   const getMenuPos = (btnRef: React.RefObject<HTMLButtonElement | null>) => {
@@ -981,26 +1390,51 @@ function DraggableTreeNode({
             onClick={(e) => { e.stopPropagation(); onToggle(); }}
             className="p-0.5 shrink-0 text-muted-foreground hover:text-foreground"
           >
-            <ChevronRight className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')} />
+            <svg className={cn('h-3 w-3 transition-transform', isExpanded && 'rotate-90')} viewBox="0 0 16 16" fill="currentColor"><polygon points="6,3 13,8 6,13" /></svg>
           </button>
         ) : (
           <span className="w-4 shrink-0" />
         )}
 
-        {/* Icon — emoji overrides default for docs */}
-        {node.emoji ? (
-          node.emoji.startsWith('/api/') || node.emoji.startsWith('http') ? (
-            <img src={node.emoji} alt="" className="w-4 h-4 rounded object-cover shrink-0" />
-          ) : (
-            <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
-          )
-        ) : node.type === 'table'
-          ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
-          : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
-        }
+        {/* Icon — emoji overrides default for docs; click to change */}
+        <div className="relative shrink-0" ref={iconPickerRef}>
+          <button
+            onClick={(e) => {
+              if (node.type === 'doc') { e.stopPropagation(); setShowIconPicker(v => !v); }
+            }}
+            className={cn('shrink-0', node.type === 'doc' && 'hover:opacity-70 transition-opacity')}
+            title={node.type === 'doc' ? 'Change icon' : undefined}
+          >
+            {node.emoji ? (
+              node.emoji.startsWith('/api/') || node.emoji.startsWith('http') ? (
+                <img src={node.emoji} alt="" className="w-4 h-4 rounded object-cover" />
+              ) : (
+                <span className="text-sm leading-none">{node.emoji}</span>
+              )
+            ) : node.type === 'table'
+              ? <Table2 className={cn('h-4 w-4', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+              : <FileText className={cn('h-4 w-4', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+            }
+          </button>
+          {showIconPicker && node.type === 'doc' && (
+            <div className="fixed z-50 rounded-lg shadow-xl overflow-hidden" style={(() => {
+              const rect = iconPickerRef.current?.getBoundingClientRect();
+              return rect ? { top: rect.bottom + 4, left: Math.max(4, rect.left - 80) } : { top: 0, left: 0 };
+            })()}>
+              <EmojiPicker
+                onSelect={(em) => handleIconSelect(em)}
+                onRemove={node.emoji ? () => handleIconSelect(null) : undefined}
+                onUploadImage={async (file) => {
+                  const result = await ol.uploadAttachment(file, node.rawId);
+                  return result.data.url;
+                }}
+              />
+            </div>
+          )}
+        </div>
 
         {/* Title — drag handle */}
-        <span className="truncate flex-1" {...attributes} {...listeners}>{node.title}</span>
+        <span className="truncate flex-1 select-none" {...attributes} {...listeners}>{node.title}</span>
 
         {/* Hover actions: Add + More */}
         <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity">
@@ -1080,18 +1514,10 @@ function DraggableTreeNode({
                   </button>
                   <div className="border-t border-border my-1" />
                   <button
-                    onClick={async (e) => {
+                    onClick={(e) => {
                       e.stopPropagation();
                       setShowMoreMenu(false);
-                      if (!confirm(t('content.deleteConfirm'))) return;
-                      try {
-                        if (node.type === 'doc') {
-                          await ol.deleteDocument(node.rawId);
-                          queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-                            (old || []).filter(d => d.id !== node.rawId)
-                          );
-                        }
-                      } catch (err) { console.error('Delete failed:', err); }
+                      onRequestDelete(nodeId);
                     }}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-accent transition-colors"
                   >
@@ -1154,12 +1580,67 @@ function TreeNodeItem({
 }
 
 // ═══════════════════════════════════════════════════
+// Trash item component
+// ═══════════════════════════════════════════════════
+
+function TrashItem({ title, icon, deletedAt, onRestore, onPermanentDelete }: {
+  title: string;
+  icon: React.ReactNode;
+  deletedAt?: string;
+  onRestore: () => Promise<void>;
+  onPermanentDelete: () => Promise<void>;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleAction = async (action: () => Promise<void>) => {
+    if (loading) return;
+    setLoading(true);
+    try { await action(); } finally { setLoading(false); }
+  };
+
+  const deletedDate = deletedAt ? new Date(deletedAt).toLocaleDateString() : '';
+
+  return (
+    <div className={cn(
+      'group flex items-center gap-1.5 py-1.5 px-2 text-sm rounded-lg',
+      loading ? 'opacity-50' : 'hover:bg-black/[0.03] dark:hover:bg-accent/50'
+    )}>
+      {icon}
+      <div className="flex-1 min-w-0">
+        <span className="truncate block select-none">{title || 'Untitled'}</span>
+        {deletedDate && (
+          <span className="text-[10px] text-muted-foreground/60">{deletedDate}</span>
+        )}
+      </div>
+      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={() => handleAction(onRestore)}
+          disabled={loading}
+          className="p-1 text-muted-foreground hover:text-foreground rounded"
+          title="Restore"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={() => handleAction(onPermanentDelete)}
+          disabled={loading}
+          className="p-1 text-destructive hover:text-destructive/80 rounded"
+          title="Delete permanently"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
 // Document sub-components
 // ═══════════════════════════════════════════════════
 
 /* Emoji picker is now a separate component: @/components/EmojiPicker */
 
-function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
+function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onNavigate, docListVisible, onToggleDocList }: {
   doc: ol.OLDocument;
   customIcon?: string;
   breadcrumb: { id: string; title: string }[];
@@ -1167,6 +1648,8 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
   onSaved: () => void;
   onDeleted: () => void;
   onNavigate: (docId: string) => void;
+  docListVisible?: boolean;
+  onToggleDocList?: () => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -1208,7 +1691,6 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
   const [title, setTitle] = useState(doc.title);
   const [emoji, setEmoji] = useState<string | null>(customIcon || (doc as any).icon?.trim() || doc.emoji?.trim() || null);
   const [text, setText] = useState(doc.text);
-  const [deleting, setDeleting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showTitleIcon, setShowTitleIcon] = useState(false);
@@ -1242,14 +1724,20 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
         setCommentQuote(detail.text);
         setShowComments(true);
         // Calculate top offset of the selection for sidebar alignment
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          const range = sel.getRangeAt(0);
-          const editorArea = document.querySelector('.outline-editor');
-          if (editorArea) {
-            const editorRect = editorArea.getBoundingClientRect();
-            const rangeRect = range.getBoundingClientRect();
-            setCommentTopOffset(rangeRect.top - editorRect.top);
+        const editorArea = document.querySelector('.outline-editor');
+        if (editorArea) {
+          const editorRect = editorArea.getBoundingClientRect();
+          // Try selection range first (inline comments), then blockRect (block comments)
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0) {
+            const rangeRect = sel.getRangeAt(0).getBoundingClientRect();
+            if (rangeRect.height > 0) {
+              setCommentTopOffset(rangeRect.top - editorRect.top);
+              return;
+            }
+          }
+          if (detail.blockRect) {
+            setCommentTopOffset(detail.blockRect.top - editorRect.top);
           }
         }
       }
@@ -1397,8 +1885,13 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
   }, [onSaved]);
 
   useEffect(() => {
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, []);
+    const docId = doc.id;
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      // Signal editing session end — triggers Outline to create a revision snapshot
+      ol.updateDocument(docId, undefined, undefined, undefined, { done: true }).catch(() => {});
+    };
+  }, [doc.id]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
@@ -1441,26 +1934,27 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     scheduleSave(title, newText);
   };
 
-  const handleDelete = async () => {
-    if (!confirm(t('content.deleteConfirm'))) return;
-    setDeleting(true);
-    try {
-      await ol.deleteDocument(doc.id);
-      onDeleted();
-    } catch (e) {
-      console.error('Delete failed:', e);
-    } finally {
-      setDeleting(false);
-    }
+  const handleDelete = () => {
+    onDeleted(); // delegate to parent — handles children dialog, trash, navigation
   };
 
   const statusText = saveStatus === 'saving' ? t('content.saving') : saveStatus === 'unsaved' ? t('content.unsaved') : saveStatus === 'error' ? t('content.saveFailed') : '';
 
   return (
-    <>
+    <div className="flex flex-row h-full overflow-hidden">
+    <div className="flex-1 min-w-0 flex flex-col">
       {/* Top bar — breadcrumb + actions, split when comments open */}
       <div className="flex items-center border-b border-border bg-white dark:bg-card shrink-0">
         <div className="flex-1 min-w-0 flex items-center px-4 py-2">
+        {onToggleDocList && (
+          <button
+            onClick={onToggleDocList}
+            className="hidden md:flex p-1.5 -ml-1 mr-1 text-muted-foreground hover:text-foreground rounded transition-colors"
+            title={docListVisible ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            {docListVisible ? <ArrowLeftToLine className="h-4 w-4" /> : <ArrowRightToLine className="h-4 w-4" />}
+          </button>
+        )}
         <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -1479,11 +1973,14 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
               </span>
             ))}
           </div>
-          {/* Timestamp + author on second line */}
-          <div className="text-[11px] text-muted-foreground/50 mt-0.5">
+          {/* Timestamp + author on second line — clickable to open history */}
+          <button
+            onClick={() => setShowHistory(true)}
+            className="text-[11px] text-muted-foreground/50 mt-0.5 hover:text-muted-foreground transition-colors cursor-pointer"
+          >
             {formatRelativeTime(doc.updatedAt)}
             {doc.updatedBy?.name && <span> · {doc.updatedBy.name}</span>}
-          </div>
+          </button>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {statusText && (
@@ -1550,10 +2047,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
             </button>
           </div>
         )}
-        {/* History sidebar header — aligned with top bar */}
-        {showHistory && (
-          <div className="w-72 shrink-0 border-l border-border" />
-        )}
+        {/* History sidebar — no top bar extension, sidebar has its own header */}
       </div>
 
       {/* Content area */}
@@ -1648,6 +2142,20 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
           </div>
           </div>
 
+          {/* Search bar — sticky at top of scroll container */}
+          {!previewRevision && showSearch && (
+            <div className="sticky top-0 z-30 flex justify-end pr-4">
+              <SearchBar
+                getView={() => {
+                  const mount = document.querySelector('.outline-editor-mount') as any;
+                  return mount?.__pmView || null;
+                }}
+                showReplace={searchWithReplace}
+                onClose={() => setShowSearch(false)}
+              />
+            </div>
+          )}
+
           {/* Editor / Revision preview area */}
           <div className="relative flex-1 min-h-0">
             {previewRevision ? (
@@ -1658,27 +2166,15 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
                 highlightChanges={highlightChanges}
               />
             ) : (
-              <>
-                {showSearch && (
-                  <SearchBar
-                    getView={() => {
-                      const mount = document.querySelector('.outline-editor-mount') as any;
-                      return mount?.__pmView || null;
-                    }}
-                    showReplace={searchWithReplace}
-                    onClose={() => setShowSearch(false)}
-                  />
-                )}
-                <Editor
-                  key={`${doc.id}-${editorKey}`}
-                  defaultValue={doc.text}
-                  onChange={handleTextChange}
-                  placeholder={t('content.editorPlaceholder')}
-                  documentId={doc.id}
-                  onSearchOpen={(withReplace) => { setShowSearch(true); setSearchWithReplace(withReplace); }}
-                  commentQuotes={commentHighlightQuotes}
-                />
-              </>
+              <Editor
+                key={`${doc.id}-${editorKey}`}
+                defaultValue={doc.text}
+                onChange={handleTextChange}
+                placeholder={t('content.editorPlaceholder')}
+                documentId={doc.id}
+                onSearchOpen={(withReplace) => { setShowSearch(true); setSearchWithReplace(withReplace); }}
+                commentQuotes={commentHighlightQuotes}
+              />
             )}
           </div>
         </div>
@@ -1688,7 +2184,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
             <Comments
               queryKey={['doc-comments', doc.id]}
               fetchComments={fetchDocComments}
-              postComment={(text) => gw.commentOnDoc(doc.id, text)}
+              postComment={(text, parentId) => gw.commentOnDoc(doc.id, text, parentId)}
               editComment={async (commentId, text) => {
                 await ol.updateComment(commentId, ol.textToProseMirror(text));
               }}
@@ -1712,29 +2208,32 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
           </div>
         )}
 
-        {showHistory && (
-          <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
-            <RevisionHistory
-              doc={doc}
-              onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
-              onRestored={async () => {
-                await queryClient.invalidateQueries({ queryKey: ['outline-doc', doc.id] });
-                await queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
-                const restored = await queryClient.fetchQuery({ queryKey: ['outline-doc', doc.id], queryFn: () => ol.getDocument(doc.id) });
-                setTitle(restored.title);
-                setText(restored.text);
-                latestRef.current = { title: restored.title, text: restored.text, emoji: ((restored as any).icon || restored.emoji || null) as string | null };
-                setEditorKey(k => k + 1);
-                onSaved();
-              }}
-              onSelect={(rev, prev) => { setPreviewRevision(rev); setPrevRevision(prev); }}
-              highlightChanges={highlightChanges}
-              onHighlightChangesToggle={() => setHighlightChanges(v => !v)}
-            />
-          </div>
-        )}
       </div>
-    </>
+    </div>
+
+    {/* History sidebar — full height, independent from top bar */}
+    {showHistory && (
+      <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
+        <RevisionHistory
+          doc={doc}
+          onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+          onRestored={async () => {
+            await queryClient.invalidateQueries({ queryKey: ['outline-doc', doc.id] });
+            await queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
+            const restored = await queryClient.fetchQuery({ queryKey: ['outline-doc', doc.id], queryFn: () => ol.getDocument(doc.id) });
+            setTitle(restored.title);
+            setText(restored.text);
+            latestRef.current = { title: restored.title, text: restored.text, emoji: ((restored as any).icon || restored.emoji || null) as string | null };
+            setEditorKey(k => k + 1);
+            onSaved();
+          }}
+          onSelect={(rev, prev) => { setPreviewRevision(rev); setPrevRevision(prev); }}
+          highlightChanges={highlightChanges}
+          onHighlightChangesToggle={() => setHighlightChanges(v => !v)}
+        />
+      </div>
+    )}
+    </div>
   );
 }
 

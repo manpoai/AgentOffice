@@ -1,10 +1,30 @@
 /**
  * Custom ProseMirror NodeViews for rendering:
  * - math_block: KaTeX rendered LaTeX
+ * - mermaid code_block: Mermaid diagrams as SVG
  */
 import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection } from 'prosemirror-state';
 import type { EditorView, NodeView } from 'prosemirror-view';
+
+/** Lazy-load mermaid via CDN <script> tag (avoids webpack bundling issues). */
+let mermaidPromise: Promise<any> | null = null;
+function loadMermaid(): Promise<any> {
+  if (mermaidPromise) return mermaidPromise;
+  if ((window as any).mermaid) return Promise.resolve((window as any).mermaid);
+  mermaidPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
+    script.onload = () => {
+      const m = (window as any).mermaid;
+      if (m) resolve(m);
+      else reject(new Error('Mermaid global not found after script load'));
+    };
+    script.onerror = () => reject(new Error('Failed to load mermaid from CDN'));
+    document.head.appendChild(script);
+  });
+  return mermaidPromise;
+}
 
 /**
  * Math block NodeView — renders LaTeX via KaTeX.
@@ -61,6 +81,8 @@ class ImageNodeView implements NodeView {
   private img: HTMLImageElement;
   private toolbar: HTMLElement;
   private sizeLabel: HTMLElement | null = null;
+  private captionInput: HTMLInputElement | null = null;
+  private captionContainer: HTMLElement | null = null;
   private resizing = false;
 
   constructor(private node: PMNode, private view: EditorView, private getPos: () => number | undefined) {
@@ -145,6 +167,40 @@ class ImageNodeView implements NodeView {
     toolbarContainer.appendChild(imgContainer);
     toolbarContainer.appendChild(this.toolbar);
 
+    // Caption input (shown when image is selected) — inside toolbarContainer so width matches image
+    this.captionContainer = document.createElement('div');
+    this.captionContainer.style.cssText = 'display:none;text-align:center;margin-top:4px;width:100%;overflow:hidden;';
+    this.captionInput = document.createElement('input');
+    this.captionInput.type = 'text';
+    this.captionInput.placeholder = 'Write a caption';
+    this.captionInput.value = node.attrs.alt || '';
+    this.captionInput.style.cssText = 'width:100%;box-sizing:border-box;text-align:center;font-size:13px;color:hsl(var(--muted-foreground, 0 0% 45%));background:transparent;border:none;outline:none;padding:4px 8px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;user-select:text;-webkit-user-select:text;cursor:text;';
+    this.captionInput.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+    this.captionInput.addEventListener('dragstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    this.captionInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        this.captionInput?.blur();
+      }
+    });
+    this.captionInput.addEventListener('blur', () => {
+      const val = this.captionInput?.value || '';
+      if (val !== (this.node.attrs.alt || '')) {
+        const pos = this.getPos();
+        if (pos != null) {
+          const tr = this.view.state.tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, alt: val });
+          this.view.dispatch(tr);
+        }
+      }
+    });
+    this.captionContainer.appendChild(this.captionInput);
+    toolbarContainer.appendChild(this.captionContainer);
+
     this.dom.appendChild(toolbarContainer);
 
     // Update dimensions once image loads
@@ -195,22 +251,13 @@ class ImageNodeView implements NodeView {
     // Separator
     tb.appendChild(this.createSep());
 
-    // Dimensions display
-    this.sizeLabel = document.createElement('span');
-    this.sizeLabel.style.cssText = 'padding:4px 8px;font-size:12px;color:hsl(var(--muted-foreground, 0 0% 45%));user-select:none;white-space:nowrap;';
-    this.sizeLabel.textContent = '…';
-    tb.appendChild(this.sizeLabel);
-
-    // Separator
-    tb.appendChild(this.createSep());
-
-    // Action buttons
+    // Action buttons (size display and link button removed per spec)
     const actions = [
       { svg: this.svgIcon('download'), title: 'Download', action: () => this.downloadImage() },
       { svg: this.svgIcon('replace'), title: 'Replace', action: () => this.replaceImage() },
       { svg: this.svgIcon('delete'), title: 'Delete', action: () => this.deleteImage() },
-      { svg: this.svgIcon('link'), title: 'Copy link', action: () => this.copyLink() },
       { svg: this.svgIcon('caption'), title: 'Alt text', action: () => this.editAltText() },
+      { svg: this.svgIcon('comment'), title: 'Comment', action: () => this.addComment() },
     ];
 
     for (const act of actions) {
@@ -248,7 +295,8 @@ class ImageNodeView implements NodeView {
       replace: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>',
       delete: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
       link: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
-      caption: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      caption: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>',
+      comment: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
     };
     return icons[name] || '';
   }
@@ -303,6 +351,11 @@ class ImageNodeView implements NodeView {
     navigator.clipboard.writeText(this.img.src).catch(() => {});
   }
 
+  private addComment() {
+    const text = this.node.attrs.alt || '[image]';
+    window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text } }));
+  }
+
   private editAltText() {
     const current = this.node.attrs.alt || '';
     const alt = prompt('Alt text:', current);
@@ -342,21 +395,32 @@ class ImageNodeView implements NodeView {
     if (node.attrs.width) this.img.style.width = node.attrs.width;
     else this.img.style.width = '';
     this.dom.style.textAlign = node.attrs.align || 'center';
+    if (this.captionInput && document.activeElement !== this.captionInput) {
+      this.captionInput.value = node.attrs.alt || '';
+    }
     return true;
   }
 
   selectNode() {
     this.dom.classList.add('image-selected');
+    // Override ProseMirror's default selectednode outline/background with inline styles
+    this.dom.style.outline = 'none';
+    this.dom.style.background = 'transparent';
     this.img.style.outline = '2px solid hsl(var(--primary, 220 90% 56%))';
     this.img.style.outlineOffset = '2px';
     this.showToolbar();
+    if (this.captionContainer) this.captionContainer.style.display = 'block';
+    if (this.captionInput) this.captionInput.value = this.node.attrs.alt || '';
   }
 
   deselectNode() {
     this.dom.classList.remove('image-selected');
+    this.dom.style.outline = '';
+    this.dom.style.background = '';
     this.img.style.outline = 'none';
     this.img.style.outlineOffset = '';
     this.hideToolbar();
+    if (this.captionContainer) this.captionContainer.style.display = 'none';
   }
 
   destroy() {
@@ -364,6 +428,10 @@ class ImageNodeView implements NodeView {
   }
 
   stopEvent(event: Event) {
+    // Allow mousedown on caption input for text selection
+    if (event.type === 'mousedown' && event.target === this.captionInput) {
+      return false;
+    }
     return event.type === 'mousedown' || event.type === 'click';
   }
   ignoreMutation() { return true; }
@@ -375,32 +443,32 @@ class ImageNodeView implements NodeView {
 class CheckboxItemView implements NodeView {
   dom: HTMLElement;
   contentDOM: HTMLElement;
-  private checkbox: HTMLInputElement;
+  private checkbox: HTMLSpanElement;
 
   constructor(private node: PMNode, private view: EditorView, private getPos: () => number | undefined) {
     this.dom = document.createElement('li');
     this.dom.className = 'checkbox-item';
     this.dom.dataset.checked = node.attrs.checked ? 'true' : 'false';
 
-    this.checkbox = document.createElement('input');
-    this.checkbox.type = 'checkbox';
-    this.checkbox.checked = node.attrs.checked;
-    this.checkbox.style.cssText = 'margin: 0.3em 0.5rem 0 0; cursor: pointer; flex-shrink: 0; width: 16px; height: 16px; accent-color: hsl(var(--sidebar-primary, 228 80% 50%));';
-    this.checkbox.addEventListener('mousedown', (e) => {
-      // Prevent ProseMirror from handling this click
-      e.preventDefault();
-    });
+    // Use a <span> instead of <input> to avoid native checkbox toggle conflicts with ProseMirror
+    this.checkbox = document.createElement('span');
+    this.checkbox.setAttribute('role', 'checkbox');
+    this.checkbox.setAttribute('aria-checked', node.attrs.checked ? 'true' : 'false');
+    this.checkbox.contentEditable = 'false';
+    this.updateCheckboxStyle(node.attrs.checked);
     this.checkbox.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       const pos = this.getPos();
-      if (pos != null) {
-        const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
-          ...this.node.attrs,
-          checked: !this.node.attrs.checked,
-        });
-        this.view.dispatch(tr);
-      }
+      if (pos == null) return;
+      const currentNode = this.view.state.doc.nodeAt(pos);
+      if (!currentNode || currentNode.type.name !== 'checkbox_item') return;
+      const newChecked = !currentNode.attrs.checked;
+      const tr = this.view.state.tr.setNodeMarkup(pos, undefined, {
+        ...currentNode.attrs,
+        checked: newChecked,
+      });
+      this.view.dispatch(tr);
     });
 
     this.dom.style.cssText = 'display: flex; align-items: flex-start; list-style: none;';
@@ -411,16 +479,214 @@ class CheckboxItemView implements NodeView {
     this.dom.appendChild(this.contentDOM);
   }
 
+  private updateCheckboxStyle(checked: boolean) {
+    const accentColor = 'hsl(var(--sidebar-primary, 228 80% 50%))';
+    if (checked) {
+      this.checkbox.style.cssText = `display: inline-flex; align-items: center; justify-content: center; margin: 0.3em 0.5rem 0 0; cursor: pointer; flex-shrink: 0; width: 16px; height: 16px; border-radius: 3px; background: ${accentColor}; border: none; user-select: none;`;
+      this.checkbox.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="display:block"><path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    } else {
+      this.checkbox.style.cssText = `display: inline-block; margin: 0.3em 0.5rem 0 0; cursor: pointer; flex-shrink: 0; width: 16px; height: 16px; border-radius: 3px; border: 2px solid hsl(var(--muted-foreground, 0 0% 45%)); background: transparent; user-select: none; box-sizing: border-box;`;
+      this.checkbox.innerHTML = '';
+    }
+  }
+
   update(node: PMNode) {
     if (node.type.name !== 'checkbox_item') return false;
     this.node = node;
-    this.checkbox.checked = node.attrs.checked;
     this.dom.dataset.checked = node.attrs.checked ? 'true' : 'false';
+    this.checkbox.setAttribute('aria-checked', node.attrs.checked ? 'true' : 'false');
+    this.updateCheckboxStyle(node.attrs.checked);
     return true;
   }
 
   stopEvent(event: Event) {
-    return event.target === this.checkbox;
+    return event.target === this.checkbox || this.checkbox.contains(event.target as Node);
+  }
+}
+
+/**
+ * Mermaid code block NodeView — renders mermaid diagrams as SVG.
+ * Shows rendered diagram when not focused; shows editable code when focused.
+ */
+class MermaidBlockView implements NodeView {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  private preview: HTMLElement;
+  private codeWrap: HTMLElement;
+  private focused = false;
+  private renderTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(private node: PMNode, private view: EditorView, private getPos: () => number | undefined) {
+    this.dom = document.createElement('div');
+    this.dom.className = 'mermaid-block';
+    this.dom.style.cssText = 'position: relative; margin: 1em 0; border: 1px solid hsl(var(--border)); border-radius: 8px; overflow: hidden;';
+
+    // Label bar with toggle button
+    const label = document.createElement('div');
+    label.contentEditable = 'false';
+    label.style.cssText = 'font-size: 11px; color: hsl(var(--muted-foreground)); padding: 4px 12px; background: hsl(var(--muted)); border-bottom: 1px solid hsl(var(--border)); user-select: none; display: flex; align-items: center; justify-content: space-between;';
+    const labelText = document.createElement('span');
+    labelText.textContent = 'Mermaid';
+    label.appendChild(labelText);
+    const toggleBtn = document.createElement('button');
+    toggleBtn.style.cssText = 'border: none; background: transparent; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: hsl(var(--muted-foreground)); display: flex; align-items: center; gap: 4px;';
+    toggleBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Edit`;
+    toggleBtn.addEventListener('mouseenter', () => { toggleBtn.style.background = 'hsl(var(--accent))'; });
+    toggleBtn.addEventListener('mouseleave', () => { toggleBtn.style.background = 'transparent'; });
+    toggleBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('[Mermaid] mousedown on toggle');
+    });
+    toggleBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('[Mermaid] click on toggle, focused:', this.focused);
+      if (this.focused) {
+        this.exitEditMode();
+        toggleBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg> Edit`;
+      } else {
+        this.enterEditMode();
+        toggleBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg> Preview`;
+      }
+    });
+    label.appendChild(toggleBtn);
+    this.dom.appendChild(label);
+
+    // Code area (editable)
+    this.codeWrap = document.createElement('pre');
+    this.codeWrap.style.cssText = 'margin: 0; padding: 12px; font-size: 13px; font-family: monospace; white-space: pre-wrap; display: none;';
+    this.contentDOM = document.createElement('code');
+    this.codeWrap.appendChild(this.contentDOM);
+    this.dom.appendChild(this.codeWrap);
+
+    // Preview area
+    this.preview = document.createElement('div');
+    this.preview.contentEditable = 'false';
+    this.preview.style.cssText = 'padding: 16px; display: flex; justify-content: center; align-items: center; min-height: 60px; cursor: pointer;';
+    this.preview.addEventListener('click', () => {
+      this.enterEditMode();
+    });
+    this.dom.appendChild(this.preview);
+
+    this.renderMermaid();
+  }
+
+  private enterEditMode() {
+    this.focused = true;
+    this.codeWrap.style.display = 'block';
+    this.preview.style.display = 'none';
+    // Focus the code
+    const pos = this.getPos();
+    if (pos != null) {
+      const tr = this.view.state.tr.setSelection(
+        this.view.state.selection.constructor.near(this.view.state.doc.resolve(pos + 1))
+      );
+      this.view.dispatch(tr);
+      this.view.focus();
+    }
+  }
+
+  private exitEditMode() {
+    this.focused = false;
+    this.codeWrap.style.display = 'none';
+    this.preview.style.display = 'flex';
+    this.renderMermaid();
+  }
+
+  private async renderMermaid() {
+    const code = this.node.textContent.trim();
+    if (!code) {
+      this.preview.innerHTML = '<span style="color: hsl(var(--muted-foreground)); font-style: italic;">Empty mermaid diagram</span>';
+      return;
+    }
+
+    try {
+      // Load mermaid from CDN to avoid bundler issues
+      const mermaid = await loadMermaid();
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
+        securityLevel: 'loose',
+      });
+      const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const { svg } = await mermaid.render(id, code);
+      this.preview.innerHTML = svg;
+      // Constrain SVG to its natural size — don't stretch to fill container
+      const svgEl = this.preview.querySelector('svg');
+      if (svgEl) {
+        // Use the intrinsic dimensions from viewBox or width/height attributes
+        const vb = svgEl.getAttribute('viewBox');
+        const intrinsicW = svgEl.getAttribute('width');
+        if (vb) {
+          const parts = vb.split(/[\s,]+/);
+          const vbW = parseFloat(parts[2]);
+          const vbH = parseFloat(parts[3]);
+          if (vbW && vbH) {
+            // Set width to the smaller of viewBox width or container width
+            svgEl.style.width = `${Math.min(vbW, 800)}px`;
+            svgEl.style.height = 'auto';
+            svgEl.style.maxWidth = '100%';
+            svgEl.style.maxHeight = '600px';
+          }
+        } else if (intrinsicW) {
+          const w = parseFloat(intrinsicW);
+          if (w) {
+            svgEl.style.width = `${Math.min(w, 800)}px`;
+            svgEl.style.height = 'auto';
+            svgEl.style.maxWidth = '100%';
+          }
+        }
+      }
+    } catch (err) {
+      this.preview.innerHTML = `<pre style="color: hsl(var(--destructive)); font-size: 12px; margin: 0;">${(err as Error).message || 'Mermaid render error'}</pre>`;
+    }
+  }
+
+  update(node: PMNode) {
+    if (node.type.name !== 'code_block' || node.attrs.language !== 'mermaid') return false;
+    this.node = node;
+    if (!this.focused) {
+      // Debounce re-render
+      if (this.renderTimer) clearTimeout(this.renderTimer);
+      this.renderTimer = setTimeout(() => this.renderMermaid(), 300);
+    }
+    return true;
+  }
+
+  selectNode() {
+    // Don't auto-enter edit mode on node selection — user clicks Edit button
+  }
+
+  deselectNode() {
+    // Only exit edit mode if we're not in the middle of entering it
+    // (enterEditMode dispatches a TextSelection which triggers deselectNode)
+    if (this.focused) {
+      // Check if cursor is inside our code block — if so, stay in edit mode
+      const pos = this.getPos();
+      if (pos != null) {
+        const { from } = this.view.state.selection;
+        const end = pos + this.node.nodeSize;
+        if (from > pos && from < end) return; // cursor inside, stay editing
+      }
+      this.exitEditMode();
+    }
+  }
+
+  stopEvent(event: Event) {
+    // Prevent ProseMirror from handling events on the label bar (toggle button)
+    // and the preview area — only let ProseMirror handle events in the code editing area
+    const target = event.target as HTMLElement;
+    if (this.contentDOM.contains(target)) return false;
+    return true;
+  }
+
+  ignoreMutation() {
+    return true;
+  }
+
+  destroy() {
+    if (this.renderTimer) clearTimeout(this.renderTimer);
   }
 }
 
@@ -435,5 +701,24 @@ export function createNodeViews() {
       new ImageNodeView(node, view, getPos),
     checkbox_item: (node: PMNode, view: EditorView, getPos: () => number | undefined) =>
       new CheckboxItemView(node, view, getPos),
+    code_block: (node: PMNode, view: EditorView, getPos: () => number | undefined) => {
+      // Only use MermaidBlockView for mermaid code blocks
+      if (node.attrs.language === 'mermaid') {
+        return new MermaidBlockView(node, view, getPos);
+      }
+      // Default code block: use standard DOM rendering (pass-through)
+      const dom = document.createElement('pre');
+      const contentDOM = document.createElement('code');
+      const lang = node.attrs.language;
+      if (lang) contentDOM.className = `language-${lang}`;
+      dom.appendChild(contentDOM);
+      return { dom, contentDOM, update(n: PMNode) {
+        if (n.type.name !== 'code_block') return false;
+        const newLang = n.attrs.language;
+        if (newLang === 'mermaid') return false; // Force recreate as MermaidBlockView
+        contentDOM.className = newLang ? `language-${newLang}` : '';
+        return true;
+      }};
+    },
   };
 }

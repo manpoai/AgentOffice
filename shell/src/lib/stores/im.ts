@@ -16,6 +16,9 @@ interface IMState {
   // Users cache
   users: Record<string, MMUser>;
 
+  // Agent avatar overrides (username → avatar_url from Gateway)
+  agentAvatars: Record<string, string>;
+
   // WebSocket status
   wsStatus: 'connecting' | 'connected' | 'disconnected';
 
@@ -30,6 +33,7 @@ interface IMState {
   setMessages: (channelId: string, posts: MMPost[]) => void;
   addMessage: (post: MMPost) => void;
   setUsers: (users: MMUser[]) => void;
+  setAgentAvatars: (avatars: Record<string, string>) => void;
   setWsStatus: (status: IMState['wsStatus']) => void;
   setMobileView: (view: IMState['mobileView']) => void;
 }
@@ -41,6 +45,7 @@ export const useIMStore = create<IMState>((set, get) => ({
   activeChannelId: null,
   messages: {},
   users: {},
+  agentAvatars: {},
   wsStatus: 'disconnected',
   mobileView: 'channels',
 
@@ -58,7 +63,7 @@ export const useIMStore = create<IMState>((set, get) => ({
 
   setActiveChannel: (id) => {
     set({ activeChannelId: id });
-    try { if (id) localStorage.setItem('asuite-im-active-channel', id); } catch { /* ignore */ }
+    try { if (id) sessionStorage.setItem('asuite-im-active-channel', id); } catch { /* ignore */ }
   },
 
   setMessages: (channelId, posts) => set(state => ({
@@ -83,6 +88,7 @@ export const useIMStore = create<IMState>((set, get) => ({
     return { users: map };
   }),
 
+  setAgentAvatars: (avatars) => set({ agentAvatars: avatars }),
   setWsStatus: (wsStatus) => set({ wsStatus }),
   setMobileView: (mobileView) => set({ mobileView }),
 }));

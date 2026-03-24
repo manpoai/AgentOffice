@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Send, X, MoreHorizontal, Pencil, Trash2, CheckCircle2, Undo2, Image as ImageIcon, Paperclip, Copy, Link } from 'lucide-react';
+import { Send, X, MoreHorizontal, Pencil, Trash2, CheckCircle2, Undo2, Image as ImageIcon, Paperclip, Copy, Link, Reply, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Comment } from '@/lib/api/gateway';
 import { useMentionPopover, MentionPopover, type MentionCandidate } from '@/components/mention-popover';
@@ -13,8 +13,8 @@ interface CommentsProps {
   queryKey: string[];
   /** Function to fetch comments */
   fetchComments: () => Promise<Comment[]>;
-  /** Function to post a new comment */
-  postComment: (text: string) => Promise<void>;
+  /** Function to post a new comment (optionally as a reply) */
+  postComment: (text: string, parentId?: string) => Promise<void>;
   /** Function to edit a comment */
   editComment?: (commentId: string, text: string) => Promise<void>;
   /** Function to delete a comment */
@@ -111,13 +111,14 @@ function CommentBody({ text }: { text: string }) {
 }
 
 /** Context menu for comment actions */
-function CommentMenu({ comment, onEdit, onDelete, onResolve, onUnresolve, onCopyLink }: {
+function CommentMenu({ comment, onEdit, onDelete, onResolve, onUnresolve, onCopyLink, onReply }: {
   comment: Comment;
   onEdit?: () => void;
   onDelete?: () => void;
   onResolve?: () => void;
   onUnresolve?: () => void;
   onCopyLink?: () => void;
+  onReply?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -133,6 +134,7 @@ function CommentMenu({ comment, onEdit, onDelete, onResolve, onUnresolve, onCopy
   }, [open]);
 
   const items = [];
+  if (onReply) items.push({ icon: Reply, label: t('comments.reply'), action: () => { onReply(); setOpen(false); } });
   if (onEdit) items.push({ icon: Pencil, label: t('comments.edit'), action: () => { onEdit(); setOpen(false); } });
   if (comment.resolved_by) {
     if (onUnresolve) items.push({ icon: Undo2, label: t('comments.markAsUnresolved'), action: () => { onUnresolve(); setOpen(false); } });
@@ -188,6 +190,9 @@ export function Comments({
   const [editText, setEditText] = useState('');
   const [showResolved, setShowResolved] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [replyToName, setReplyToName] = useState('');
+  const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -223,9 +228,20 @@ export function Comments({
   });
 
   // Filter comments by resolved status
-  const visibleComments = comments.filter(c =>
+  const filteredComments = comments.filter(c =>
     showResolved ? !!c.resolved_by : !c.resolved_by
   );
+
+  // Group into threads: top-level comments + their replies
+  const topLevelComments = filteredComments.filter(c => !c.parent_id);
+  const repliesByParent = new Map<string, Comment[]>();
+  for (const c of filteredComments) {
+    if (c.parent_id) {
+      const arr = repliesByParent.get(c.parent_id) || [];
+      arr.push(c);
+      repliesByParent.set(c.parent_id, arr);
+    }
+  }
 
   const handlePost = async () => {
     if (!newComment.trim() || posting) return;
@@ -234,9 +250,11 @@ export function Comments({
       const commentText = quote
         ? `> ${quote}\n\n${newComment.trim()}`
         : newComment.trim();
-      await postComment(commentText);
+      await postComment(commentText, replyToId || undefined);
       setNewComment('');
       setQuote('');
+      setReplyToId(null);
+      setReplyToName('');
       queryClient.invalidateQueries({ queryKey });
     } catch (e) {
       console.error('Post comment failed:', e);
@@ -322,8 +340,87 @@ export function Comments({
   const resolvedCount = comments.filter(c => !!c.resolved_by).length;
   const unresolvedCount = comments.filter(c => !c.resolved_by).length;
 
+  const renderComment = (c: Comment, opts: { onReply?: () => void; isReply?: boolean } = {}) => (
+    <div className={cn("flex gap-2.5 group p-2 rounded-lg hover:bg-accent/30 transition-colors", c.resolved_by && "opacity-60")}>
+      <div className={cn(
+        'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shrink-0 mt-0.5',
+        getAvatarColor(c.actor)
+      )}>
+        {getInitial(c.actor)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-foreground">{c.actor}</span>
+          <span className="text-[10px] text-muted-foreground flex-1">{timeAgo(c.created_at, t)}</span>
+          <CommentMenu
+            comment={c}
+            onReply={opts.onReply}
+            onEdit={editComment ? () => { setEditingId(c.id); setEditText(c.text); } : undefined}
+            onDelete={deleteComment ? () => handleDelete(c.id) : undefined}
+            onResolve={!opts.isReply && resolveComment && !c.resolved_by ? () => handleResolve(c.id) : undefined}
+            onUnresolve={!opts.isReply && unresolveComment && c.resolved_by ? () => handleUnresolve(c.id) : undefined}
+            onCopyLink={() => {
+              navigator.clipboard.writeText(`${window.location.href}#comment-${c.id}`);
+            }}
+          />
+        </div>
+        {editingId === c.id ? (
+          <div className="mt-1">
+            <textarea
+              ref={editInputRef}
+              value={editText}
+              onChange={e => { setEditText(e.target.value); autoResize(e.target); }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEdit(c.id); }
+                if (e.key === 'Escape') handleCancelEdit();
+              }}
+              rows={2}
+              className="w-full text-xs bg-muted rounded-lg px-2 py-1.5 text-foreground outline-none resize-none border border-sidebar-primary/50"
+              autoFocus
+            />
+            <div className="flex items-center gap-1 mt-1">
+              <button
+                onClick={() => handleEdit(c.id)}
+                disabled={!editText.trim()}
+                className="text-[10px] px-2 py-0.5 bg-sidebar-primary text-white rounded disabled:opacity-30"
+              >
+                {t('comments.save')}
+              </button>
+              <button
+                onClick={handleCancelEdit}
+                className="text-[10px] px-2 py-0.5 text-muted-foreground hover:text-foreground"
+              >
+                {t('comments.cancel')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <CommentBody text={c.text} />
+            {c.resolved_by && (
+              <div className="flex items-center gap-1 mt-1">
+                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                <span className="text-[10px] text-green-600">{t('comments.resolvedBy', { name: c.resolved_by.name || c.resolved_by.id })}</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   const inputArea = (
     <div className={cn("px-4 py-3", !quote && "border-t border-border")}>
+      {/* Reply indicator */}
+      {replyToId && (
+        <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-sidebar-primary/10 rounded-lg">
+          <Reply className="h-3 w-3 text-sidebar-primary shrink-0" />
+          <span className="text-[11px] text-sidebar-primary flex-1">{t('comments.replyTo', { name: replyToName })}</span>
+          <button onClick={() => { setReplyToId(null); setReplyToName(''); }} className="text-muted-foreground hover:text-foreground shrink-0">
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       {/* Quote preview */}
       {quote && (
         <div className="flex items-start gap-2 mb-2 px-2 py-1.5 bg-accent/30 rounded-lg border-l-2 border-sidebar-primary/50">
@@ -445,7 +542,7 @@ export function Comments({
       <div className="flex-1 min-h-0 overflow-y-auto">
         {isLoading ? (
           <p className="text-xs text-muted-foreground py-4 text-center">{t('common.loading')}</p>
-        ) : visibleComments.length === 0 && !quote ? (
+        ) : topLevelComments.length === 0 && !quote ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-sm text-muted-foreground">
               {showResolved ? t('comments.noResolved') : t('comments.noComments')}
@@ -453,73 +550,54 @@ export function Comments({
           </div>
         ) : (
           <div className="space-y-1 px-4 py-3">
-            {visibleComments.map((c) => (
-              <div key={c.id} className={cn("flex gap-2.5 group p-2 rounded-lg hover:bg-accent/30 transition-colors", c.resolved_by && "opacity-60")}>
-                <div className={cn(
-                  'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shrink-0 mt-0.5',
-                  getAvatarColor(c.actor)
-                )}>
-                  {getInitial(c.actor)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-foreground">{c.actor}</span>
-                    <span className="text-[10px] text-muted-foreground flex-1">{timeAgo(c.created_at, t)}</span>
-                    <CommentMenu
-                      comment={c}
-                      onEdit={editComment ? () => { setEditingId(c.id); setEditText(c.text); } : undefined}
-                      onDelete={deleteComment ? () => handleDelete(c.id) : undefined}
-                      onResolve={resolveComment && !c.resolved_by ? () => handleResolve(c.id) : undefined}
-                      onUnresolve={unresolveComment && c.resolved_by ? () => handleUnresolve(c.id) : undefined}
-                      onCopyLink={() => {
-                        navigator.clipboard.writeText(`${window.location.href}#comment-${c.id}`);
-                      }}
-                    />
-                  </div>
-                  {editingId === c.id ? (
-                    <div className="mt-1">
-                      <textarea
-                        ref={editInputRef}
-                        value={editText}
-                        onChange={e => { setEditText(e.target.value); autoResize(e.target); }}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEdit(c.id); }
-                          if (e.key === 'Escape') handleCancelEdit();
-                        }}
-                        rows={2}
-                        className="w-full text-xs bg-muted rounded-lg px-2 py-1.5 text-foreground outline-none resize-none border border-sidebar-primary/50"
-                        autoFocus
-                      />
-                      <div className="flex items-center gap-1 mt-1">
-                        <button
-                          onClick={() => handleEdit(c.id)}
-                          disabled={!editText.trim()}
-                          className="text-[10px] px-2 py-0.5 bg-sidebar-primary text-white rounded disabled:opacity-30"
-                        >
-                          {t('comments.save')}
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="text-[10px] px-2 py-0.5 text-muted-foreground hover:text-foreground"
-                        >
-                          {t('comments.cancel')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <CommentBody text={c.text} />
-                      {c.resolved_by && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <CheckCircle2 className="h-3 w-3 text-green-500" />
-                          <span className="text-[10px] text-green-600">{t('comments.resolvedBy', { name: c.resolved_by.name || c.resolved_by.id })}</span>
+            {topLevelComments.map((c) => {
+              const replies = repliesByParent.get(c.id) || [];
+              const hasReplies = replies.length > 0;
+              const isExpanded = expandedThreads.has(c.id);
+              return (
+                <div key={c.id}>
+                  {renderComment(c, {
+                    onReply: () => {
+                      setReplyToId(c.id);
+                      setReplyToName(c.actor);
+                      if (hasReplies && !isExpanded) {
+                        setExpandedThreads(prev => new Set(prev).add(c.id));
+                      }
+                      setTimeout(() => commentInputRef.current?.focus(), 100);
+                    },
+                  })}
+                  {/* Thread replies */}
+                  {hasReplies && (
+                    <div className="ml-8">
+                      <button
+                        onClick={() => setExpandedThreads(prev => {
+                          const next = new Set(prev);
+                          if (next.has(c.id)) next.delete(c.id);
+                          else next.add(c.id);
+                          return next;
+                        })}
+                        className="flex items-center gap-1 text-[11px] text-sidebar-primary hover:underline py-1"
+                      >
+                        {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                        {t('comments.repliesCount', { n: replies.length })}
+                      </button>
+                      {isExpanded && replies.map(r => (
+                        <div key={r.id}>
+                          {renderComment(r, {
+                            onReply: () => {
+                              setReplyToId(c.id);
+                              setReplyToName(r.actor);
+                              setTimeout(() => commentInputRef.current?.focus(), 100);
+                            },
+                            isReply: true,
+                          })}
                         </div>
-                      )}
-                    </>
+                      ))}
+                    </div>
                   )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

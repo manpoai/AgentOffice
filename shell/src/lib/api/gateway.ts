@@ -162,3 +162,22 @@ export async function commentOnDoc(docId: string, text: string, parentId?: strin
     body: JSON.stringify({ doc_id: docId, text, parent_comment_id: parentId }),
   });
 }
+
+// ── Preferences ──
+
+export async function getPreference<T = unknown>(key: string): Promise<T | null> {
+  try {
+    const data = await gwFetch<{ key: string; value: T }>(`/preferences/${encodeURIComponent(key)}`);
+    return data.value;
+  } catch {
+    return null; // 404 or error — return null
+  }
+}
+
+export async function setPreference<T = unknown>(key: string, value: T): Promise<void> {
+  await gwFetch(`/preferences/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  });
+}

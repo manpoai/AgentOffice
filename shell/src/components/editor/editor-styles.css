@@ -10,7 +10,7 @@
 }
 
 .outline-editor-mount {
-  padding: 0 3rem 2rem;
+  padding: 0 3rem 200px;
 }
 
 /* Title wrapper — same horizontal padding as editor mount */
@@ -223,9 +223,18 @@
   margin: 0.5rem 0;
 }
 .outline-editor-content ul { list-style-type: disc; }
-.outline-editor-content ol { list-style-type: decimal; }
+.outline-editor-content ol { list-style-type: decimal; cursor: default; }
+.outline-editor-content ol > li::marker { cursor: pointer; }
 .outline-editor-content li { margin: 0.15rem 0; }
 .outline-editor-content li p { margin: 0; }
+
+/* List marker color — theme accent */
+.outline-editor-content ul > li::marker {
+  color: #2FCC71;
+}
+.outline-editor-content ol > li::marker {
+  color: #2FCC71;
+}
 
 /* Hide list marker when list item only contains an image */
 .outline-editor-content li:has(> p > .image-node-wrapper:only-child) {
@@ -324,6 +333,16 @@
 .outline-editor-content .image-node-wrapper img::selection {
   background: transparent;
 }
+/* Prevent blue overlay on node-selected images (ProseMirror adds .ProseMirror-selectednode) */
+.outline-editor-content .image-node-wrapper.ProseMirror-selectednode,
+.outline-editor-content .image-node-wrapper.image-selected {
+  background: transparent !important;
+  outline: none !important;
+}
+.outline-editor-content .image-node-wrapper.ProseMirror-selectednode *::selection,
+.outline-editor-content .image-node-wrapper.image-selected *::selection {
+  background: transparent;
+}
 /* Image selected state — blue overlay when part of text selection */
 .outline-editor-content .image-node-wrapper.image-in-selection img {
   outline: 2px solid hsl(var(--sidebar-primary, 220 80% 60%));
@@ -394,6 +413,13 @@
 .outline-editor-content ::selection {
   background: hsl(var(--sidebar-primary, 220 80% 60%) / 0.3);
 }
+/* When ProseMirror hides selection (NodeSelection active), suppress the blue overlay */
+.outline-editor-content.ProseMirror-hideselection ::selection {
+  background: transparent !important;
+}
+.outline-editor-content.ProseMirror-hideselection ::-moz-selection {
+  background: transparent !important;
+}
 
 /* Drop cursor */
 .ProseMirror-dropcursor {
@@ -411,6 +437,14 @@
   bottom: 0;
   background: hsl(var(--sidebar-primary, 220 80% 60%) / 0.15);
   pointer-events: none;
+}
+
+/* Hide text selection inside selected cells during CellSelection */
+.selectedCell ::selection {
+  background: transparent !important;
+}
+.selectedCell ::-moz-selection {
+  background: transparent !important;
 }
 
 /* Column resize handle */
@@ -772,11 +806,27 @@
   background: transparent !important;
 }
 
+/* Block-level comment markers (images, tables, mermaid, etc.) */
+.outline-editor-content .comment-marker-block:not([data-resolved]) {
+  outline: 2px solid rgba(43, 194, 255, 0.4);
+  outline-offset: 2px;
+  border-radius: 4px;
+  transition: outline-color 100ms ease-in-out;
+  cursor: pointer;
+}
+
+.outline-editor-content .comment-marker-block:not([data-resolved]):hover,
+.outline-editor-content .comment-marker-block.comment-focused {
+  outline-color: rgba(43, 194, 255, 0.7);
+  background: rgba(43, 194, 255, 0.05);
+}
+
 /* Resolved comments: no styling */
 .outline-editor-content .comment-marker[data-resolved] {
   background: transparent !important;
   border: none !important;
   text-decoration: none !important;
+  outline: none !important;
 }
 
 /* ── Revision diff highlights ────────────────────────────────── */

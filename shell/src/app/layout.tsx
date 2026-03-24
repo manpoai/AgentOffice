@@ -11,6 +11,9 @@ const allura = Allura({ weight: '400', subsets: ['latin'], variable: '--font-all
 export const metadata: Metadata = {
   title: 'ASuite',
   description: 'Human-Agent Workspace',
+  icons: {
+    icon: '/favicon.svg',
+  },
   viewport: {
     width: 'device-width',
     initialScale: 1,

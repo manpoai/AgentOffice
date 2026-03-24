@@ -7,7 +7,7 @@ import { tableNodes } from 'prosemirror-tables';
 
 const tNodes = tableNodes({
   tableGroup: 'block',
-  cellContent: 'inline*',
+  cellContent: 'block+',
   cellAttributes: {
     alignment: { default: null },
     background: {

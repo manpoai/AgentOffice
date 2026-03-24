@@ -142,6 +142,26 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           state,
           editable: () => !readOnly,
           nodeViews: createNodeViews(),
+          clipboardTextSerializer(slice) {
+            // Serialize tables as tab-separated text for plain-text clipboard
+            const parts: string[] = [];
+            slice.content.forEach((node: any) => {
+              if (node.type.name === 'table') {
+                const rows: string[] = [];
+                node.forEach((row: any) => {
+                  const cells: string[] = [];
+                  row.forEach((cell: any) => {
+                    cells.push(cell.textContent);
+                  });
+                  rows.push(cells.join('\t'));
+                });
+                parts.push(rows.join('\n'));
+              } else {
+                parts.push(node.textContent);
+              }
+            });
+            return parts.join('\n\n');
+          },
           handleKeyDown(_view, event) {
             const mod = event.metaKey || event.ctrlKey;
             if (mod && event.key === 'f') {
