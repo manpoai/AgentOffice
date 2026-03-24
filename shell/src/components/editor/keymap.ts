@@ -152,10 +152,13 @@ function protectAtomOnBackspace(state: EditorState, dispatch?: (tr: Transaction)
     }
   }
 
-  // Case 2: Block-level protection
+  // Case 2: Block-level protection — only for direct children of doc (depth === 1)
+  // When cursor is inside a list item or other nested structure, don't apply this.
   const { $from, empty } = selection;
   if (!empty) return false;
   if ($from.parentOffset !== 0) return false;
+  // Only apply when cursor is at depth 1 (direct paragraph child of doc)
+  if ($from.depth !== 1) return false;
 
   const topIndex = $from.index(0);
   const currentBlock = $from.parent;
@@ -216,9 +219,10 @@ function protectAtomOnDelete(state: EditorState, dispatch?: (tr: Transaction) =>
     }
   }
 
-  // Case 2: Block-level protection
+  // Case 2: Block-level protection — only for direct children of doc (depth === 1)
   const { $from, empty } = selection;
   if (!empty) return false;
+  if ($from.depth !== 1) return false;
 
   const topIndex = $from.index(0);
   const atEnd = $from.parentOffset === $from.parent.content.size;

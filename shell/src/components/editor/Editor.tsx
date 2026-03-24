@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import 'katex/dist/katex.min.css';
+import { commentHighlightPlugin, updateCommentHighlights } from './comment-highlight-plugin';
 
 interface EditorProps {
   defaultValue: string;
@@ -12,6 +13,10 @@ interface EditorProps {
   placeholder?: string;
   className?: string;
   documentId?: string;
+  /** Callback when Cmd+F or Cmd+H is pressed */
+  onSearchOpen?: (withReplace: boolean) => void;
+  /** Comment quotes to highlight in the editor */
+  commentQuotes?: { id: string; text: string }[];
 }
 
 /**
@@ -21,7 +26,7 @@ interface EditorProps {
  * - Floating toolbar on text selection for inline formatting
  * - No top toolbar
  */
-function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = false, placeholder, className, documentId }: EditorProps) {
+function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = false, placeholder, className, documentId, onSearchOpen, commentQuotes }: EditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,14 +40,14 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
     (async () => {
       try {
         const [
-          { EditorState, TextSelection },
+          { EditorState, TextSelection, Plugin: PMPlugin },
           { EditorView },
           { history },
           { dropCursor },
           { gapCursor },
           { columnResizing, tableEditing },
           { schema },
-          { parseMarkdown, markdownSerializer },
+          { parseMarkdown, markdownSerializer, serializeMarkdown },
           { buildInputRules },
           { buildKeymap, buildBaseKeymap },
           { slashMenuPlugin },
@@ -52,6 +57,8 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           { placeholderPlugin },
           { blockHandlePlugin },
           { tableMenuPlugin },
+          { searchPlugin },
+          { listNumberingPlugin },
         ] = await Promise.all([
           import('prosemirror-state'),
           import('prosemirror-view'),
@@ -70,6 +77,8 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           import('./placeholder-plugin'),
           import('./block-handle-plugin'),
           import('./table-menu-plugin'),
+          import('./search-plugin'),
+          import('./list-numbering-plugin'),
         ]);
 
         if (destroyed) return;
@@ -89,6 +98,8 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           gapCursor(),
           columnResizing(),
           tableEditing(),
+          searchPlugin(),
+          listNumberingPlugin(),
         ];
 
         // Add interactive plugins only when not read-only
@@ -101,18 +112,56 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           plugins.push(tableMenuPlugin());
         }
 
+        // Comment highlight decorations — highlights text matching comment quotes
+        plugins.push(commentHighlightPlugin(commentQuotes || []));
+
+        // Image selection highlight — marks images within text selection range
+        plugins.push(new PMPlugin({
+          view() {
+            return {
+              update(editorView: any) {
+                const { from, to, empty } = editorView.state.selection;
+                const wrappers = editorView.dom.querySelectorAll('.image-node-wrapper');
+                wrappers.forEach((w: HTMLElement) => {
+                  if (empty) { w.classList.remove('image-in-selection'); return; }
+                  const pos = editorView.posAtDOM(w, 0);
+                  if (pos >= from && pos <= to) w.classList.add('image-in-selection');
+                  else w.classList.remove('image-in-selection');
+                });
+              },
+            };
+          },
+        }));
+
         const state = EditorState.create({ doc, plugins });
+
+        // Capture onSearchOpen ref for use in handleKeyDown
+        const searchOpenRef = { current: onSearchOpen };
 
         view = new EditorView(editorRef.current!, {
           state,
           editable: () => !readOnly,
           nodeViews: createNodeViews(),
+          handleKeyDown(_view, event) {
+            const mod = event.metaKey || event.ctrlKey;
+            if (mod && event.key === 'f') {
+              event.preventDefault();
+              searchOpenRef.current?.(false);
+              return true;
+            }
+            if (mod && event.key === 'h') {
+              event.preventDefault();
+              searchOpenRef.current?.(true);
+              return true;
+            }
+            return false;
+          },
           dispatchTransaction(transaction) {
             if (!view || destroyed) return;
             const newState = view.state.apply(transaction);
             view.updateState(newState);
             if (transaction.docChanged && onChange) {
-              const md = markdownSerializer.serialize(newState.doc);
+              const md = serializeMarkdown(newState.doc);
               onChange(md);
             }
           },
@@ -150,6 +199,13 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnly]);
 
+  // Update comment highlights when quotes change
+  useEffect(() => {
+    if (viewRef.current && commentQuotes) {
+      updateCommentHighlights(viewRef.current, commentQuotes);
+    }
+  }, [commentQuotes]);
+
   if (error) {
     return (
       <div className={`outline-editor ${className || ''}`}>
@@ -158,8 +214,27 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
     );
   }
 
+  /** Item 8: Click below last content → cursor at end of last line */
+  const handleWrapperClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const view = viewRef.current;
+    if (!view || readOnly) return;
+    const target = e.target as HTMLElement;
+    // Only handle clicks on the wrapper itself or the mount div, not on editor content
+    if (target.closest('.ProseMirror')) return;
+    // Check if click is below the editor content
+    const pmDom = view.dom as HTMLElement;
+    const pmRect = pmDom.getBoundingClientRect();
+    if (e.clientY > pmRect.bottom) {
+      e.preventDefault();
+      view.focus();
+      const endPos = view.state.doc.content.size;
+      const sel = view.state.selection.constructor.create(view.state.doc, endPos);
+      view.dispatch(view.state.tr.setSelection(sel));
+    }
+  }, [readOnly]);
+
   return (
-    <div className={`outline-editor ${className || ''}`}>
+    <div className={`outline-editor ${className || ''}`} onClick={handleWrapperClick}>
       <div ref={editorRef} className="outline-editor-mount" />
     </div>
   );
