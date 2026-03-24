@@ -173,13 +173,25 @@ function deleteEmptyFirstBlock(state: EditorState, dispatch?: (tr: Transaction) 
 function protectAtomOnBackspace(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   const { selection } = state;
 
-  // Case 1: Inline atom protection (Outline's approach)
+  // Case 1a: Cursor is right after an inline image atom → select the image
+  // instead of deleting it. This handles "empty line below image" backspace.
   if (selection instanceof TextSelection) {
     const { $cursor } = selection;
     if ($cursor) {
       const nodeBefore = $cursor.nodeBefore;
       const nodeAfter = $cursor.nodeAfter;
-      // If text node before cursor has only 1 char and after cursor is an inline atom
+
+      // If node before cursor is an inline atom (image), select it
+      if (nodeBefore?.isAtom && nodeBefore.isInline && nodeBefore.type === schema.nodes.image) {
+        if (dispatch) {
+          const imagePos = $cursor.pos - nodeBefore.nodeSize;
+          dispatch(state.tr.setSelection(NodeSelection.create(state.doc, imagePos)).scrollIntoView());
+        }
+        return true;
+      }
+
+      // Case 1b: text node before cursor has only 1 char and after cursor is an inline atom
+      // → delete only the text character, not the atom
       if (nodeBefore?.isText && nodeBefore.nodeSize === 1 && nodeAfter?.isAtom && nodeAfter.isInline) {
         if (dispatch) {
           dispatch(state.tr.delete($cursor.pos - 1, $cursor.pos).scrollIntoView());
