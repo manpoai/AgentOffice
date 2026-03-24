@@ -1162,11 +1162,24 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const { t } = useT();
   const queryClient = useQueryClient();
 
-  // Fetch comments to extract quoted text for editor highlighting
-  const { data: docComments = [] } = useQuery({
+  // Fetch comments via Outline API (includes resolved status)
+  const { data: olComments = [] } = useQuery({
     queryKey: ['doc-comments', doc.id],
-    queryFn: () => gw.listDocComments(doc.id),
+    queryFn: () => ol.listComments(doc.id),
   });
+  // Convert Outline comments to the Comment shape expected by the Comments component
+  const docComments = useMemo(() => {
+    return olComments.map(c => ({
+      id: c.id,
+      text: ol.proseMirrorToText(c.data),
+      actor: c.createdBy?.name || 'Unknown',
+      parent_id: c.parentCommentId || null,
+      resolved_by: c.resolvedBy || null,
+      resolved_at: c.resolvedAt || null,
+      created_at: c.createdAt,
+      updated_at: c.updatedAt,
+    }));
+  }, [olComments]);
   // Extract quoted text from comments for editor highlighting
   const commentHighlightQuotes = useMemo(() => {
     return docComments
@@ -1636,8 +1649,36 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
           <div className="w-80 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
             <Comments
               queryKey={['doc-comments', doc.id]}
-              fetchComments={() => gw.listDocComments(doc.id)}
+              fetchComments={async () => {
+                const comments = await ol.listComments(doc.id);
+                return comments.map(c => ({
+                  id: c.id,
+                  text: ol.proseMirrorToText(c.data),
+                  actor: c.createdBy?.name || 'Unknown',
+                  parent_id: c.parentCommentId || null,
+                  resolved_by: c.resolvedBy || null,
+                  resolved_at: c.resolvedAt || null,
+                  created_at: c.createdAt,
+                  updated_at: c.updatedAt,
+                }));
+              }}
               postComment={(text) => gw.commentOnDoc(doc.id, text)}
+              editComment={async (commentId, text) => {
+                await ol.updateComment(commentId, ol.textToProseMirror(text));
+              }}
+              deleteComment={async (commentId) => {
+                await ol.deleteComment(commentId);
+              }}
+              resolveComment={async (commentId) => {
+                await ol.resolveComment(commentId);
+              }}
+              unresolveComment={async (commentId) => {
+                await ol.unresolveComment(commentId);
+              }}
+              uploadImage={async (file) => {
+                const result = await ol.uploadAttachment(file, doc.id);
+                return result.data.url;
+              }}
               initialQuote={commentQuote}
               onQuoteConsumed={() => setCommentQuote('')}
               topOffset={commentTopOffset}

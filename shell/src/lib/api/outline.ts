@@ -141,6 +141,87 @@ export async function restoreRevision(documentId: string, revisionId: string): P
   return data.data;
 }
 
+// ── Comments ──
+
+export interface OLComment {
+  id: string;
+  data: any; // ProseMirror JSON
+  documentId: string;
+  parentCommentId: string | null;
+  createdById: string;
+  resolvedById: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: { id: string; name: string };
+  resolvedBy?: { id: string; name: string } | null;
+}
+
+export async function listComments(documentId: string): Promise<OLComment[]> {
+  const data = await olFetch<{ data: OLComment[] }>('comments.list', { documentId });
+  return data.data;
+}
+
+export async function updateComment(id: string, data: any): Promise<OLComment> {
+  const res = await olFetch<{ data: OLComment }>('comments.update', { id, data });
+  return res.data;
+}
+
+/** Convert plain text to ProseMirror JSON suitable for Outline comments */
+export function textToProseMirror(text: string): any {
+  const lines = text.split('\n');
+  const content = lines.map(line => {
+    if (!line) return { type: 'paragraph' };
+    // Check for image markdown: ![alt](url)
+    const parts: any[] = [];
+    const imgRe = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    let lastIdx = 0;
+    let match;
+    while ((match = imgRe.exec(line)) !== null) {
+      if (match.index > lastIdx) {
+        parts.push({ type: 'text', text: line.slice(lastIdx, match.index) });
+      }
+      parts.push({ type: 'image', attrs: { src: match[2], alt: match[1] } });
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < line.length) {
+      parts.push({ type: 'text', text: line.slice(lastIdx) });
+    }
+    if (parts.length === 0) return { type: 'paragraph' };
+    return { type: 'paragraph', content: parts };
+  });
+  return { type: 'doc', content };
+}
+
+/** Extract plain text from ProseMirror JSON */
+export function proseMirrorToText(pmData: any): string {
+  if (!pmData) return '';
+  const extract = (node: any): string => {
+    if (node.text) return node.text;
+    if (node.type === 'image') return `![${node.attrs?.alt || ''}](${node.attrs?.src || ''})`;
+    if (node.content) return node.content.map(extract).join('');
+    return '';
+  };
+  if (pmData.content) {
+    return pmData.content.map((block: any) => extract(block)).join('\n');
+  }
+  return extract(pmData);
+}
+
+export async function deleteComment(id: string): Promise<void> {
+  await olFetch('comments.delete', { id });
+}
+
+export async function resolveComment(id: string): Promise<OLComment> {
+  const res = await olFetch<{ data: OLComment }>('comments.resolve', { id });
+  return res.data;
+}
+
+export async function unresolveComment(id: string): Promise<OLComment> {
+  const res = await olFetch<{ data: OLComment }>('comments.unresolve', { id });
+  return res.data;
+}
+
 /** Upload an attachment (image) to Outline using the two-step presigned upload flow.
  *  Step 1: POST /api/attachments.create (JSON) → get presigned S3 POST fields + attachment URL
  *  Step 2: POST to uploadUrl with presigned form fields + file

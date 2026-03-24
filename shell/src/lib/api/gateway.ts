@@ -139,6 +139,8 @@ export interface Comment {
   html?: string;
   actor: string;
   parent_id?: string | null;
+  resolved_by?: { id: string; name: string } | null;
+  resolved_at?: string | null;
   created_at: string;
   updated_at?: string;
 }

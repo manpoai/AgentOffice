@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Send, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Send, X, MoreHorizontal, Pencil, Trash2, CheckCircle2, Undo2, Image as ImageIcon, Paperclip, Copy, Link } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Comment } from '@/lib/api/gateway';
 import { useMentionPopover, MentionPopover, type MentionCandidate } from '@/components/mention-popover';
@@ -15,12 +15,24 @@ interface CommentsProps {
   fetchComments: () => Promise<Comment[]>;
   /** Function to post a new comment */
   postComment: (text: string) => Promise<void>;
+  /** Function to edit a comment */
+  editComment?: (commentId: string, text: string) => Promise<void>;
+  /** Function to delete a comment */
+  deleteComment?: (commentId: string) => Promise<void>;
+  /** Function to resolve a comment (mark as done) */
+  resolveComment?: (commentId: string) => Promise<void>;
+  /** Function to unresolve a comment */
+  unresolveComment?: (commentId: string) => Promise<void>;
+  /** Function to upload an image, returns URL */
+  uploadImage?: (file: File) => Promise<string>;
   /** Label shown in header */
   label?: string;
   /** Pre-filled quote from selected text */
   initialQuote?: string;
   /** Called after quote is consumed */
   onQuoteConsumed?: () => void;
+  /** Top offset (px) from editor area — positions input near commented text */
+  topOffset?: number | null;
 }
 
 function timeAgo(dateStr: string, t: (key: string, params?: Record<string, string | number>) => string): string {
@@ -49,23 +61,142 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-export function Comments({ queryKey, fetchComments, postComment, label, initialQuote, onQuoteConsumed }: CommentsProps) {
+/** Render comment text with quoted text and inline images */
+function CommentBody({ text }: { text: string }) {
+  // Detect "> quoted text\n\nrest" format
+  const quoteMatch = text.match(/^>\s(.+?)(?:\n\n)([\s\S]*)$/);
+  const bodyText = quoteMatch ? quoteMatch[2] : text;
+  const quotedText = quoteMatch ? quoteMatch[1] : null;
+
+  // Render text with inline images: ![alt](url) → <img>
+  const renderTextWithImages = (t: string) => {
+    const parts: React.ReactNode[] = [];
+    const imgRe = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    let lastIdx = 0;
+    let match;
+    let key = 0;
+    while ((match = imgRe.exec(t)) !== null) {
+      if (match.index > lastIdx) {
+        parts.push(t.slice(lastIdx, match.index));
+      }
+      parts.push(
+        <img
+          key={key++}
+          src={match[2]}
+          alt={match[1]}
+          className="max-w-full rounded mt-1 mb-1 border border-border"
+          style={{ maxHeight: 200 }}
+        />
+      );
+      lastIdx = match.index + match[0].length;
+    }
+    if (lastIdx < t.length) parts.push(t.slice(lastIdx));
+    return parts;
+  };
+
+  return (
+    <div className="mt-1">
+      {quotedText && (
+        <div className="text-[11px] text-muted-foreground italic border-l-2 border-sidebar-primary/40 pl-2 py-0.5 mb-1 bg-sidebar-primary/5 rounded-r">
+          {quotedText}
+        </div>
+      )}
+      {bodyText && (
+        <div className="text-xs text-foreground/80 whitespace-pre-wrap break-words">
+          {renderTextWithImages(bodyText)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Context menu for comment actions */
+function CommentMenu({ comment, onEdit, onDelete, onResolve, onUnresolve, onCopyLink }: {
+  comment: Comment;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onResolve?: () => void;
+  onUnresolve?: () => void;
+  onCopyLink?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useT();
-  const displayLabel = label || t('comments.title');
-  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const items = [];
+  if (onEdit) items.push({ icon: Pencil, label: t('comments.edit'), action: () => { onEdit(); setOpen(false); } });
+  if (comment.resolved_by) {
+    if (onUnresolve) items.push({ icon: Undo2, label: t('comments.markAsUnresolved'), action: () => { onUnresolve(); setOpen(false); } });
+  } else {
+    if (onResolve) items.push({ icon: CheckCircle2, label: t('comments.markAsResolved'), action: () => { onResolve(); setOpen(false); } });
+  }
+  if (onCopyLink) items.push({ icon: Link, label: t('comments.copyLink'), action: () => { onCopyLink(); setOpen(false); } });
+  if (onDelete) items.push({ icon: Trash2, label: t('comments.delete'), action: () => { onDelete(); setOpen(false); }, danger: true });
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors opacity-0 group-hover:opacity-100"
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-5 z-50 min-w-[160px] bg-popover border border-border rounded-lg shadow-lg py-1">
+          {items.map((item, i) => (
+            <button
+              key={i}
+              onClick={item.action}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors",
+                (item as any).danger ? "text-destructive" : "text-foreground"
+              )}
+            >
+              <item.icon className="h-3.5 w-3.5" />
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Comments({
+  queryKey, fetchComments, postComment, editComment, deleteComment,
+  resolveComment, unresolveComment, uploadImage,
+  label, initialQuote, onQuoteConsumed, topOffset,
+}: CommentsProps) {
+  const { t } = useT();
   const [newComment, setNewComment] = useState('');
   const [posting, setPosting] = useState(false);
   const [cursorPos, setCursorPos] = useState(0);
   const [mentionIdx, setMentionIdx] = useState(0);
   const [quote, setQuote] = useState('');
-  const commentInputRef = useRef<HTMLInputElement>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [showResolved, setShowResolved] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   // Handle incoming quote from selection
   useEffect(() => {
     if (initialQuote) {
       setQuote(initialQuote);
-      setExpanded(true);
       onQuoteConsumed?.();
       setTimeout(() => commentInputRef.current?.focus(), 100);
     }
@@ -91,6 +222,11 @@ export function Comments({ queryKey, fetchComments, postComment, label, initialQ
     queryFn: fetchComments,
   });
 
+  // Filter comments by resolved status
+  const visibleComments = comments.filter(c =>
+    showResolved ? !!c.resolved_by : !c.resolved_by
+  );
+
   const handlePost = async () => {
     if (!newComment.trim() || posting) return;
     setPosting(true);
@@ -109,95 +245,287 @@ export function Comments({ queryKey, fetchComments, postComment, label, initialQ
     }
   };
 
-  return (
-    <div className="border-t border-border">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <MessageCircle className="h-4 w-4" />
-        <span className="flex-1 text-left">{displayLabel} ({comments.length})</span>
-        {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-      </button>
+  const handleEdit = async (commentId: string) => {
+    if (!editComment || !editText.trim()) return;
+    try {
+      await editComment(commentId, editText.trim());
+      setEditingId(null);
+      setEditText('');
+      queryClient.invalidateQueries({ queryKey });
+    } catch (e) {
+      console.error('Edit comment failed:', e);
+    }
+  };
 
-      {expanded && (
-        <div className="px-4 pb-3">
-          {/* Comment list */}
-          {isLoading ? (
-            <p className="text-xs text-muted-foreground py-2">{t('common.loading')}</p>
-          ) : comments.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">—</p>
-          ) : (
-            <div className="space-y-3 mb-3 max-h-64 overflow-y-auto">
-              {comments.map((c) => (
-                <div key={c.id} className="flex gap-2">
-                  <div className={cn(
-                    'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shrink-0 mt-0.5',
-                    getAvatarColor(c.actor)
-                  )}>
-                    {getInitial(c.actor)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-medium text-foreground">{c.actor}</span>
-                      <span className="text-[10px] text-muted-foreground">{timeAgo(c.created_at, t)}</span>
-                    </div>
-                    <p className="text-xs text-foreground/80 mt-0.5 whitespace-pre-wrap break-words">{c.text}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+  const handleDelete = async (commentId: string) => {
+    if (!deleteComment) return;
+    try {
+      await deleteComment(commentId);
+      queryClient.invalidateQueries({ queryKey });
+    } catch (e) {
+      console.error('Delete comment failed:', e);
+    }
+  };
 
-          {/* Quote preview */}
-          {quote && (
-            <div className="flex items-start gap-2 mb-2 px-2 py-1.5 bg-accent/30 rounded-lg border-l-2 border-sidebar-primary/50">
-              <p className="text-[11px] text-muted-foreground italic flex-1 line-clamp-2">&ldquo;{quote}&rdquo;</p>
-              <button onClick={() => setQuote('')} className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-          {/* New comment input */}
-          <div className="relative flex items-center gap-2">
-            <input
-              ref={commentInputRef}
-              value={newComment}
-              onChange={e => { setNewComment(e.target.value); setCursorPos(e.target.selectionStart || 0); }}
-              onSelect={e => setCursorPos((e.target as HTMLInputElement).selectionStart || 0)}
-              onKeyDown={e => {
-                if (mention.isOpen) {
-                  if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIdx(i => (i + 1) % mention.matches.length); return; }
-                  if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIdx(i => (i - 1 + mention.matches.length) % mention.matches.length); return; }
-                  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); handleMentionSelect(mention.matches[mentionIdx]); return; }
-                  if (e.key === 'Escape') { e.preventDefault(); setCursorPos(0); return; }
-                }
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost(); }
-              }}
-              placeholder={t('comments.placeholder')}
-              className="flex-1 text-xs bg-muted rounded-lg px-3 py-2 text-foreground outline-none placeholder:text-muted-foreground"
-            />
-            <button
-              onClick={handlePost}
-              disabled={!newComment.trim() || posting}
-              className="p-2 text-sidebar-primary hover:opacity-80 disabled:opacity-30 transition-opacity"
-            >
-              <Send className="h-3.5 w-3.5" />
-            </button>
-            {mention.isOpen && commentInputRef.current && (
-              <MentionPopover
-                matches={mention.matches}
-                selectedIndex={mentionIdx}
-                onSelect={handleMentionSelect}
-                anchorRect={{
-                  left: commentInputRef.current.getBoundingClientRect().left,
-                  bottom: commentInputRef.current.getBoundingClientRect().top,
-                }}
-              />
-            )}
-          </div>
+  const handleResolve = async (commentId: string) => {
+    if (!resolveComment) return;
+    try {
+      await resolveComment(commentId);
+      queryClient.invalidateQueries({ queryKey });
+    } catch (e) {
+      console.error('Resolve comment failed:', e);
+    }
+  };
+
+  const handleUnresolve = async (commentId: string) => {
+    if (!unresolveComment) return;
+    try {
+      await unresolveComment(commentId);
+      queryClient.invalidateQueries({ queryKey });
+    } catch (e) {
+      console.error('Unresolve comment failed:', e);
+    }
+  };
+
+  const handleImageUpload = async (file: File) => {
+    if (!uploadImage) return;
+    setUploading(true);
+    try {
+      const url = await uploadImage(file);
+      const imgMarkdown = `![${file.name}](${url})`;
+      setNewComment(prev => prev ? `${prev}\n${imgMarkdown}` : imgMarkdown);
+      commentInputRef.current?.focus();
+    } catch (e) {
+      console.error('Image upload failed:', e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditText('');
+  };
+
+  // Auto-resize textarea
+  const autoResize = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  };
+
+  // Clamp topOffset to prevent input from overflowing the sidebar
+  const inputTopStyle = (quote && topOffset != null && topOffset > 0)
+    ? { paddingTop: `${Math.max(0, Math.min(topOffset, 400))}px` }
+    : undefined;
+
+  const resolvedCount = comments.filter(c => !!c.resolved_by).length;
+  const unresolvedCount = comments.filter(c => !c.resolved_by).length;
+
+  const inputArea = (
+    <div className={cn("px-4 py-3", !quote && "border-t border-border")}>
+      {/* Quote preview */}
+      {quote && (
+        <div className="flex items-start gap-2 mb-2 px-2 py-1.5 bg-accent/30 rounded-lg border-l-2 border-sidebar-primary/50">
+          <p className="text-[11px] text-muted-foreground italic flex-1 line-clamp-2">&ldquo;{quote}&rdquo;</p>
+          <button onClick={() => setQuote('')} className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5">
+            <X className="h-3 w-3" />
+          </button>
         </div>
       )}
+      <div className="relative">
+        <textarea
+          ref={commentInputRef}
+          value={newComment}
+          onChange={e => {
+            setNewComment(e.target.value);
+            setCursorPos(e.target.selectionStart || 0);
+            autoResize(e.target);
+          }}
+          onSelect={e => setCursorPos((e.target as HTMLTextAreaElement).selectionStart || 0)}
+          onKeyDown={e => {
+            if (mention.isOpen) {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIdx(i => (i + 1) % mention.matches.length); return; }
+              if (e.key === 'ArrowUp') { e.preventDefault(); setMentionIdx(i => (i - 1 + mention.matches.length) % mention.matches.length); return; }
+              if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); handleMentionSelect(mention.matches[mentionIdx]); return; }
+              if (e.key === 'Escape') { e.preventDefault(); setCursorPos(0); return; }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePost(); }
+          }}
+          placeholder={t('comments.placeholder')}
+          rows={1}
+          className="w-full text-xs bg-muted rounded-lg px-3 py-2 pr-20 text-foreground outline-none placeholder:text-muted-foreground resize-none"
+        />
+        <div className="absolute right-1 bottom-1 flex items-center gap-0.5">
+          {uploadImage && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImageUpload(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors rounded hover:bg-accent"
+                title={t('comments.uploadImage')}
+              >
+                <ImageIcon className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={handlePost}
+            disabled={!newComment.trim() || posting}
+            className="p-1.5 text-sidebar-primary hover:opacity-80 disabled:opacity-30 transition-opacity rounded"
+          >
+            <Send className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {uploading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-muted/80 rounded-lg">
+            <span className="text-[10px] text-muted-foreground">{t('comments.uploading')}</span>
+          </div>
+        )}
+        {mention.isOpen && commentInputRef.current && (
+          <MentionPopover
+            matches={mention.matches}
+            selectedIndex={mentionIdx}
+            onSelect={handleMentionSelect}
+            anchorRect={{
+              left: commentInputRef.current.getBoundingClientRect().left,
+              bottom: commentInputRef.current.getBoundingClientRect().top,
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* Resolved/Unresolved filter — only show if resolving is supported */}
+      {resolveComment && (resolvedCount > 0 || unresolvedCount > 0) && (
+        <div className="flex items-center gap-1 px-4 pt-2 pb-1">
+          <button
+            onClick={() => setShowResolved(false)}
+            className={cn(
+              "text-[11px] px-2 py-0.5 rounded-full transition-colors",
+              !showResolved ? "bg-sidebar-primary text-white" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t('comments.open')} ({unresolvedCount})
+          </button>
+          <button
+            onClick={() => setShowResolved(true)}
+            className={cn(
+              "text-[11px] px-2 py-0.5 rounded-full transition-colors",
+              showResolved ? "bg-sidebar-primary text-white" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t('comments.resolved')} ({resolvedCount})
+          </button>
+        </div>
+      )}
+
+      {/* When there's a quote (text selection comment), put input at the top aligned with the text */}
+      {quote && (
+        <div style={inputTopStyle}>
+          {inputArea}
+        </div>
+      )}
+
+      {/* Comment list — scrollable, takes available space */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground py-4 text-center">{t('common.loading')}</p>
+        ) : visibleComments.length === 0 && !quote ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-sm text-muted-foreground">
+              {showResolved ? t('comments.noResolved') : t('comments.noComments')}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1 px-4 py-3">
+            {visibleComments.map((c) => (
+              <div key={c.id} className={cn("flex gap-2.5 group p-2 rounded-lg hover:bg-accent/30 transition-colors", c.resolved_by && "opacity-60")}>
+                <div className={cn(
+                  'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white shrink-0 mt-0.5',
+                  getAvatarColor(c.actor)
+                )}>
+                  {getInitial(c.actor)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-foreground">{c.actor}</span>
+                    <span className="text-[10px] text-muted-foreground flex-1">{timeAgo(c.created_at, t)}</span>
+                    <CommentMenu
+                      comment={c}
+                      onEdit={editComment ? () => { setEditingId(c.id); setEditText(c.text); } : undefined}
+                      onDelete={deleteComment ? () => handleDelete(c.id) : undefined}
+                      onResolve={resolveComment && !c.resolved_by ? () => handleResolve(c.id) : undefined}
+                      onUnresolve={unresolveComment && c.resolved_by ? () => handleUnresolve(c.id) : undefined}
+                      onCopyLink={() => {
+                        navigator.clipboard.writeText(`${window.location.href}#comment-${c.id}`);
+                      }}
+                    />
+                  </div>
+                  {editingId === c.id ? (
+                    <div className="mt-1">
+                      <textarea
+                        ref={editInputRef}
+                        value={editText}
+                        onChange={e => { setEditText(e.target.value); autoResize(e.target); }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEdit(c.id); }
+                          if (e.key === 'Escape') handleCancelEdit();
+                        }}
+                        rows={2}
+                        className="w-full text-xs bg-muted rounded-lg px-2 py-1.5 text-foreground outline-none resize-none border border-sidebar-primary/50"
+                        autoFocus
+                      />
+                      <div className="flex items-center gap-1 mt-1">
+                        <button
+                          onClick={() => handleEdit(c.id)}
+                          disabled={!editText.trim()}
+                          className="text-[10px] px-2 py-0.5 bg-sidebar-primary text-white rounded disabled:opacity-30"
+                        >
+                          {t('comments.save')}
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="text-[10px] px-2 py-0.5 text-muted-foreground hover:text-foreground"
+                        >
+                          {t('comments.cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <CommentBody text={c.text} />
+                      {c.resolved_by && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-500" />
+                          <span className="text-[10px] text-green-600">{t('comments.resolvedBy', { name: c.resolved_by.name || c.resolved_by.id })}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Input area — at bottom only when there's no active quote */}
+      {!quote && inputArea}
     </div>
   );
 }
