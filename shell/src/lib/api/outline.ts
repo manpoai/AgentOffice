@@ -32,6 +32,8 @@ export interface OLDocument {
   createdBy: { id: string; name: string };
   updatedBy: { id: string; name: string };
   revision: number;
+  fullWidth?: boolean;
+  insightsEnabled?: boolean;
 }
 
 export interface OLCollection {
@@ -53,10 +55,18 @@ export interface OLDocumentNode {
 // ── API calls ──
 
 export async function listDocuments(collectionId?: string): Promise<OLDocument[]> {
-  const body: Record<string, unknown> = {};
-  if (collectionId) body.collectionId = collectionId;
-  const data = await olFetch<{ data: OLDocument[] }>('documents.list', body);
-  return data.data;
+  const allDocs: OLDocument[] = [];
+  let offset = 0;
+  const limit = 100; // Outline max per request
+  while (true) {
+    const body: Record<string, unknown> = { limit, offset };
+    if (collectionId) body.collectionId = collectionId;
+    const data = await olFetch<{ data: OLDocument[]; pagination: { total: number } }>('documents.list', body);
+    allDocs.push(...data.data);
+    if (data.data.length < limit) break; // no more pages
+    offset += limit;
+  }
+  return allDocs;
 }
 
 export async function getDocument(id: string): Promise<OLDocument> {
@@ -88,12 +98,14 @@ export async function moveDocument(id: string, parentDocumentId: string | null, 
   await olFetch('documents.move', body);
 }
 
-export async function updateDocument(id: string, title?: string, text?: string, emoji?: string | null): Promise<OLDocument> {
+export async function updateDocument(id: string, title?: string, text?: string, emoji?: string | null, opts?: { fullWidth?: boolean; insightsEnabled?: boolean }): Promise<OLDocument> {
   const body: Record<string, unknown> = { id };
   if (title !== undefined) body.title = title;
   if (text !== undefined) body.text = text;
   // Outline expects emoji as string or null to remove
   if (emoji !== undefined) body.emoji = emoji || null;
+  if (opts?.fullWidth !== undefined) body.fullWidth = opts.fullWidth;
+  if (opts?.insightsEnabled !== undefined) body.insightsEnabled = opts.insightsEnabled;
   const data = await olFetch<{ data: OLDocument }>('documents.update', body);
   return data.data;
 }

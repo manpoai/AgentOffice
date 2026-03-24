@@ -115,13 +115,83 @@ function mathBlockPlugin(md: MarkdownItType) {
 
 // --- Build markdown-it instance ---
 
-const md = markdownIt('default', { html: false, breaks: false, linkify: true });
+const md = markdownIt('default', { html: true, breaks: false, linkify: true });
 md.enable('table');
 
 // Add plugins
 md.use(markdownItMark); // ==highlight==
+
+// Convert <mark style="background-color: ..."> HTML inline tokens to mark_open/mark_close
+// so ProseMirror parser can map them to highlight marks with color
+md.core.ruler.after('inline', 'mark_html_to_mark', (state) => {
+  for (const blockToken of state.tokens) {
+    if (blockToken.type !== 'inline' || !blockToken.children) continue;
+    const newChildren: Token[] = [];
+    for (const tok of blockToken.children) {
+      if (tok.type === 'html_inline') {
+        const openMatch = tok.content.match(/^<mark\s[^>]*data-color="([^"]*)"[^>]*>/i);
+        if (openMatch) {
+          const t = new state.Token('mark_open', 'mark', 1);
+          t.attrSet('data-color', openMatch[1]);
+          newChildren.push(t);
+          continue;
+        }
+        if (tok.content.toLowerCase() === '</mark>') {
+          const t = new state.Token('mark_close', 'mark', -1);
+          newChildren.push(t);
+          continue;
+        }
+      }
+      newChildren.push(tok);
+    }
+    blockToken.children = newChildren;
+  }
+});
 md.use(checkboxPlugin);
 md.use(mathBlockPlugin);
+
+/**
+ * HTML img tag plugin: converts inline <img src="..." /> HTML tags
+ * into proper image tokens so they round-trip through the editor.
+ * This is needed because the serializer outputs HTML img tags when
+ * images have width or alignment attributes.
+ */
+function htmlImgPlugin(mdInstance: MarkdownItType) {
+  mdInstance.core.ruler.after('inline', 'html_img', (state) => {
+    for (const blockToken of state.tokens) {
+      if (blockToken.type !== 'inline' || !blockToken.children) continue;
+      const newChildren: Token[] = [];
+      for (const tok of blockToken.children) {
+        if (tok.type === 'html_inline' && /^<img\s/i.test(tok.content)) {
+          const html = tok.content;
+          const srcMatch = html.match(/\bsrc="([^"]+)"/);
+          const altMatch = html.match(/\balt="([^"]+)"/);
+          const titleMatch = html.match(/\btitle="([^"]+)"/);
+          const widthMatch = html.match(/\bwidth="([^"]+)"/);
+          const alignMatch = html.match(/\bdata-align="([^"]+)"/);
+          if (srcMatch) {
+            const imgToken = new state.Token('image', 'img', 0);
+            imgToken.attrSet('src', srcMatch[1]);
+            if (titleMatch) imgToken.attrSet('title', titleMatch[1]);
+            if (widthMatch) imgToken.attrSet('width', widthMatch[1]);
+            if (alignMatch) imgToken.attrSet('data-align', alignMatch[1]);
+            imgToken.children = [];
+            if (altMatch) {
+              const textToken = new state.Token('text', '', 0);
+              textToken.content = altMatch[1];
+              imgToken.children.push(textToken);
+            }
+            newChildren.push(imgToken);
+            continue;
+          }
+        }
+        newChildren.push(tok);
+      }
+      blockToken.children = newChildren;
+    }
+  });
+}
+md.use(htmlImgPlugin);
 
 // Notice blocks: :::info, :::warning, :::success, :::tip
 const noticeStyles = ['info', 'warning', 'success', 'tip'];
@@ -164,6 +234,8 @@ export const markdownParser = new MarkdownParser(schema, md, {
     src: tok.attrGet('src'),
     title: tok.attrGet('title') || null,
     alt: tok.children?.[0]?.content || null,
+    width: tok.attrGet('width') || null,
+    align: tok.attrGet('data-align') || null,
   })},
   hardbreak: { node: 'hard_break' },
   em: { mark: 'em' },
@@ -174,7 +246,7 @@ export const markdownParser = new MarkdownParser(schema, md, {
     title: tok.attrGet('title') || null,
   })},
   code_inline: { mark: 'code' },
-  mark: { mark: 'highlight' }, // ==highlight== via markdown-it-mark
+  mark: { mark: 'highlight', getAttrs: (tok) => ({ color: tok.attrGet('data-color') || '' }) },
 
   // Checkbox lists
   checkbox_list: { block: 'checkbox_list' },
@@ -264,15 +336,29 @@ export const markdownSerializer = new MarkdownSerializer(
       state.closeBlock(node);
     },
     image(state, node) {
-      state.write(`![${state.esc(node.attrs.alt || '')}](${state.esc(node.attrs.src)}${node.attrs.title ? ` "${state.esc(node.attrs.title)}"` : ''})`);
+      const { src, alt, title, width, align } = node.attrs;
+      if (width || align) {
+        // Use HTML img to preserve width/alignment through round-trip
+        const parts = [`<img src="${state.esc(src)}"`];
+        if (alt) parts.push(` alt="${state.esc(alt)}"`);
+        if (title) parts.push(` title="${state.esc(title)}"`);
+        if (width) parts.push(` width="${state.esc(String(width))}"`);
+        if (align) parts.push(` data-align="${state.esc(align)}"`);
+        parts.push(' />');
+        state.write(parts.join(''));
+      } else {
+        state.write(`![${state.esc(alt || '')}](${state.esc(src)}${title ? ` "${state.esc(title)}"` : ''})`);
+      }
     },
     hard_break(state, node, parent, index) {
+      // Only write hard break if there is meaningful content after it
       for (let i = index + 1; i < parent.childCount; i++) {
         if (parent.child(i).type !== node.type) {
           state.write('\\\n');
           return;
         }
       }
+      // Trailing hard breaks (nothing after) → skip to avoid stray "\" on round-trip
     },
     text(state, node) {
       state.text(node.text || '');
@@ -322,10 +408,26 @@ export const markdownSerializer = new MarkdownSerializer(
       close(_state, mark) { return `](${mark.attrs.href}${mark.attrs.title ? ` "${mark.attrs.title}"` : ''})`; },
     },
     code: { open: '`', close: '`', escape: false },
-    highlight: { open: '==', close: '==' },
+    highlight: {
+      open(state: any, mark: any) {
+        if (mark.attrs.color) {
+          return `<mark style="background-color: ${mark.attrs.color}" data-color="${mark.attrs.color}">`;
+        }
+        return '==';
+      },
+      close(state: any, mark: any) {
+        if (mark.attrs.color) {
+          return '</mark>';
+        }
+        return '==';
+      },
+    },
   }
 );
 
 export function serializeMarkdown(doc: PMNode): string {
-  return markdownSerializer.serialize(doc);
+  let md = markdownSerializer.serialize(doc);
+  // Remove trailing backslash-newlines that accumulate from hard_break round-trips
+  md = md.replace(/\\(\n)+$/, '\n');
+  return md;
 }
