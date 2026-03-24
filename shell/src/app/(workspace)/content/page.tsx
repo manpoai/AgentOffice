@@ -4,13 +4,18 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Star, Copy, CopyPlus, Download, ChevronRight, Share2, FolderOpen, Smile } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Copy, CopyPlus, Download, ChevronRight, FolderOpen, Smile, Eye, Code2, Maximize2 } from 'lucide-react';
+import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Editor } from '@/components/editor';
+import dynamic from 'next/dynamic';
+import { Editor, SearchBar } from '@/components/editor';
 import { Comments } from '@/components/comments/Comments';
 import RevisionHistory from '@/components/RevisionHistory';
+import type { OLRevision } from '@/lib/api/outline';
 import { TableEditor } from '@/components/table-editor/TableEditor';
+
+const RevisionPreview = dynamic(() => import('@/components/RevisionPreview'), { ssr: false });
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
 import {
@@ -97,6 +102,7 @@ export default function ContentPage() {
   const { data: docs, isLoading: docsLoading } = useQuery({
     queryKey: ['outline-docs'],
     queryFn: () => ol.listDocuments(),
+    staleTime: 3 * 60 * 1000, // 3 min — prevent background refetch from overwriting optimistic title updates
   });
 
   const { data: collections } = useQuery({
@@ -122,6 +128,7 @@ export default function ContentPage() {
     queryKey: ['outline-doc', selectedDocId],
     queryFn: () => ol.getDocument(selectedDocId!),
     enabled: !!selectedDocId,
+    staleTime: 5 * 60 * 1000, // 5 min — avoid background refetch replacing local editor state with round-tripped markdown
   });
 
   // Build unified node map
@@ -259,7 +266,32 @@ export default function ContentPage() {
     setSelection(sel);
     localStorage.setItem('asuite-content-selection', JSON.stringify(sel));
     setMobileView('detail');
+    // Auto-expand selected item's children
+    const children = childrenMap.get(nodeId);
+    if (children && children.length > 0) {
+      setExpandedIds(prev => {
+        if (prev.has(nodeId)) return prev;
+        const next = new Set(prev);
+        next.add(nodeId);
+        return next;
+      });
+    }
   };
+
+  // Auto-expand selected item's children on load
+  useEffect(() => {
+    if (!selection) return;
+    const nodeId = selection.type === 'doc' ? `doc:${selection.id}` : `table:${selection.id}`;
+    const children = childrenMap.get(nodeId);
+    if (children && children.length > 0) {
+      setExpandedIds(prev => {
+        if (prev.has(nodeId)) return prev;
+        const next = new Set(prev);
+        next.add(nodeId);
+        return next;
+      });
+    }
+  }, [selection, childrenMap]);
 
   // Auto-select first item if nothing is selected
   useEffect(() => {
@@ -275,7 +307,8 @@ export default function ContentPage() {
 
   const refreshDocs = () => {
     queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
-    if (selectedDocId) queryClient.invalidateQueries({ queryKey: ['outline-doc', selectedDocId] });
+    // Don't invalidate the individual doc query on save — the local state is authoritative.
+    // Refetching would replace original markdown with our serialized version, causing round-trip artifacts (e.g. trailing "\").
   };
 
   const refreshTables = () => {
@@ -773,7 +806,7 @@ export default function ContentPage() {
       )}>
         {selectedDoc && selection?.type === 'doc' ? (
           <DocPanel
-            key={`${selectedDoc.id}-${selectedDoc.updatedAt}`}
+            key={selectedDoc.id}
             doc={selectedDoc}
             breadcrumb={getBreadcrumb(selectedDoc.id)}
             onBack={() => setMobileView('list')}
@@ -948,7 +981,11 @@ function DraggableTreeNode({
 
         {/* Icon — emoji overrides default for docs */}
         {node.emoji ? (
-          <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
+          node.emoji.startsWith('/api/') || node.emoji.startsWith('http') ? (
+            <img src={node.emoji} alt="" className="w-4 h-4 rounded object-cover shrink-0" />
+          ) : (
+            <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
+          )
         ) : node.type === 'table'
           ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
           : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
@@ -958,7 +995,7 @@ function DraggableTreeNode({
         <span className="truncate flex-1" {...attributes} {...listeners}>{node.title}</span>
 
         {/* Hover actions: Add + More */}
-        <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity">
           <div className="relative">
             <button
               ref={addBtnRef}
@@ -1094,7 +1131,11 @@ function TreeNodeItem({
     >
       <span className="w-4 shrink-0" />
       {node.emoji ? (
-        <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
+        node.emoji.startsWith('/api/') || node.emoji.startsWith('http') ? (
+          <img src={node.emoji} alt="" className="w-4 h-4 rounded object-cover shrink-0" />
+        ) : (
+          <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
+        )
       ) : node.type === 'table'
         ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
         : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
@@ -1108,12 +1149,7 @@ function TreeNodeItem({
 // Document sub-components
 // ═══════════════════════════════════════════════════
 
-/** Common emoji list for quick selection */
-const COMMON_EMOJIS = [
-  '😀', '😊', '🎉', '🚀', '💡', '📝', '📚', '🔥', '⭐', '✅',
-  '❤️', '👍', '🎯', '🔧', '📊', '🌟', '💻', '🎨', '📌', '🗂️',
-  '🏗️', '📋', '🧪', '🔍', '💬', '📖', '🎓', '🌍', '⚡', '🛠️',
-];
+/* Emoji picker is now a separate component: @/components/EmojiPicker */
 
 function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   doc: ol.OLDocument;
@@ -1125,6 +1161,22 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
+
+  // Fetch comments to extract quoted text for editor highlighting
+  const { data: docComments = [] } = useQuery({
+    queryKey: ['doc-comments', doc.id],
+    queryFn: () => gw.listDocComments(doc.id),
+  });
+  // Extract quoted text from comments for editor highlighting
+  const commentHighlightQuotes = useMemo(() => {
+    return docComments
+      .map(c => {
+        const match = c.text.match(/^>\s(.+?)(?:\n\n)/);
+        return match ? { id: c.id, text: match[1] } : null;
+      })
+      .filter((q): q is { id: string; text: string } => q !== null);
+  }, [docComments]);
+
   const [showComments, setShowComments] = useState(false);
   const [showDocMenu, setShowDocMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -1136,7 +1188,18 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showTitleIcon, setShowTitleIcon] = useState(false);
+  const [editorKey, setEditorKey] = useState(0);
+  const [fullWidth, setFullWidth] = useState(doc.fullWidth ?? false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchWithReplace, setSearchWithReplace] = useState(false);
+  const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
+  const [commentTopOffset, setCommentTopOffset] = useState<number | null>(null);
+  const [insightsEnabled, setInsightsEnabled] = useState(doc.insightsEnabled ?? true);
+  const [previewRevision, setPreviewRevision] = useState<OLRevision | null>(null);
+  const [prevRevision, setPrevRevision] = useState<OLRevision | null>(null);
+  const [highlightChanges, setHighlightChanges] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveVersionRef = useRef(0); // Tracks which save version is latest
   const docIdRef = useRef(doc.id);
   const latestRef = useRef({ title: doc.title, text: doc.text, emoji: doc.emoji || null as string | null });
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -1154,10 +1217,88 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
       if (detail?.text) {
         setCommentQuote(detail.text);
         setShowComments(true);
+        // Calculate top offset of the selection for sidebar alignment
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          const editorArea = document.querySelector('.outline-editor');
+          if (editorArea) {
+            const editorRect = editorArea.getBoundingClientRect();
+            const rangeRect = range.getBoundingClientRect();
+            setCommentTopOffset(rangeRect.top - editorRect.top);
+          }
+        }
       }
     };
     window.addEventListener('editor-comment', handler);
     return () => window.removeEventListener('editor-comment', handler);
+  }, []);
+
+  // Click handler for comment marks in editor — highlight and open sidebar
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const commentEl = target.closest('.comment-marker') as HTMLElement | null;
+      if (!commentEl) {
+        // Clicked outside a comment mark — clear focus
+        if (focusedCommentId) {
+          document.querySelectorAll('.comment-marker.comment-focused').forEach(el =>
+            el.classList.remove('comment-focused')
+          );
+          setFocusedCommentId(null);
+        }
+        return;
+      }
+      const id = commentEl.id.replace('comment-', '');
+      const resolved = commentEl.getAttribute('data-resolved');
+      if (resolved) return;
+
+      // Clear previous focus
+      document.querySelectorAll('.comment-marker.comment-focused').forEach(el =>
+        el.classList.remove('comment-focused')
+      );
+
+      // Add focus to all spans of this comment (may span multiple nodes)
+      document.querySelectorAll(`#comment-${id}`).forEach(el =>
+        el.classList.add('comment-focused')
+      );
+      setFocusedCommentId(id);
+
+      // Calculate offset for sidebar alignment
+      const editorArea = document.querySelector('.outline-editor');
+      if (editorArea) {
+        const editorRect = editorArea.getBoundingClientRect();
+        const markRect = commentEl.getBoundingClientRect();
+        setCommentTopOffset(markRect.top - editorRect.top);
+      }
+
+      // Open comments sidebar if not already open
+      if (!showComments) setShowComments(true);
+    };
+    document.addEventListener('mouseup', handler);
+    return () => document.removeEventListener('mouseup', handler);
+  }, [focusedCommentId, showComments]);
+
+  // Global Cmd+F / Cmd+H to open search bar
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key === 'f') {
+        // Only intercept if not already inside ProseMirror (editor handles its own)
+        if ((e.target as HTMLElement)?.closest?.('.ProseMirror')) return;
+        e.preventDefault();
+        setShowSearch(true);
+        setSearchWithReplace(false);
+      }
+      if (mod && e.key === 'h') {
+        if ((e.target as HTMLElement)?.closest?.('.ProseMirror')) return;
+        e.preventDefault();
+        setShowSearch(true);
+        setSearchWithReplace(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   // Reset local state and cancel pending saves when switching to a different document
@@ -1170,6 +1311,9 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     setText(doc.text);
     latestRef.current = { title: doc.title, text: doc.text, emoji: doc.emoji?.trim() || null };
     setSaveStatus('saved');
+    setShowHistory(false);
+    setPreviewRevision(null);
+    setPrevRevision(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
 
@@ -1190,12 +1334,27 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
     setSaveStatus('unsaved');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     const saveDocId = docIdRef.current; // capture current doc id
+    const thisVersion = ++saveVersionRef.current; // increment version for this save
     saveTimerRef.current = setTimeout(async () => {
       // Abort if doc changed since save was scheduled
       if (saveDocId !== docIdRef.current) return;
       setSaveStatus('saving');
       try {
-        await ol.updateDocument(saveDocId, latestRef.current.title, latestRef.current.text, latestRef.current.emoji);
+        // Capture the values we're actually saving (not what latestRef may have become by the time API responds)
+        const savingTitle = latestRef.current.title;
+        const savingText = latestRef.current.text;
+        const savingEmoji = latestRef.current.emoji;
+        await ol.updateDocument(saveDocId, savingTitle, savingText, savingEmoji);
+        // Only update cache if no newer save has been scheduled since this one started
+        if (saveVersionRef.current !== thisVersion) return;
+        // Update the cached doc so switching away and back preserves edits
+        queryClient.setQueryData<ol.OLDocument>(['outline-doc', saveDocId], (old) =>
+          old ? { ...old, title: savingTitle, text: savingText, emoji: savingEmoji } : old
+        );
+        // Also update sidebar docs list cache so title stays in sync
+        queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
+          (old || []).map(d => d.id === saveDocId ? { ...d, title: savingTitle, emoji: savingEmoji || undefined } : d)
+        );
         // Only update status if still on the same doc
         if (saveDocId === docIdRef.current) {
           setSaveStatus('saved');
@@ -1248,8 +1407,9 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
 
   return (
     <>
-      {/* Top bar — breadcrumb + actions */}
-      <div className="flex items-center px-4 py-2 border-b border-border bg-white dark:bg-card shrink-0">
+      {/* Top bar — breadcrumb + actions, split when comments open */}
+      <div className="flex items-center border-b border-border bg-white dark:bg-card shrink-0">
+        <div className="flex-1 min-w-0 flex items-center px-4 py-2">
         <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -1278,9 +1438,12 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
           {statusText && (
             <span className={cn('text-[10px]', saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground')}>{statusText}</span>
           )}
-          <button className="flex items-center gap-1.5 h-8 px-3 rounded bg-black/10 dark:bg-accent text-sm text-foreground/80 hover:bg-black/15 dark:hover:bg-accent/80 transition-colors">
-            <Share2 className="h-3.5 w-3.5" />
-            <span>Share</span>
+          <button
+            onClick={() => { setShowSearch(true); setSearchWithReplace(false); }}
+            className={cn('p-1.5 rounded transition-colors', showSearch ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+            title={t('content.findReplace') || 'Find & Replace'}
+          >
+            <Search className="h-4 w-4" />
           </button>
           <button
             onClick={() => setShowComments(v => !v)}
@@ -1297,7 +1460,6 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
-                  <DocMenuBtn icon={Star} label={t('content.favorite')} onClick={() => setShowDocMenu(false)} />
                   <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => { setShowDocMenu(false); setShowHistory(true); }} />
                   <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
                   <DocMenuBtn icon={CopyPlus} label={t('content.duplicate')} onClick={async () => {
@@ -1317,16 +1479,51 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                   }} />
                   <div className="border-t border-border my-1" />
                   <DocMenuBtn icon={Trash2} label={t('content.delete')} onClick={() => { setShowDocMenu(false); handleDelete(); }} danger />
+                  <div className="border-t border-border my-1" />
+                  <DocMenuToggle icon={Maximize2} label={t('content.fullWidth')} checked={fullWidth} onChange={async (v) => {
+                    setFullWidth(v);
+                    await ol.updateDocument(doc.id, undefined, undefined, undefined, { fullWidth: v });
+                  }} />
                 </div>
               </>
             )}
           </div>
         </div>
+        </div>
+        {/* Comment sidebar header — aligned with top bar */}
+        {showComments && !showHistory && (
+          <div className="w-80 shrink-0 flex items-center justify-between px-4 py-2 border-l border-border">
+            <h3 className="text-sm font-semibold text-foreground">{t('content.comments')}</h3>
+            <button onClick={() => setShowComments(false)} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title={t('common.close')}>
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        {/* History sidebar header — aligned with top bar */}
+        {showHistory && (
+          <div className="w-72 shrink-0 border-l border-border" />
+        )}
       </div>
 
       {/* Content area */}
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
-        <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto">
+        <div className={cn('flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto', fullWidth && 'doc-full-width')}>
+          {/* Revision preview banner with exit button */}
+          {previewRevision && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 shrink-0">
+              <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="text-sm text-amber-800 dark:text-amber-300 flex-1">
+                {t('content.previewingVersion') || 'Previewing historical version'} — {new Date(previewRevision.createdAt).toLocaleString()}
+              </span>
+              <button
+                onClick={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+                {t('content.exitPreview') || 'Exit preview'}
+              </button>
+            </div>
+          )}
           {/* Title area — Outline style: emoji inline when set, hover icon positioned outside */}
           <div
             className="doc-title-wrap"
@@ -1336,15 +1533,17 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
           <div className="doc-title-area group/title">
             <div className="relative flex items-center" ref={emojiPickerRef}>
               {/* Emoji or hover icon — absolute positioned to the LEFT, outside content area */}
-              {emoji ? (
+              {!previewRevision && emoji ? (
                 <button
                   onClick={() => setShowEmojiPicker(v => !v)}
                   className="absolute -left-12 top-1/2 -translate-y-1/2 text-4xl leading-none hover:opacity-70 transition-opacity"
                   title="Change icon"
                 >
-                  {emoji}
+                  {emoji.startsWith('/api/') || emoji.startsWith('http') ? (
+                    <img src={emoji} alt="icon" className="w-9 h-9 rounded object-cover" />
+                  ) : emoji}
                 </button>
-              ) : showTitleIcon ? (
+              ) : !previewRevision && showTitleIcon ? (
                 <button
                   onClick={() => setShowEmojiPicker(v => !v)}
                   className="absolute -left-10 top-1/2 -translate-y-1/2 p-1 rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-black/5 transition-all"
@@ -1353,38 +1552,44 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
                   <Smile className="h-6 w-6" />
                 </button>
               ) : null}
-              {/* Title input — left-aligned with body content */}
-              <input
-                value={title}
-                onChange={handleTitleChange}
-                placeholder={t('content.untitled')}
-                className="flex-1 min-w-0 text-[2.5rem] font-bold text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/30 leading-tight"
-              />
+              {/* Title — show revision title (read-only) or editable input */}
+              {previewRevision ? (
+                <div className="flex-1 min-w-0 text-[2.5rem] font-bold text-foreground leading-tight opacity-70">
+                  {previewRevision.title || t('content.untitled')}
+                </div>
+              ) : (
+                <input
+                  value={title}
+                  onChange={handleTitleChange}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const wrapper = (e.target as HTMLElement).closest('.doc-title-wrap');
+                      const mount = wrapper?.parentElement?.querySelector('.outline-editor-mount') as any;
+                      const view = mount?.__pmView;
+                      if (view) {
+                        view.focus();
+                        // Place cursor at start of first block (pos 1 = inside first block node)
+                        const sel = view.state.selection.constructor.create(view.state.doc, 1);
+                        view.dispatch(view.state.tr.setSelection(sel));
+                      }
+                    }
+                  }}
+                  placeholder={t('content.untitled')}
+                  className="flex-1 min-w-0 text-[2.5rem] font-bold text-foreground bg-transparent border-none outline-none placeholder:text-muted-foreground/30 leading-tight"
+                />
+              )}
               {/* Emoji picker dropdown */}
-              {showEmojiPicker && (
-                <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl p-3 w-[280px]">
-                  <div className="grid grid-cols-10 gap-1">
-                    {COMMON_EMOJIS.map(em => (
-                      <button
-                        key={em}
-                        onClick={() => handleEmojiSelect(em)}
-                        className="w-7 h-7 flex items-center justify-center rounded hover:bg-accent text-lg leading-none"
-                      >
-                        {em}
-                      </button>
-                    ))}
-                  </div>
-                  {emoji && (
-                    <>
-                      <div className="border-t border-border my-2" />
-                      <button
-                        onClick={() => handleEmojiSelect(null)}
-                        className="w-full text-xs text-muted-foreground hover:text-foreground py-1.5 rounded hover:bg-accent transition-colors"
-                      >
-                        Remove icon
-                      </button>
-                    </>
-                  )}
+              {showEmojiPicker && !previewRevision && (
+                <div className="absolute -left-12 top-full mt-1 z-50 rounded-lg shadow-xl overflow-hidden">
+                  <EmojiPicker
+                    onSelect={(em) => handleEmojiSelect(em)}
+                    onRemove={emoji ? () => handleEmojiSelect(null) : undefined}
+                    onUploadImage={async (file) => {
+                      const result = await ol.uploadAttachment(file, doc.id);
+                      return result.data.url;
+                    }}
+                  />
                 </div>
               )}
             </div>
@@ -1392,40 +1597,76 @@ function DocPanel({ doc, breadcrumb, onBack, onSaved, onDeleted, onNavigate }: {
           </div>
           </div>
 
-          {/* Editor */}
-          <Editor key={doc.id} defaultValue={doc.text} onChange={handleTextChange} placeholder={t('content.editorPlaceholder')} documentId={doc.id} />
+          {/* Editor / Revision preview area */}
+          <div className="relative flex-1 min-h-0">
+            {previewRevision ? (
+              <RevisionPreview
+                key={previewRevision.id + (highlightChanges ? '-diff' : '')}
+                data={previewRevision.data}
+                prevData={prevRevision?.data}
+                highlightChanges={highlightChanges}
+              />
+            ) : (
+              <>
+                {showSearch && (
+                  <SearchBar
+                    getView={() => {
+                      const mount = document.querySelector('.outline-editor-mount') as any;
+                      return mount?.__pmView || null;
+                    }}
+                    showReplace={searchWithReplace}
+                    onClose={() => setShowSearch(false)}
+                  />
+                )}
+                <Editor
+                  key={`${doc.id}-${editorKey}`}
+                  defaultValue={doc.text}
+                  onChange={handleTextChange}
+                  placeholder={t('content.editorPlaceholder')}
+                  documentId={doc.id}
+                  onSearchOpen={(withReplace) => { setShowSearch(true); setSearchWithReplace(withReplace); }}
+                  commentQuotes={commentHighlightQuotes}
+                />
+              </>
+            )}
+          </div>
         </div>
 
-        {showComments && (
-          <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
-            <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-foreground">{t('content.comments')}</h3>
-              <button onClick={() => setShowComments(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+        {showComments && !showHistory && (
+          <div className="w-80 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
             <Comments
               queryKey={['doc-comments', doc.id]}
               fetchComments={() => gw.listDocComments(doc.id)}
               postComment={(text) => gw.commentOnDoc(doc.id, text)}
               initialQuote={commentQuote}
               onQuoteConsumed={() => setCommentQuote('')}
+              topOffset={commentTopOffset}
+            />
+          </div>
+        )}
+
+        {showHistory && (
+          <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
+            <RevisionHistory
+              doc={doc}
+              onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+              onRestored={async () => {
+                await queryClient.invalidateQueries({ queryKey: ['outline-doc', doc.id] });
+                await queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
+                const restored = await queryClient.fetchQuery({ queryKey: ['outline-doc', doc.id], queryFn: () => ol.getDocument(doc.id) });
+                setTitle(restored.title);
+                setText(restored.text);
+                latestRef.current = { title: restored.title, text: restored.text, emoji: restored.emoji?.trim() || null };
+                setEditorKey(k => k + 1);
+                onSaved();
+              }}
+              onSelect={(rev, prev) => { setPreviewRevision(rev); setPrevRevision(prev); }}
+              highlightChanges={highlightChanges}
+              onHighlightChangesToggle={() => setHighlightChanges(v => !v)}
             />
           </div>
         )}
       </div>
-
-      {showHistory && (
-        <RevisionHistory
-          doc={doc}
-          onClose={() => setShowHistory(false)}
-          onRestored={async () => {
-            await queryClient.invalidateQueries({ queryKey: ['outline-doc', doc.id] });
-            await queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
-            onSaved();
-          }}
-        />
-      )}
     </>
   );
 }
@@ -1450,6 +1691,32 @@ function DocMenuBtn({ icon: Icon, label, onClick, danger }: {
     >
       <Icon className="h-4 w-4 shrink-0" />
       {label}
+    </button>
+  );
+}
+
+function DocMenuToggle({ icon: Icon, label, checked, onChange }: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors"
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="flex-1 text-left">{label}</span>
+      <span className={cn(
+        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors',
+        checked ? 'bg-primary' : 'bg-muted'
+      )}>
+        <span className={cn(
+          'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform mt-0.5 ml-0.5',
+          checked ? 'translate-x-4' : 'translate-x-0'
+        )} />
+      </span>
     </button>
   );
 }
