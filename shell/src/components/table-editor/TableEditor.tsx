@@ -3066,15 +3066,23 @@ export function TableEditor({ tableId, onBack, onDeleted, docListVisible, onTogg
                   <div className="space-y-1 max-h-[200px] overflow-y-auto">
                     {(() => {
                       const showTime = newColType !== 'Date';
-                      const timeSuffix = showTime ? ' 14:00' : '';
-                      return [
-                        { value: 'YYYY/MM/DD', label: 'YYYY/MM/DD', example: `2026/03/25${timeSuffix}` },
-                        { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD', example: `2026-03-25${timeSuffix}` },
-                        { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY', example: `25/03/2026${timeSuffix}` },
-                        { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY', example: `03/25/2026${timeSuffix}` },
-                        { value: 'YYYY年MM月DD日', label: 'YYYY年MM月DD日', example: `2026年03月25日${timeSuffix}` },
-                        { value: 'MM-DD', label: 'MM-DD', example: `03-25${timeSuffix}` },
-                      ].map(fmt => (
+                      // Build format list: pure date formats first, then date+time variants
+                      const baseFmts = [
+                        { value: 'YYYY/MM/DD', example: '2026/01/30' },
+                        { value: 'YYYY-MM-DD', example: '2026-01-30' },
+                        { value: 'DD/MM/YYYY', example: '30/01/2026' },
+                        { value: 'MM/DD/YYYY', example: '01/30/2026' },
+                        { value: 'YYYY年MM月DD日', example: '2026年01月30日' },
+                        { value: 'MM-DD', example: '01-30' },
+                      ];
+                      const allFmts: { value: string; example: string }[] = [];
+                      for (const f of baseFmts) {
+                        allFmts.push(f);
+                        if (showTime) {
+                          allFmts.push({ value: `${f.value} HH:mm`, example: `${f.example} 14:00` });
+                        }
+                      }
+                      return allFmts.map(fmt => (
                         <button
                           key={fmt.value}
                           onClick={() => setDateFormat(fmt.value)}
@@ -3083,7 +3091,7 @@ export function TableEditor({ tableId, onBack, onDeleted, docListVisible, onTogg
                             dateFormat === fmt.value ? 'bg-sidebar-primary/10 text-sidebar-primary' : 'hover:bg-accent text-foreground'
                           )}
                         >
-                          <span>{fmt.label}</span>
+                          <span>{fmt.value}</span>
                           <span className="text-muted-foreground">{fmt.example}</span>
                         </button>
                       ));
@@ -3674,13 +3682,18 @@ function CellDisplay({ value, col }: { value: unknown; col: nc.NCColumn }) {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    let datePart = fmt
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const formatted = fmt
       .replace('YYYY', String(y))
       .replace('MM', m)
-      .replace('DD', day);
-    const showTime = colType !== 'Date';
-    const timePart = showTime ? ` ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
-    return <span className="text-xs py-1.5 block text-foreground/70" title={str}>{datePart}{timePart}</span>;
+      .replace('DD', day)
+      .replace('HH', hh)
+      .replace('mm', mm);
+    // If format doesn't include HH:mm, append time for DateTime/system types
+    const needsTime = colType !== 'Date' && !fmt.includes('HH');
+    const timePart = needsTime ? ` ${hh}:${mm}` : '';
+    return <span className="text-xs py-1.5 block text-foreground/70" title={str}>{formatted}{timePart}</span>;
   }
 
   // Time

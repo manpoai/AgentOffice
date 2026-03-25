@@ -425,13 +425,17 @@ function FieldDisplay({ value, col }: { value: unknown; col: nc.NCColumn }) {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    let datePart = fmt
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const formatted = fmt
       .replace('YYYY', String(y))
       .replace('MM', m)
-      .replace('DD', day);
-    const showTime = type !== 'Date';
-    const timePart = showTime ? ` ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
-    return <span className="text-foreground/70">{datePart}{timePart}</span>;
+      .replace('DD', day)
+      .replace('HH', hh)
+      .replace('mm', mm);
+    const needsTime = type !== 'Date' && !fmt.includes('HH');
+    const timePart = needsTime ? ` ${hh}:${mm}` : '';
+    return <span className="text-foreground/70">{formatted}{timePart}</span>;
   }
   // Number / Decimal / Currency / Percent / AutoNumber — aligned with grid (use meta formatting)
   if (type === 'Number' || type === 'Decimal' || type === 'AutoNumber' || type === 'Currency' || type === 'Percent') {
