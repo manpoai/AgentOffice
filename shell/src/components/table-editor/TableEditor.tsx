@@ -3163,9 +3163,15 @@ export function TableEditor({ tableId, onBack, onDeleted, docListVisible, onTogg
                     />
                     支持选择多个记录
                   </label>
-                  <div className="text-[10px] text-muted-foreground/60">
-                    创建后会在关联表中自动添加反向列。
-                  </div>
+                  <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newColRelBidirectional}
+                      onChange={e => setNewColRelBidirectional(e.target.checked)}
+                      className="accent-sidebar-primary"
+                    />
+                    在关联表中添加反向列
+                  </label>
                   <div className="text-[10px] text-muted-foreground/60">
                     {newColRelMulti ? '多对多关联：每条记录可关联多条目标表记录' : '单选关联：每条记录只能关联一条目标表记录'}
                   </div>

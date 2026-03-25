@@ -322,6 +322,9 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
         ) : /* MultiSelect */
         col.type === 'MultiSelect' && !isReadonly ? (
           <MultiSelectField value={value} col={col} onToggle={toggleMulti} />
+        ) : /* Attachment — inline upload + display with delete */
+        col.type === 'Attachment' && !isReadonly ? (
+          <AttachmentField value={value} col={col} rowId={rowId} tableId={tableId} onSaved={onSaved} />
         ) : /* Editing state */
         editing ? (
           col.type === 'LongText' || col.type === 'JSON' ? (
@@ -542,6 +545,102 @@ function FieldDisplay({ value, col }: { value: unknown; col: nc.NCColumn }) {
   }
 
   return <span className="break-words">{str}</span>;
+}
+
+// ── Attachment field (upload + thumbnails + delete) ──
+
+function AttachmentField({ value, col, rowId, tableId, onSaved }: {
+  value: unknown; col: nc.NCColumn; rowId: number; tableId: string; onSaved: () => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  let attachments: any[] = [];
+  try {
+    attachments = Array.isArray(value) ? value : JSON.parse(String(value || '[]'));
+  } catch {}
+  if (!Array.isArray(attachments)) attachments = [];
+
+  const isImage = (a: any) => a.mimetype?.startsWith('image/');
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach(f => formData.append('files', f));
+      const res = await fetch('/api/gateway/data/upload', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+      const uploaded = await res.json();
+      const merged = [...attachments, ...uploaded];
+      await nc.updateRow(tableId, rowId, { [col.title]: merged });
+      onSaved();
+    } catch (e) { console.error('Attachment upload failed:', e); }
+    finally { setUploading(false); }
+  };
+
+  const handleDelete = async (idx: number) => {
+    const updated = attachments.filter((_: any, i: number) => i !== idx);
+    try {
+      await nc.updateRow(tableId, rowId, { [col.title]: updated });
+      onSaved();
+    } catch (e) { console.error('Delete attachment failed:', e); }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
+  };
+
+  return (
+    <div
+      className={cn('py-1 rounded-md', dragging && 'bg-sidebar-primary/10 ring-1 ring-sidebar-primary')}
+      onDragOver={e => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+    >
+      {/* Thumbnails */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {attachments.map((a: any, i: number) => (
+            <div key={i} className="relative group">
+              {isImage(a) ? (
+                <img src={ncAttachmentUrl(a)} className="h-16 w-16 rounded object-cover border border-border" alt={a.title} />
+              ) : (
+                <div className="h-16 w-16 rounded border border-border flex flex-col items-center justify-center bg-muted/30" title={a.title || a.path}>
+                  <Paperclip className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-[9px] text-muted-foreground mt-1 truncate max-w-[56px] px-1">{a.title || `附件${i + 1}`}</span>
+                </div>
+              )}
+              <button
+                onClick={() => handleDelete(i)}
+                className="absolute -top-1.5 -right-1.5 hidden group-hover:flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] shadow-sm"
+                title="删除"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Upload area */}
+      <div
+        className="border border-dashed border-border/60 rounded-lg px-3 py-2 text-center cursor-pointer hover:bg-muted/30 transition-colors"
+        onClick={() => fileRef.current?.click()}
+      >
+        <input ref={fileRef} type="file" multiple className="hidden" onChange={e => e.target.files && uploadFiles(e.target.files)} />
+        {uploading ? (
+          <span className="text-xs text-muted-foreground">上传中...</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            <Upload className="h-3 w-3 inline mr-1" />
+            点击或拖拽上传文件
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Select field (inline dropdown) ──
