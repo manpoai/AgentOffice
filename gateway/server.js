@@ -780,7 +780,7 @@ app.post('/api/data/tables', authenticateAgent, async (req, res) => {
     ...(c.required !== undefined ? { rqd: c.required } : {}),
   });
   const fullColumns = [
-    ...(hasPk ? [] : [{ column_name: 'Id', title: 'Id', uidt: 'SingleLineText', pk: true }]),
+    ...(hasPk ? [] : [{ column_name: 'Id', title: 'Id', uidt: 'ID', pk: true, ai: true }]),
     ...columns.map(normalizeCol),
     { column_name: 'created_by', title: 'created_by', uidt: 'SingleLineText' },
   ];
