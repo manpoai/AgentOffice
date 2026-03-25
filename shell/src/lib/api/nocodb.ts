@@ -75,6 +75,8 @@ export interface NCTableMeta {
   title: string;
   columns: NCColumn[];
   views?: NCView[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface NCPageInfo {
@@ -173,7 +175,7 @@ export async function addColumn(
   });
 }
 
-export async function updateColumn(tableId: string, columnId: string, updates: { title?: string; uidt?: string }): Promise<void> {
+export async function updateColumn(tableId: string, columnId: string, updates: { title?: string; uidt?: string; options?: NCSelectOption[]; meta?: string }): Promise<void> {
   await ncFetch(`/tables/${tableId}/columns/${columnId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -286,37 +288,53 @@ export async function deleteSort(sortId: string): Promise<void> {
   await ncFetch(`/sorts/${sortId}`, { method: 'DELETE' });
 }
 
-// ── Doc custom icons (NocoDB table: doc_icons) ──
+// ── View columns (field visibility/width per view) ──
 
-const DOC_ICONS_TABLE = 'mhkn845dh93uuiv';
-
-/** Fetch all custom doc icon mappings: { [doc_id]: icon_url } */
-export async function getDocIcons(): Promise<Record<string, string>> {
-  const result = await queryRows(DOC_ICONS_TABLE, { limit: 1000 });
-  const map: Record<string, string> = {};
-  for (const row of result.list) {
-    const docId = row['doc_id'] as string;
-    const iconUrl = row['icon_url'] as string;
-    if (docId && iconUrl) map[docId] = iconUrl;
-  }
-  return map;
+export interface NCViewColumn {
+  fk_column_id: string;
+  show: boolean;
+  order?: number;
+  width?: string | null;
 }
 
-/** Set a custom icon URL for a document (upserts) */
-export async function setDocIcon(docId: string, iconUrl: string): Promise<void> {
-  // Check if entry already exists
-  const existing = await queryRows(DOC_ICONS_TABLE, { where: `(doc_id,eq,${docId})`, limit: 1 });
-  if (existing.list.length > 0) {
-    await updateRow(DOC_ICONS_TABLE, existing.list[0]['Id'] as number, { icon_url: iconUrl });
-  } else {
-    await insertRow(DOC_ICONS_TABLE, { doc_id: docId, icon_url: iconUrl });
-  }
+export async function listViewColumns(viewId: string): Promise<NCViewColumn[]> {
+  const data = await ncFetch<{ list: NCViewColumn[] }>(`/views/${viewId}/columns`);
+  return data.list;
 }
 
-/** Remove custom icon for a document */
-export async function removeDocIcon(docId: string): Promise<void> {
-  const existing = await queryRows(DOC_ICONS_TABLE, { where: `(doc_id,eq,${docId})`, limit: 1 });
-  if (existing.list.length > 0) {
-    await deleteRow(DOC_ICONS_TABLE, existing.list[0]['Id'] as number);
-  }
+export async function updateViewColumn(viewId: string, columnId: string, fields: { show?: boolean; width?: string | number; order?: number }): Promise<void> {
+  await ncFetch(`/views/${viewId}/columns/${columnId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+}
+
+// ── Linked records (for Links columns) ──
+
+export async function listLinkedRecords(
+  tableId: string, rowId: number | string, columnId: string,
+  opts?: { limit?: number; offset?: number }
+): Promise<NCRowsResponse> {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  if (opts?.offset) params.set('offset', String(opts.offset));
+  const qs = params.toString();
+  return ncFetch<NCRowsResponse>(`/${tableId}/rows/${rowId}/links/${columnId}${qs ? `?${qs}` : ''}`);
+}
+
+export async function linkRecords(tableId: string, rowId: number | string, columnId: string, recordIds: number[]): Promise<void> {
+  await ncFetch(`/${tableId}/rows/${rowId}/links/${columnId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(recordIds.map(id => ({ Id: id }))),
+  });
+}
+
+export async function unlinkRecords(tableId: string, rowId: number | string, columnId: string, recordIds: number[]): Promise<void> {
+  await ncFetch(`/${tableId}/rows/${rowId}/links/${columnId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(recordIds.map(id => ({ Id: id }))),
+  });
 }

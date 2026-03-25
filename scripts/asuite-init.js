@@ -260,27 +260,6 @@ async function main() {
     if (baseId) {
       log(`NocoDB base: ${baseId}`);
 
-      // Create default agent_notes table if not exists
-      const tablesRes = await api(ncUrl, 'GET', `/api/v1/db/meta/projects/${baseId}/tables`, null,
-        { 'xc-auth': ncToken });
-      const tables = tablesRes.data?.list || [];
-      const hasNotes = tables.some(t => t.title === 'agent_notes');
-
-      if (!hasNotes) {
-        log('Creating agent_notes table...');
-        await api(ncUrl, 'POST', `/api/v1/db/meta/projects/${baseId}/tables`, {
-          table_name: 'agent_notes', title: 'agent_notes',
-          columns: [
-            { column_name: 'Id', title: 'Id', uidt: 'ID', pk: true, ai: true },
-            { column_name: 'Title', title: 'Title', uidt: 'SingleLineText' },
-            { column_name: 'Content', title: 'Content', uidt: 'LongText' },
-            { column_name: 'Agent', title: 'Agent', uidt: 'SingleLineText' },
-            { column_name: 'created_by', title: 'created_by', uidt: 'SingleLineText' },
-          ],
-        }, { 'xc-auth': ncToken });
-        log('agent_notes table created');
-      }
-
       state.secrets.NC_BASE_ID = baseId;
     }
   }

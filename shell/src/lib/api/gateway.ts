@@ -163,6 +163,75 @@ export async function commentOnDoc(docId: string, text: string, parentId?: strin
   });
 }
 
+// ── Table Comments (SQLite-backed, for NocoDB tables) ──
+
+export interface TableComment extends Comment {
+  row_id?: string | null;
+}
+
+export async function listTableComments(tableId: string, rowId?: string): Promise<Comment[]> {
+  const qs = rowId ? `?row_id=${encodeURIComponent(rowId)}` : '';
+  const data = await gwFetch<{ comments: Comment[] }>(`/data/tables/${tableId}/comments${qs}`);
+  return data.comments;
+}
+
+export async function listAllTableComments(tableId: string): Promise<TableComment[]> {
+  const data = await gwFetch<{ comments: TableComment[] }>(`/data/tables/${tableId}/comments?include_all=1`);
+  return data.comments;
+}
+
+export async function commentOnTable(tableId: string, text: string, parentId?: string, rowId?: string): Promise<Comment> {
+  return gwFetch<Comment>(`/data/tables/${tableId}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, parent_id: parentId, row_id: rowId }),
+  });
+}
+
+export async function editTableComment(commentId: string, text: string): Promise<void> {
+  await gwFetch(`/data/table-comments/${commentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function deleteTableComment(commentId: string): Promise<void> {
+  await gwFetch(`/data/table-comments/${commentId}`, { method: 'DELETE' });
+}
+
+export async function resolveTableComment(commentId: string): Promise<void> {
+  await gwFetch(`/data/table-comments/${commentId}/resolve`, { method: 'POST' });
+}
+
+export async function unresolveTableComment(commentId: string): Promise<void> {
+  await gwFetch(`/data/table-comments/${commentId}/unresolve`, { method: 'POST' });
+}
+
+export async function listCommentedRows(tableId: string): Promise<{ row_id: string; count: number }[]> {
+  const data = await gwFetch<{ rows: { row_id: string; count: number }[] }>(`/data/tables/${tableId}/commented-rows`);
+  return data.rows;
+}
+
+// ── Doc Icons ──
+
+export async function getDocIcons(): Promise<Record<string, string>> {
+  const data = await gwFetch<{ icons: Record<string, string> }>('/doc-icons');
+  return data.icons;
+}
+
+export async function setDocIcon(docId: string, icon: string): Promise<void> {
+  await gwFetch(`/doc-icons/${encodeURIComponent(docId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ icon }),
+  });
+}
+
+export async function removeDocIcon(docId: string): Promise<void> {
+  await gwFetch(`/doc-icons/${encodeURIComponent(docId)}`, { method: 'DELETE' });
+}
+
 // ── Preferences ──
 
 export async function getPreference<T = unknown>(key: string): Promise<T | null> {

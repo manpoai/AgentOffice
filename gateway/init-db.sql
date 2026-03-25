@@ -53,3 +53,39 @@ CREATE TABLE IF NOT EXISTS thread_links (
 
 CREATE INDEX IF NOT EXISTS idx_thread_links_thread ON thread_links(thread_id);
 CREATE INDEX IF NOT EXISTS idx_thread_links_link ON thread_links(link_type, link_id);
+
+-- Table comments (table-level and row-level comments stored locally)
+CREATE TABLE IF NOT EXISTS table_comments (
+  id          TEXT PRIMARY KEY,
+  table_id    TEXT NOT NULL,
+  row_id      TEXT,              -- NULL for table-level comments, row ID for row-level
+  parent_id   TEXT,              -- NULL for top-level, comment ID for replies
+  text        TEXT NOT NULL,
+  actor       TEXT NOT NULL,     -- display name of commenter
+  actor_id    TEXT,              -- agent_id or user_id
+  resolved_by TEXT,
+  resolved_at INTEGER,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_table_comments_table ON table_comments(table_id, row_id);
+CREATE INDEX IF NOT EXISTS idx_table_comments_parent ON table_comments(parent_id);
+
+-- Doc/table custom icons (emoji per document or table)
+CREATE TABLE IF NOT EXISTS doc_icons (
+  doc_id      TEXT PRIMARY KEY,
+  icon        TEXT NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+-- View column settings (field visibility/width per NocoDB view)
+CREATE TABLE IF NOT EXISTS view_column_settings (
+  view_id     TEXT NOT NULL,
+  column_id   TEXT NOT NULL,
+  width       INTEGER,
+  show        INTEGER DEFAULT 1,
+  sort_order  INTEGER,
+  updated_at  INTEGER NOT NULL,
+  PRIMARY KEY (view_id, column_id)
+);

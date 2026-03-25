@@ -142,26 +142,6 @@ async function main() {
     if (baseId) {
       log(`NocoDB base: ${baseId}`);
 
-      // Create agent_notes table if missing
-      const tablesRes = await api(NC_URL, 'GET',
-        `/api/v1/db/meta/projects/${baseId}/tables`, null, { 'xc-auth': ncToken });
-      const tables = tablesRes.data?.list || [];
-
-      if (!tables.some(t => t.title === 'agent_notes')) {
-        log('Creating agent_notes table...');
-        await api(NC_URL, 'POST', `/api/v1/db/meta/projects/${baseId}/tables`, {
-          table_name: 'agent_notes', title: 'agent_notes',
-          columns: [
-            { column_name: 'Id', title: 'Id', uidt: 'ID', pk: true, ai: true },
-            { column_name: 'Title', title: 'Title', uidt: 'SingleLineText' },
-            { column_name: 'Content', title: 'Content', uidt: 'LongText' },
-            { column_name: 'Agent', title: 'Agent', uidt: 'SingleLineText' },
-            { column_name: 'created_by', title: 'created_by', uidt: 'SingleLineText' },
-          ],
-        }, { 'xc-auth': ncToken });
-        log('agent_notes table created');
-      }
-
       // Write init results for Gateway to read
       const initResult = {
         nocodb_base_id: baseId,

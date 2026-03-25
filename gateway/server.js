@@ -2212,6 +2212,28 @@ app.post('/api/me/events/ack', authenticateAgent, (req, res) => {
   res.json({ acknowledged: result.changes });
 });
 
+// ─── Doc Icons (emoji per document/table) ─────────
+app.get('/api/doc-icons', authenticateAgent, (req, res) => {
+  const rows = db.prepare('SELECT doc_id, icon FROM doc_icons').all();
+  const map = {};
+  for (const r of rows) map[r.doc_id] = r.icon;
+  res.json({ icons: map });
+});
+
+app.put('/api/doc-icons/:doc_id', authenticateAgent, (req, res) => {
+  const { icon } = req.body;
+  if (!icon) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: '"icon" required' });
+  const now = Date.now();
+  db.prepare('INSERT INTO doc_icons (doc_id, icon, updated_at) VALUES (?, ?, ?) ON CONFLICT(doc_id) DO UPDATE SET icon = excluded.icon, updated_at = excluded.updated_at')
+    .run(req.params.doc_id, icon, now);
+  res.json({ doc_id: req.params.doc_id, icon, updated_at: now });
+});
+
+app.delete('/api/doc-icons/:doc_id', authenticateAgent, (req, res) => {
+  db.prepare('DELETE FROM doc_icons WHERE doc_id = ?').run(req.params.doc_id);
+  res.json({ deleted: true });
+});
+
 // ─── Preferences (key-value store) ────────────────
 const PREFS_DIR = path.join(__dirname, 'data', 'preferences');
 fs.mkdirSync(PREFS_DIR, { recursive: true });

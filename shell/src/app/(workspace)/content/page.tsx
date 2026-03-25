@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
 import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Copy, CopyPlus, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Copy, CopyPlus, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2 } from 'lucide-react';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,6 +18,8 @@ import { TableEditor } from '@/components/table-editor/TableEditor';
 const RevisionPreview = dynamic(() => import('@/components/RevisionPreview'), { ssr: false });
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
+import { getAutoPosition } from '@/lib/hooks/use-auto-position';
+import { AutoDropdown } from '@/components/ui/auto-dropdown';
 import {
   DndContext,
   closestCenter,
@@ -64,6 +66,7 @@ interface TreeState {
 
 const TREE_STATE_KEY = 'asuite-content-tree';
 const DELETED_TABLES_KEY = 'asuite-deleted-tables';
+const EXPANDED_STATE_KEY = 'asuite-content-expanded';
 
 function loadTreeState(): TreeState {
   try {
@@ -77,6 +80,18 @@ function saveTreeState(state: TreeState) {
   localStorage.setItem(TREE_STATE_KEY, JSON.stringify(state));
   // Debounced write to Gateway
   saveTreeStateToGateway(state);
+}
+
+function loadExpandedState(): string[] {
+  try {
+    const raw = localStorage.getItem(EXPANDED_STATE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveExpandedState(ids: Set<string>) {
+  localStorage.setItem(EXPANDED_STATE_KEY, JSON.stringify([...ids]));
 }
 
 // Debounced Gateway persistence for tree state
@@ -106,12 +121,49 @@ function saveDeletedTables(tables: DeletedTable[]) {
 }
 
 // ═══════════════════════════════════════════════════
+// URL ↔ Selection helpers
+// ═══════════════════════════════════════════════════
+
+/** Read ?id=doc:xxx or ?id=table:xxx from the current URL */
+function selectionFromURL(): Selection | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    if (!id) return null;
+    if (id.startsWith('doc:')) return { type: 'doc', id: id.slice(4) };
+    if (id.startsWith('table:')) return { type: 'table', id: id.slice(6) };
+  } catch { /* SSR or invalid */ }
+  return null;
+}
+
+/** Update the browser URL to reflect the current selection (no page reload) */
+function syncSelectionToURL(sel: Selection | null) {
+  const url = new URL(window.location.href);
+  if (sel) {
+    url.searchParams.set('id', `${sel.type}:${sel.id}`);
+  } else {
+    url.searchParams.delete('id');
+  }
+  window.history.replaceState(null, '', url.toString());
+}
+
+/** Build a shareable link for a content item */
+function buildContentLink(sel: Selection): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set('id', `${sel.type}:${sel.id}`);
+  return url.toString();
+}
+
+// ═══════════════════════════════════════════════════
 // Main Page
 // ═══════════════════════════════════════════════════
 
 export default function ContentPage() {
   const { t } = useT();
   const [selection, setSelection] = useState<Selection>(() => {
+    // URL param takes priority over sessionStorage
+    const fromURL = selectionFromURL();
+    if (fromURL) return fromURL;
     try {
       const saved = sessionStorage.getItem('asuite-content-selection');
       if (saved) return JSON.parse(saved);
@@ -122,7 +174,7 @@ export default function ContentPage() {
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [creating, setCreating] = useState(false);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(loadExpandedState()));
   const [treeState, setTreeState] = useState<TreeState>(() => loadTreeState());
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<DropIntent>(null);
@@ -146,7 +198,9 @@ export default function ContentPage() {
   const { data: docs, isLoading: docsLoading } = useQuery({
     queryKey: ['outline-docs'],
     queryFn: () => ol.listDocuments(),
-    staleTime: 3 * 60 * 1000, // 3 min — prevent background refetch from overwriting optimistic title updates
+    staleTime: 5 * 60 * 1000, // Prevent background refetch from overwriting optimistic title updates
+    refetchOnWindowFocus: false, // Prevent window focus refetch from reverting optimistic titles
+    refetchOnReconnect: false, // Prevent network reconnect refetch from reverting titles
   });
 
   const { data: collections } = useQuery({
@@ -159,10 +213,10 @@ export default function ContentPage() {
     queryFn: nc.listTables,
   });
 
-  // Custom doc icons stored in NocoDB (for image-based icons that Outline doesn't support)
+  // Custom doc icons stored in Gateway SQLite
   const { data: customIcons } = useQuery({
     queryKey: ['doc-icons'],
-    queryFn: nc.getDocIcons,
+    queryFn: gw.getDocIcons,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -187,6 +241,7 @@ export default function ContentPage() {
     queryFn: () => ol.getDocument(selectedDocId!),
     enabled: !!selectedDocId,
     staleTime: 5 * 60 * 1000, // 5 min — avoid background refetch replacing local editor state with round-tripped markdown
+    refetchOnWindowFocus: false, // Prevent refetch from overwriting local editor state
   });
 
   // Build unified node map
@@ -214,6 +269,7 @@ export default function ContentPage() {
         rawId: tbl.id,
         type: 'table',
         title: tbl.title || t('content.untitledTable'),
+        emoji: customIcons?.[tbl.id],
         createdAt: new Date(tbl.created_at || 0).getTime(),
         parentId: null, // tables don't have native parent; use treeState
       });
@@ -300,6 +356,7 @@ export default function ContentPage() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      saveExpandedState(next);
       return next;
     });
   };
@@ -344,10 +401,12 @@ export default function ContentPage() {
         const sel = { type: nextNode.type, id: nextNode.rawId } as Selection;
         setSelection(sel);
         sessionStorage.setItem('asuite-content-selection', JSON.stringify(sel));
+        syncSelectionToURL(sel);
         return;
       }
     }
     setSelection(null);
+    syncSelectionToURL(null);
     setMobileView('list');
   };
 
@@ -452,6 +511,7 @@ export default function ContentPage() {
     const sel = { type: node.type, id: node.rawId };
     setSelection(sel);
     sessionStorage.setItem('asuite-content-selection', JSON.stringify(sel));
+    syncSelectionToURL(sel);
     setMobileView('detail');
     // Auto-expand selected item's children
     const children = childrenMap.get(nodeId);
@@ -511,6 +571,7 @@ export default function ContentPage() {
       const sel = { type: firstNode.type, id: firstNode.rawId } as Selection;
       setSelection(sel);
       sessionStorage.setItem('asuite-content-selection', JSON.stringify(sel));
+      syncSelectionToURL(sel);
     }
   }, [rootIds, selection, effectiveNodes]);
 
@@ -567,10 +628,20 @@ export default function ContentPage() {
       }
       const doc = await ol.createDocument('', '', collectionId, parentDocId);
 
-      // Replace temp doc with real one in cache
+      // Preserve any title/text the user typed while the create API was in-flight
+      // The temp doc in the cache may have been updated optimistically by DocPanel
+      const cachedDocs = queryClient.getQueryData<ol.OLDocument[]>(['outline-docs']);
+      const tempDoc = cachedDocs?.find(d => d.id === tempId);
+      const preservedTitle = tempDoc?.title || doc.title;
+      const preservedEmoji = tempDoc?.emoji || doc.emoji;
+      const realDoc = { ...doc, title: preservedTitle, emoji: preservedEmoji };
+
+      // Replace temp doc with real one in cache (preserving any user edits)
       queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-        (old || []).map(d => d.id === tempId ? doc : d)
+        (old || []).map(d => d.id === tempId ? realDoc : d)
       );
+      // Pre-populate individual doc cache so DocPanel remount picks up the preserved title
+      queryClient.setQueryData<ol.OLDocument>(['outline-doc', doc.id], realDoc);
 
       // Fix treeState if parent was a table (replace temp ID)
       if (parentNodeId && effectiveNodes.get(parentNodeId)?.type === 'table') {
@@ -586,7 +657,9 @@ export default function ContentPage() {
         });
       }
 
-      setSelection({ type: 'doc', id: doc.id });
+      const sel = { type: 'doc' as const, id: doc.id };
+      setSelection(sel);
+      syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
       console.error('Create doc failed:', e);
@@ -603,11 +676,21 @@ export default function ContentPage() {
     if (creating) return;
     setCreating(true);
 
+    // Generate unique table title (NocoDB rejects duplicate names)
+    const baseTitle = t('content.untitledTable');
+    const existingTitles = new Set((tables || []).map(t => t.title));
+    let tableTitle = baseTitle;
+    if (existingTitles.has(tableTitle)) {
+      let suffix = 1;
+      while (existingTitles.has(`${baseTitle} ${suffix}`)) suffix++;
+      tableTitle = `${baseTitle} ${suffix}`;
+    }
+
     // Optimistic: insert temp table into cache
     const tempId = `temp-${Date.now()}`;
     const optimisticTable: nc.NCTable = {
       id: tempId,
-      title: t('content.untitledTable'),
+      title: tableTitle,
       created_at: new Date().toISOString(),
     };
     queryClient.setQueryData<nc.NCTable[]>(['nc-tables'], old => [...(old || []), optimisticTable]);
@@ -618,7 +701,7 @@ export default function ContentPage() {
     }
 
     try {
-      const table = await nc.createTable(t('content.untitledTable'), [
+      const table = await nc.createTable(tableTitle, [
         { title: 'Name', uidt: 'SingleLineText' },
         { title: 'Notes', uidt: 'LongText' },
       ]);
@@ -643,7 +726,9 @@ export default function ContentPage() {
         });
       }
 
-      setSelection({ type: 'table', id: tableId });
+      const sel = { type: 'table' as const, id: tableId };
+      setSelection(sel);
+      syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
       console.error('Create table failed:', e);
@@ -1149,7 +1234,7 @@ export default function ContentPage() {
             onBack={() => setMobileView('list')}
             onSaved={refreshDocs}
             onDeleted={() => { requestDelete(`doc:${selectedDoc.id}`); }}
-            onNavigate={(docId) => setSelection({ type: 'doc', id: docId })}
+            onNavigate={(docId) => { const sel = { type: 'doc' as const, id: docId }; setSelection(sel); syncSelectionToURL(sel); }}
             docListVisible={docListVisible}
             onToggleDocList={() => setDocListVisible(v => !v)}
           />
@@ -1158,6 +1243,8 @@ export default function ContentPage() {
             tableId={selectedTableId}
             onBack={() => setMobileView('list')}
             onDeleted={() => { setSelection(null); setMobileView('list'); }}
+            docListVisible={docListVisible}
+            onToggleDocList={() => setDocListVisible(v => !v)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2">
@@ -1320,7 +1407,9 @@ function DraggableTreeNode({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const addBtnRef = useRef<HTMLButtonElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
   const iconPickerRef = useRef<HTMLDivElement>(null);
 
   // Close icon picker on outside click
@@ -1337,6 +1426,28 @@ function DraggableTreeNode({
 
   const handleIconSelect = async (selectedEmoji: string | null) => {
     setShowIconPicker(false);
+    if (node.type === 'table') {
+      // Tables store icons in doc_icons NocoDB table (reusing same mechanism)
+      const tableId = node.rawId;
+      // Optimistic update
+      queryClient.setQueryData<Record<string, string>>(['doc-icons'], old => {
+        const next = { ...(old || {}) };
+        if (selectedEmoji) next[tableId] = selectedEmoji;
+        else delete next[tableId];
+        return next;
+      });
+      try {
+        if (selectedEmoji) {
+          await gw.setDocIcon(tableId, selectedEmoji);
+        } else {
+          await gw.removeDocIcon(tableId);
+        }
+        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
+      } catch (e) {
+        console.error('Failed to update table icon:', e);
+      }
+      return;
+    }
     if (node.type !== 'doc') return;
     const docId = node.rawId;
     // Optimistic update
@@ -1347,11 +1458,11 @@ function DraggableTreeNode({
     try {
       if (isUrl) {
         await ol.updateDocument(docId, undefined, undefined, null);
-        await nc.setDocIcon(docId, selectedEmoji);
+        await gw.setDocIcon(docId, selectedEmoji);
         queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
       } else {
         await ol.updateDocument(docId, undefined, undefined, selectedEmoji);
-        try { await nc.removeDocIcon(docId); } catch { /* ignore */ }
+        try { await gw.removeDocIcon(docId); } catch { /* ignore */ }
         queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
       }
     } catch (e) {
@@ -1360,10 +1471,33 @@ function DraggableTreeNode({
   };
 
   // Calculate fixed position for dropdown menus to avoid overflow clipping
-  const getMenuPos = (btnRef: React.RefObject<HTMLButtonElement | null>) => {
+  // Reposition menus after they render (to get actual dimensions)
+  useLayoutEffect(() => {
+    if (showAddMenu && addBtnRef.current && addMenuRef.current) {
+      const rect = addBtnRef.current.getBoundingClientRect();
+      const pos = getAutoPosition(rect, 144, addMenuRef.current.offsetHeight, { align: 'right' });
+      addMenuRef.current.style.top = `${pos.top}px`;
+      addMenuRef.current.style.left = `${pos.left}px`;
+      if (pos.maxHeight < addMenuRef.current.offsetHeight) addMenuRef.current.style.maxHeight = `${pos.maxHeight}px`;
+    }
+  }, [showAddMenu]);
+
+  useLayoutEffect(() => {
+    if (showMoreMenu && moreBtnRef.current && moreMenuRef.current) {
+      const rect = moreBtnRef.current.getBoundingClientRect();
+      const pos = getAutoPosition(rect, 160, moreMenuRef.current.offsetHeight, { align: 'right' });
+      moreMenuRef.current.style.top = `${pos.top}px`;
+      moreMenuRef.current.style.left = `${pos.left}px`;
+      if (pos.maxHeight < moreMenuRef.current.offsetHeight) moreMenuRef.current.style.maxHeight = `${pos.maxHeight}px`;
+    }
+  }, [showMoreMenu]);
+
+  const getMenuPos = (btnRef: React.RefObject<HTMLButtonElement | null>, _menuRef: React.RefObject<HTMLDivElement | null>, menuWidth = 160) => {
     if (!btnRef.current) return { top: 0, left: 0 };
     const rect = btnRef.current.getBoundingClientRect();
-    return { top: rect.bottom + 4, left: Math.max(4, rect.right - 160) };
+    // Initial position — will be corrected by useEffect after mount
+    const pos = getAutoPosition(rect, menuWidth, 0, { align: 'right' });
+    return { top: pos.top, left: pos.left };
   };
 
   return (
@@ -1377,7 +1511,7 @@ function DraggableTreeNode({
           'group relative flex items-center gap-1 py-1.5 px-1 text-sm transition-colors rounded-lg cursor-pointer',
           isDragActive && 'opacity-40',
           isSelected && !isDragActive
-            ? 'bg-[#D6DFF6] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
+            ? 'bg-[#D6F6DF] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
             : !isDragActive && 'text-foreground hover:bg-black/[0.03] dark:hover:bg-accent/50',
           dropPosition === 'inside' && 'ring-2 ring-blue-500 ring-inset bg-blue-50 dark:bg-blue-950/30'
         )}
@@ -1400,10 +1534,10 @@ function DraggableTreeNode({
         <div className="relative shrink-0" ref={iconPickerRef}>
           <button
             onClick={(e) => {
-              if (node.type === 'doc') { e.stopPropagation(); setShowIconPicker(v => !v); }
+              e.stopPropagation(); setShowIconPicker(v => !v);
             }}
-            className={cn('shrink-0', node.type === 'doc' && 'hover:opacity-70 transition-opacity')}
-            title={node.type === 'doc' ? 'Change icon' : undefined}
+            className="shrink-0 hover:opacity-70 transition-opacity"
+            title="Change icon"
           >
             {node.emoji ? (
               node.emoji.startsWith('/api/') || node.emoji.startsWith('http') ? (
@@ -1416,7 +1550,7 @@ function DraggableTreeNode({
               : <FileText className={cn('h-4 w-4', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
             }
           </button>
-          {showIconPicker && node.type === 'doc' && (
+          {showIconPicker && (
             <div className="fixed z-50 rounded-lg shadow-xl overflow-hidden" style={(() => {
               const rect = iconPickerRef.current?.getBoundingClientRect();
               return rect ? { top: rect.bottom + 4, left: Math.max(4, rect.left - 80) } : { top: 0, left: 0 };
@@ -1424,10 +1558,10 @@ function DraggableTreeNode({
               <EmojiPicker
                 onSelect={(em) => handleIconSelect(em)}
                 onRemove={node.emoji ? () => handleIconSelect(null) : undefined}
-                onUploadImage={async (file) => {
+                onUploadImage={node.type === 'doc' ? async (file) => {
                   const result = await ol.uploadAttachment(file, node.rawId);
                   return result.data.url;
-                }}
+                } : undefined}
               />
             </div>
           )}
@@ -1450,7 +1584,7 @@ function DraggableTreeNode({
             {showAddMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); }} />
-                <div className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1 w-36" style={getMenuPos(addBtnRef)}>
+                <div ref={addMenuRef} className="fixed z-50 bg-card border border-border rounded-lg shadow-lg py-1 w-36 overflow-y-auto" style={getMenuPos(addBtnRef, addMenuRef, 144)}>
                   <button
                     onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); onCreateChild('doc'); }}
                     disabled={creating}
@@ -1483,7 +1617,7 @@ function DraggableTreeNode({
             {showMoreMenu && (
               <>
                 <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); }} />
-                <div className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 w-40" style={getMenuPos(moreBtnRef)}>
+                <div ref={moreMenuRef} className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 w-40 overflow-y-auto" style={getMenuPos(moreBtnRef, moreMenuRef, 160)}>
                   {node.type === 'doc' && (
                     <button
                       onClick={async (e) => {
@@ -1674,9 +1808,10 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     queryKey: ['doc-comments', doc.id],
     queryFn: fetchDocComments,
   });
-  // Extract quoted text from comments for editor highlighting
+  // Extract quoted text from comments for editor highlighting (skip resolved comments)
   const commentHighlightQuotes = useMemo(() => {
     return docComments
+      .filter(c => !c.resolved_by) // Don't highlight resolved comments
       .map(c => {
         const match = c.text.match(/^>\s(.+?)(?:\n\n)/);
         return match ? { id: c.id, text: match[1] } : null;
@@ -1704,11 +1839,16 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
   const [previewRevision, setPreviewRevision] = useState<OLRevision | null>(null);
   const [prevRevision, setPrevRevision] = useState<OLRevision | null>(null);
   const [highlightChanges, setHighlightChanges] = useState(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveVersionRef = useRef(0); // Tracks which save version is latest
+  const titleSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleVersionRef = useRef(0);
+  const textVersionRef = useRef(0);
   const docIdRef = useRef(doc.id);
-  const latestRef = useRef({ title: doc.title, text: doc.text, emoji: (customIcon || (doc as any).icon || doc.emoji || null) as string | null });
+  const latestTitleRef = useRef(doc.title);
+  const latestTextRef = useRef(doc.text);
+  const latestEmojiRef = useRef((customIcon || (doc as any).icon || doc.emoji || null) as string | null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Optimistically update sidebar doc list cache when title/emoji change
   const updateDocCache = useCallback((newTitle: string, newEmoji: string | null) => {
@@ -1815,13 +1955,16 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
 
   // Reset local state and cancel pending saves when switching to a different document
   useEffect(() => {
-    // Cancel any pending save from previous doc
-    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    // Cancel any pending saves from previous doc
+    if (titleSaveTimerRef.current) { clearTimeout(titleSaveTimerRef.current); titleSaveTimerRef.current = null; }
+    if (textSaveTimerRef.current) { clearTimeout(textSaveTimerRef.current); textSaveTimerRef.current = null; }
     docIdRef.current = doc.id;
     setTitle(doc.title);
     setEmoji(customIcon || (doc as any).icon?.trim() || doc.emoji?.trim() || null);
     setText(doc.text);
-    latestRef.current = { title: doc.title, text: doc.text, emoji: (customIcon || (doc as any).icon || doc.emoji || null) as string | null };
+    latestTitleRef.current = doc.title;
+    latestTextRef.current = doc.text;
+    latestEmojiRef.current = (customIcon || (doc as any).icon || doc.emoji || null) as string | null;
     setSaveStatus('saved');
     setShowHistory(false);
     setPreviewRevision(null);
@@ -1841,53 +1984,68 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     return () => document.removeEventListener('mousedown', handler);
   }, [showEmojiPicker]);
 
-  const scheduleSave = useCallback((newTitle: string, newText: string, newEmoji?: string | null) => {
-    latestRef.current = { title: newTitle, text: newText, emoji: newEmoji !== undefined ? newEmoji : latestRef.current.emoji };
-    setSaveStatus('unsaved');
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    const saveDocId = docIdRef.current; // capture current doc id
-    const thisVersion = ++saveVersionRef.current; // increment version for this save
-    saveTimerRef.current = setTimeout(async () => {
-      // Abort if doc changed since save was scheduled
-      if (saveDocId !== docIdRef.current) return;
-      setSaveStatus('saving');
-      try {
-        // Capture the values we're actually saving (not what latestRef may have become by the time API responds)
-        const savingTitle = latestRef.current.title;
-        const savingText = latestRef.current.text;
-        const savingEmoji = latestRef.current.emoji;
-        // Don't send URL-based icons to Outline (they're stored in NocoDB)
-        const outlineEmoji = savingEmoji && (savingEmoji.startsWith('/api/') || savingEmoji.startsWith('http')) ? null : savingEmoji;
-        // Only send title if it's non-empty — never overwrite a real title with empty
-        const titleToSave = savingTitle?.trim() ? savingTitle : undefined;
-        await ol.updateDocument(saveDocId, titleToSave, savingText, outlineEmoji);
-        // Only update cache if no newer save has been scheduled since this one started
-        if (saveVersionRef.current !== thisVersion) return;
-        // Update the cached doc so switching away and back preserves edits
-        queryClient.setQueryData<ol.OLDocument>(['outline-doc', saveDocId], (old) =>
-          old ? { ...old, title: savingTitle, text: savingText, emoji: savingEmoji } : old
-        );
-        // Also update sidebar docs list cache so title stays in sync
-        queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-          (old || []).map(d => d.id === saveDocId ? { ...d, title: savingTitle, emoji: savingEmoji || undefined } : d)
-        );
-        // Only update status if still on the same doc
-        if (saveDocId === docIdRef.current) {
-          setSaveStatus('saved');
-          // Don't call onSaved() here — it triggers a full doc list refetch which is slow.
-          // The optimistic cache updates above already keep the sidebar in sync.
-        }
-      } catch (e) {
-        console.error('Auto-save failed:', e);
-        if (saveDocId === docIdRef.current) setSaveStatus('error');
+  // Shared save execution — sends current latestRefs to Outline API
+  const executeSave = useCallback(async (saveDocId: string, titleVersion: number, textVersion: number) => {
+    if (saveDocId !== docIdRef.current) return;
+    setSaveStatus('saving');
+    try {
+      const savingTitle = latestTitleRef.current;
+      const savingText = latestTextRef.current;
+      const savingEmoji = latestEmojiRef.current;
+      const outlineEmoji = savingEmoji && (savingEmoji.startsWith('/api/') || savingEmoji.startsWith('http')) ? null : savingEmoji;
+      const titleToSave = savingTitle ?? '';
+      const savedDoc = await ol.updateDocument(saveDocId, titleToSave, savingText, outlineEmoji);
+      // Only update cache if no newer save of either type has been scheduled
+      if (titleVersionRef.current !== titleVersion || textVersionRef.current !== textVersion) return;
+      const confirmedTitle = savedDoc.title;
+      const confirmedEmoji = savingEmoji;
+      queryClient.setQueryData<ol.OLDocument>(['outline-doc', saveDocId], (old) =>
+        old ? { ...old, title: confirmedTitle, text: savingText, emoji: confirmedEmoji } : old
+      );
+      queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
+        (old || []).map(d => d.id === saveDocId ? { ...d, title: confirmedTitle, emoji: confirmedEmoji || undefined } : d)
+      );
+      if (saveDocId === docIdRef.current) {
+        setSaveStatus('saved');
       }
-    }, 1500);
-  }, [onSaved]);
+    } catch (e) {
+      console.error('Auto-save failed:', e);
+      if (saveDocId === docIdRef.current) setSaveStatus('error');
+    }
+  }, [queryClient]);
+
+  // Schedule title save — only updates title ref, does not touch text ref
+  const scheduleTitleSave = useCallback((newTitle: string, newEmoji?: string | null) => {
+    latestTitleRef.current = newTitle;
+    if (newEmoji !== undefined) latestEmojiRef.current = newEmoji;
+    setSaveStatus('unsaved');
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    // Also cancel any pending text save — the combined save will include both
+    if (textSaveTimerRef.current) { clearTimeout(textSaveTimerRef.current); textSaveTimerRef.current = null; }
+    const saveDocId = docIdRef.current;
+    const tv = ++titleVersionRef.current;
+    const xv = textVersionRef.current;
+    titleSaveTimerRef.current = setTimeout(() => executeSave(saveDocId, tv, xv), 1500);
+  }, [executeSave]);
+
+  // Schedule text save — only updates text ref, does not touch title ref
+  const scheduleTextSave = useCallback((newText: string) => {
+    latestTextRef.current = newText;
+    setSaveStatus('unsaved');
+    if (textSaveTimerRef.current) clearTimeout(textSaveTimerRef.current);
+    // Also cancel any pending title save — the combined save will include both
+    if (titleSaveTimerRef.current) { clearTimeout(titleSaveTimerRef.current); titleSaveTimerRef.current = null; }
+    const saveDocId = docIdRef.current;
+    const tv = titleVersionRef.current;
+    const xv = ++textVersionRef.current;
+    textSaveTimerRef.current = setTimeout(() => executeSave(saveDocId, tv, xv), 1500);
+  }, [executeSave]);
 
   useEffect(() => {
     const docId = doc.id;
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+      if (textSaveTimerRef.current) clearTimeout(textSaveTimerRef.current);
       // Signal editing session end — triggers Outline to create a revision snapshot
       ol.updateDocument(docId, undefined, undefined, undefined, { done: true }).catch(() => {});
     };
@@ -1897,7 +2055,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     const newTitle = e.target.value;
     setTitle(newTitle);
     updateDocCache(newTitle, emoji);
-    scheduleSave(newTitle, text);
+    scheduleTitleSave(newTitle);
   };
 
   const handleEmojiSelect = async (selectedEmoji: string | null) => {
@@ -1910,18 +2068,18 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     if (isUrl) {
       // Image-based icon: save to NocoDB (Outline doesn't support URL icons)
       // Clear Outline's native icon
-      scheduleSave(title, text, null);
+      scheduleTitleSave(title, null);
       try {
-        await nc.setDocIcon(doc.id, selectedEmoji);
+        await gw.setDocIcon(doc.id, selectedEmoji);
         queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
       } catch (e) {
         console.error('Failed to save custom icon:', e);
       }
     } else {
       // Unicode emoji or null (remove): save to Outline, remove custom icon
-      scheduleSave(title, text, selectedEmoji);
+      scheduleTitleSave(title, selectedEmoji);
       try {
-        await nc.removeDocIcon(doc.id);
+        await gw.removeDocIcon(doc.id);
         queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
       } catch (e) {
         // Ignore if no custom icon existed
@@ -1931,7 +2089,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
 
   const handleTextChange = (newText: string) => {
     setText(newText);
-    scheduleSave(title, newText);
+    scheduleTextSave(newText);
   };
 
   const handleDelete = () => {
@@ -2009,6 +2167,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
                 <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
                 <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
                   <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => { setShowDocMenu(false); setShowHistory(true); }} />
+                  <DocMenuBtn icon={Link2} label={t('content.copyLink')} onClick={() => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); setShowDocMenu(false); }} />
                   <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
                   <DocMenuBtn icon={CopyPlus} label={t('content.duplicate')} onClick={async () => {
                     setShowDocMenu(false);
@@ -2104,6 +2263,8 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
                 </div>
               ) : (
                 <input
+                  ref={titleInputRef}
+                  autoFocus={!doc.title}
                   value={title}
                   onChange={handleTitleChange}
                   onKeyDown={(e) => {
@@ -2223,7 +2384,9 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
             const restored = await queryClient.fetchQuery({ queryKey: ['outline-doc', doc.id], queryFn: () => ol.getDocument(doc.id) });
             setTitle(restored.title);
             setText(restored.text);
-            latestRef.current = { title: restored.title, text: restored.text, emoji: ((restored as any).icon || restored.emoji || null) as string | null };
+            latestTitleRef.current = restored.title;
+            latestTextRef.current = restored.text;
+            latestEmojiRef.current = ((restored as any).icon || restored.emoji || null) as string | null;
             setEditorKey(k => k + 1);
             onSaved();
           }}
