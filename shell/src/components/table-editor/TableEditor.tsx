@@ -695,13 +695,14 @@ export function TableEditor({ tableId, onBack, onDeleted, docListVisible, onTogg
 
   const toggleCheckbox = async (rowId: number, col: string, current: unknown) => {
     try {
-      const newVal = current ? 0 : 1;
+      const newVal = !current;
       // Optimistic update
       queryClient.setQueriesData({ queryKey: ['nc-rows', tableId] }, (old: unknown) => {
         const data = old as { list: Record<string, unknown>[]; pageInfo?: unknown } | undefined;
         if (!data) return old;
         return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col]: newVal } : r) };
       });
+      // NocoDB/PostgreSQL requires boolean values, not integers (1/0 causes type error)
       await nc.updateRow(tableId, rowId, { [col]: newVal });
       refresh();
     } catch (e) {

@@ -219,7 +219,8 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
 
   const toggleCheckbox = async () => {
     try {
-      const newVal = value ? 0 : 1;
+      const newVal = !value;
+      // NocoDB/PostgreSQL requires boolean values, not integers
       await nc.updateRow(tableId, rowId, { [col.title]: newVal });
       onSaved();
     } catch (e) {
