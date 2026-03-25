@@ -2839,7 +2839,8 @@ export function TableEditor({ tableId, onBack, onDeleted, docListVisible, onTogg
                                         <User className="h-3 w-3 text-muted-foreground" />
                                       )}
                                       <span>{agent.display_name || agent.name}</span>
-                                      <span className="text-muted-foreground/50 ml-auto">{agent.name}</span>
+                                      {agent.type && <span className="text-[10px] text-muted-foreground/50 bg-muted px-1 rounded">{agent.type}</span>}
+                                      <span className="text-muted-foreground/50 ml-auto text-[10px]">{agent.name}</span>
                                     </button>
                                   ))}
                                   {filtered.length === 0 && (
