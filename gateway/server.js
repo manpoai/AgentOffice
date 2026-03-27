@@ -147,6 +147,19 @@ try {
   )`);
 } catch { /* already exists */ }
 
+// Migrate: create document_revisions table
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS document_revisions (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    data_json TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_doc_revisions_doc ON document_revisions(document_id)`);
+} catch { /* already exists */ }
+
 // ─── Helpers ─────────────────────────────────────
 function genId(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -551,6 +564,17 @@ app.patch('/api/documents/:id', authenticateAgent, (req, res) => {
   if (full_width !== undefined) { updates.push('full_width = ?'); params.push(full_width ? 1 : 0); }
   params.push(req.params.id);
 
+  // Save revision snapshot before updating (only if text content changed)
+  if (text !== undefined && text !== doc.text) {
+    const revId = genId('rev');
+    db.prepare(`INSERT INTO document_revisions (id, document_id, title, data_json, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(
+      revId, req.params.id, doc.title,
+      JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text }] }] }),
+      doc.updated_by || doc.created_by, doc.updated_at
+    );
+  }
+
   db.prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   // Sync title to content_items
@@ -592,6 +616,66 @@ app.post('/api/documents/:id/restore', authenticateAgent, (req, res) => {
 
   const restored = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
   res.json(restored);
+});
+
+// GET /api/documents/:id/revisions — list revisions for a document
+app.get('/api/documents/:id/revisions', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const revisions = db.prepare(
+    'SELECT * FROM document_revisions WHERE document_id = ? ORDER BY created_at DESC'
+  ).all(req.params.id);
+
+  const data = revisions.map(r => ({
+    id: r.id,
+    documentId: r.document_id,
+    title: r.title,
+    data: (() => { try { return JSON.parse(r.data_json); } catch { return null; } })(),
+    createdAt: r.created_at,
+    createdBy: { id: r.created_by || '', name: r.created_by || '' }
+  }));
+
+  res.json({ data });
+});
+
+// POST /api/documents/:id/revisions/:revisionId/restore — restore a revision
+app.post('/api/documents/:id/revisions/:revisionId/restore', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const revision = db.prepare(
+    'SELECT * FROM document_revisions WHERE id = ? AND document_id = ?'
+  ).get(req.params.revisionId, req.params.id);
+  if (!revision) return res.status(404).json({ error: 'REVISION_NOT_FOUND' });
+
+  const now = new Date().toISOString();
+  const agentName = req.agent?.name || null;
+
+  // Save current state as a new revision (so user can undo the restore)
+  const snapId = genId('rev');
+  db.prepare(`INSERT INTO document_revisions (id, document_id, title, data_json, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(
+    snapId, req.params.id, doc.title,
+    JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text }] }] }),
+    doc.updated_by || doc.created_by, doc.updated_at
+  );
+
+  // Extract text from the revision's ProseMirror JSON
+  let revData = null;
+  try { revData = JSON.parse(revision.data_json); } catch { /* ignore */ }
+  const restoredText = revData ? extractTextFromProseMirror(revData) : '';
+
+  // Update document with restored title and text
+  db.prepare(`UPDATE documents SET title = ?, text = ?, data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?`)
+    .run(revision.title, restoredText, revision.data_json, agentName, now, req.params.id);
+
+  // Sync title to content_items
+  db.prepare('UPDATE content_items SET title = ?, updated_at = ? WHERE raw_id = ? AND type = ?')
+    .run(revision.title, now, req.params.id, 'doc');
+
+  const updated = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  res.json(updated);
 });
 
 // ─── Tasks (Plane) ──────────────────────────────
