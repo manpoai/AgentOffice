@@ -2,17 +2,17 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RotateCcw, Clock, ChevronRight, X } from 'lucide-react';
-import * as ol from '@/lib/api/outline';
-import type { OLRevision, OLDocument } from '@/lib/api/outline';
+import * as docApi from '@/lib/api/documents';
+import type { Revision, Document as DocType } from '@/lib/api/documents';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  doc: OLDocument;
+  doc: DocType;
   onClose: () => void;
   onRestored: () => void | Promise<void>;
   /** Called when a revision is selected — parent shows preview in editor area */
-  onSelect: (revision: OLRevision | null, prevRevision: OLRevision | null) => void;
+  onSelect: (revision: Revision | null, prevRevision: Revision | null) => void;
   /** Whether highlight changes is on */
   highlightChanges: boolean;
   onHighlightChangesToggle: () => void;
@@ -20,7 +20,7 @@ interface Props {
 
 export default function RevisionHistory({ doc, onClose, onRestored, onSelect, highlightChanges, onHighlightChangesToggle }: Props) {
   const { t } = useT();
-  const [revisions, setRevisions] = useState<OLRevision[]>([]);
+  const [revisions, setRevisions] = useState<Revision[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export default function RevisionHistory({ doc, onClose, onRestored, onSelect, hi
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    ol.listRevisions(doc.id)
+    docApi.listRevisions(doc.id)
       .then((revs) => {
         if (!cancelled) {
           setRevisions(revs);
@@ -65,7 +65,7 @@ export default function RevisionHistory({ doc, onClose, onRestored, onSelect, hi
     if (!selectedId) return;
     setRestoring(true);
     try {
-      await ol.restoreRevision(doc.id, selectedId);
+      await docApi.restoreRevision(doc.id, selectedId);
       await onRestored();
       onClose();
     } catch (err: unknown) {
@@ -132,9 +132,9 @@ export default function RevisionHistory({ doc, onClose, onRestored, onSelect, hi
       >
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium">{t('content.currentVersion') || 'Current'}</span>
-          <span className="text-[10px] text-muted-foreground">{formatTime(doc.updatedAt)}</span>
+          <span className="text-[10px] text-muted-foreground">{formatTime(doc.updated_at)}</span>
         </div>
-        <div className="text-[11px] text-muted-foreground mt-0.5">{doc.updatedBy?.name}</div>
+        <div className="text-[11px] text-muted-foreground mt-0.5">{doc.updated_by}</div>
       </button>
 
       {/* Revision list */}
