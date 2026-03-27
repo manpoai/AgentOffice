@@ -79,6 +79,52 @@ CREATE TABLE IF NOT EXISTS doc_icons (
   updated_at  INTEGER NOT NULL
 );
 
+-- Table snapshots (history versioning for tables)
+CREATE TABLE IF NOT EXISTS table_snapshots (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  table_id    TEXT NOT NULL,
+  version     INTEGER NOT NULL,
+  schema_json TEXT NOT NULL,
+  data_json   TEXT NOT NULL,
+  trigger_type TEXT NOT NULL,
+  agent       TEXT,
+  row_count   INTEGER DEFAULT 0,
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_table ON table_snapshots(table_id, version DESC);
+
+-- Content items: unified doc/table metadata for sidebar (source of truth for Shell)
+CREATE TABLE IF NOT EXISTS content_items (
+  id          TEXT PRIMARY KEY,       -- 'doc:<uuid>' or 'table:<uuid>'
+  raw_id      TEXT NOT NULL,          -- original Outline doc ID or NocoDB table ID
+  type        TEXT NOT NULL,          -- 'doc' or 'table'
+  title       TEXT NOT NULL DEFAULT '',
+  icon        TEXT,                   -- emoji or icon URL
+  parent_id   TEXT,                   -- 'doc:<uuid>' or 'table:<uuid>' (null = root)
+  sort_order  INTEGER DEFAULT 0,
+  collection_id TEXT,                 -- Outline collection ID (docs only)
+  created_by  TEXT,                   -- display name
+  updated_by  TEXT,                   -- display name
+  created_at  TEXT,                   -- ISO timestamp from upstream
+  updated_at  TEXT,                   -- ISO timestamp from upstream
+  deleted_at  TEXT,                   -- soft-delete timestamp
+  synced_at   INTEGER NOT NULL        -- last sync epoch ms
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(type);
+CREATE INDEX IF NOT EXISTS idx_content_items_parent ON content_items(parent_id);
+
+-- Boards (Excalidraw drawings stored as JSON)
+CREATE TABLE IF NOT EXISTS boards (
+  id          TEXT PRIMARY KEY,
+  data_json   TEXT NOT NULL DEFAULT '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}',
+  created_by  TEXT,
+  updated_by  TEXT,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 -- View column settings (field visibility/width per NocoDB view)
 CREATE TABLE IF NOT EXISTS view_column_settings (
   view_id     TEXT NOT NULL,

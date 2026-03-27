@@ -56,6 +56,22 @@ try {
   console.log('[gateway] DB migrated: added avatar_url column');
 } catch { /* already exists */ }
 
+// Migrate: create table_snapshots table
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS table_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    schema_json TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    trigger_type TEXT NOT NULL,
+    agent TEXT,
+    row_count INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_snapshots_table ON table_snapshots(table_id, version DESC)');
+} catch { /* already exists */ }
+
 // Migrate: create thread_links table
 try {
   db.exec(`CREATE TABLE IF NOT EXISTS thread_links (
@@ -64,6 +80,18 @@ try {
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_thread_links_thread ON thread_links(thread_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_thread_links_link ON thread_links(link_type, link_id)');
+} catch { /* already exists */ }
+
+// Migrate: create boards table
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS boards (
+    id TEXT PRIMARY KEY,
+    data_json TEXT NOT NULL DEFAULT '{"type":"excalidraw","version":2,"elements":[],"appState":{},"files":{}}',
+    created_by TEXT,
+    updated_by TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
 } catch { /* already exists */ }
 
 // ─── Helpers ─────────────────────────────────────
@@ -124,7 +152,7 @@ function authenticateAdmin(req, res, next) {
 
 // ─── App ─────────────────────────────────────────
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // ─── Admin: Create ticket ────────────────────────
 app.post('/api/admin/tickets', authenticateAdmin, (req, res) => {
@@ -311,10 +339,21 @@ app.post('/api/docs', authenticateAgent, async (req, res) => {
   if (!result.data?.ok) {
     return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   }
+  // Also write to content_items so sidebar is up to date
+  const doc = result.data.data;
+  const nodeId = `doc:${doc.id}`;
+  contentItemsUpsert.run(
+    nodeId, doc.id, 'doc', title,
+    null, doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null,
+    doc.collectionId || collection_id || null,
+    doc.createdBy?.name || req.agent?.name || null, doc.updatedBy?.name || req.agent?.name || null,
+    doc.createdAt || new Date().toISOString(), doc.updatedAt || new Date().toISOString(), null, Date.now()
+  );
+
   res.status(201).json({
-    doc_id: result.data.data.id,
-    url: `${OL_URL}${result.data.data.url}`,
-    created_at: new Date(result.data.data.createdAt).getTime(),
+    doc_id: doc.id,
+    url: `${OL_URL}${doc.url}`,
+    created_at: new Date(doc.createdAt).getTime(),
   });
 });
 
@@ -329,6 +368,12 @@ app.patch('/api/docs/:doc_id', authenticateAgent, async (req, res) => {
   if (!result.data?.ok) {
     return res.status(result.data?.status || 500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   }
+  // Sync title change to content_items if title was updated
+  if (title) {
+    db.prepare('UPDATE content_items SET title = ?, updated_at = ? WHERE raw_id = ? AND type = ?')
+      .run(title, result.data.data.updatedAt || new Date().toISOString(), req.params.doc_id, 'doc');
+  }
+
   res.json({ doc_id: result.data.data.id, updated_at: new Date(result.data.data.updatedAt).getTime() });
 });
 
@@ -675,17 +720,38 @@ async function getNcJwt() {
   return ncJwt;
 }
 
-// Helper: NocoDB API call
+// Helper: NocoDB API call (30s timeout, auto-retry on 401 JWT expiry)
 async function nc(method, path, body) {
   const jwt = await getNcJwt();
   if (!jwt) return { status: 503, data: { error: 'NOCODB_NOT_CONFIGURED' } };
   const url = `${NC_URL}${path}`;
-  const opts = { method, headers: { 'Content-Type': 'application/json', 'xc-auth': jwt } };
-  if (body && method !== 'GET') opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  const text = await res.text();
-  try { return { status: res.status, data: JSON.parse(text) }; }
-  catch { return { status: res.status, data: text }; }
+
+  async function doFetch(token) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    const opts = { method, headers: { 'Content-Type': 'application/json', 'xc-auth': token }, signal: controller.signal };
+    if (body && method !== 'GET') opts.body = JSON.stringify(body);
+    try {
+      const res = await fetch(url, opts);
+      clearTimeout(timer);
+      const text = await res.text();
+      try { return { status: res.status, data: JSON.parse(text) }; }
+      catch { return { status: res.status, data: text }; }
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') return { status: 504, data: { error: 'NOCODB_TIMEOUT' } };
+      return { status: 502, data: { error: err.message } };
+    }
+  }
+
+  const result = await doFetch(jwt);
+  // On 401, force JWT refresh and retry once
+  if (result.status === 401) {
+    ncJwtExpiry = 0; // force refresh
+    const freshJwt = await getNcJwt();
+    if (freshJwt && freshJwt !== jwt) return doFetch(freshJwt);
+  }
+  return result;
 }
 
 // Create a NocoDB user for an agent and add them to the ASuite base as editor
@@ -757,6 +823,15 @@ app.get('/api/data/tables', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
   const result = await nc('GET', `/api/v1/db/meta/projects/${NC_BASE_ID}/tables`);
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+  // Replace internal titles with user-facing display titles from meta
+  if (result.data?.list) {
+    for (const t of result.data.list) {
+      try {
+        const m = typeof t.meta === 'string' ? JSON.parse(t.meta) : t.meta;
+        if (m?._displayTitle) t.title = m._displayTitle;
+      } catch {}
+    }
+  }
   res.json(result.data);
 });
 
@@ -769,26 +844,60 @@ app.post('/api/data/tables', authenticateAgent, async (req, res) => {
   const { title, columns = [] } = req.body;
   if (!title) return res.status(400).json({ error: 'MISSING_TITLE' });
 
-  // NocoDB 0.202 requires column_name (not title), and pk column uidt must be "ID"
+  // PK column: auto-increment integer for stable numeric sorting.
   const hasPk = columns.some(c => c.pk);
-  const normalizeCol = c => ({
-    column_name: c.column_name || c.title,
-    title: c.title || c.column_name,
-    uidt: c.uidt,
-    ...(c.pk !== undefined ? { pk: c.pk } : {}),
-    ...(c.ai !== undefined ? { ai: c.ai } : {}),
-    ...(c.required !== undefined ? { rqd: c.required } : {}),
-  });
+  const normalizeCol = c => {
+    const col = {
+      column_name: c.column_name || c.title,
+      title: c.title || c.column_name,
+      uidt: c.uidt,
+      ...(c.pk !== undefined ? { pk: c.pk } : {}),
+      ...(c.ai !== undefined ? { ai: c.ai } : {}),
+      ...(c.required !== undefined ? { rqd: c.required } : {}),
+    };
+    // Handle SingleSelect/MultiSelect options with dtxp (NocoDB v0.202 uses single quotes)
+    if (c.uidt === 'SingleSelect' || c.uidt === 'MultiSelect') {
+      const optsList = (c.options || []).filter(o => o && (o.title || typeof o === 'string'));
+      if (optsList.length > 0) {
+        col.dtxp = optsList.map(o => `'${(typeof o === 'string' ? o : o.title).replace(/'/g, "''")}'`).join(',');
+        col.colOptions = { options: optsList.map((o, i) => ({ title: typeof o === 'string' ? o : o.title, color: o.color, order: i + 1 })) };
+      } else {
+        col.dtxp = "'Option 1'";
+        col.colOptions = { options: [{ title: 'Option 1', order: 1 }] };
+      }
+    }
+    return col;
+  };
   const fullColumns = [
     ...(hasPk ? [] : [{ column_name: 'Id', title: 'Id', uidt: 'ID', pk: true, ai: true }]),
     ...columns.map(normalizeCol),
     { column_name: 'created_by', title: 'created_by', uidt: 'SingleLineText' },
   ];
 
-  const body = { table_name: title, title, columns: fullColumns };
+  // NocoDB requires both table_name and title (alias) to be unique.
+  // Use random internal names; store the user's display name in meta._displayTitle.
+  const suffix = `_${Math.random().toString(36).slice(2, 8)}_${Date.now()}`;
+  const internalTitle = `t${suffix}`;
+  const meta = JSON.stringify({ _displayTitle: title });
+  const body = { table_name: internalTitle, title: internalTitle, columns: fullColumns, meta };
   const result = await nc('POST', `/api/v1/db/meta/projects/${NC_BASE_ID}/tables`, body);
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  res.status(201).json({ table_id: result.data.id, title: result.data.title, columns: result.data.columns });
+
+  // Rename the default view from the random internal name to "Grid"
+  const tableId = result.data.id;
+  try {
+    const viewsResult = await nc('GET', `/api/v1/db/meta/tables/${tableId}`);
+    if (viewsResult.data?.views?.length > 0) {
+      const defaultView = viewsResult.data.views[0];
+      await nc('PATCH', `/api/v1/db/meta/views/${defaultView.id}`, { title: 'Grid' });
+    }
+  } catch { /* non-critical */ }
+
+  // Also write to content_items so sidebar is up to date
+  const nodeId = `table:${tableId}`;
+  contentItemsUpsert.run(nodeId, tableId, 'table', title, null, null, null, req.agent?.name || null, null, new Date().toISOString(), null, null, Date.now());
+
+  res.status(201).json({ table_id: tableId, title, columns: result.data.columns });
 });
 
 // Describe a table (get column definitions)
@@ -798,11 +907,16 @@ app.get('/api/data/tables/:table_id', authenticateAgent, async (req, res) => {
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   const t = result.data;
   // Reverse-map NocoDB UIType names to Shell names
-  const UIDT_REVERSE = { 'CreateTime': 'CreatedTime', 'Collaborator': 'User', 'Decimal': 'Number', 'Currency': 'Number', 'Percent': 'Number' };
-  const columns = (t.columns || []).map(c => {
+  const UIDT_REVERSE = { 'CreateTime': 'CreatedTime', 'Collaborator': 'User', 'LinkToAnotherRecord': 'Links' };
+  // Filter out system columns and internal ForeignKey columns (NocoDB bt relation internals)
+  const columns = (t.columns || []).filter(c => !c.system && c.uidt !== 'ForeignKey').map(c => {
+    // Check for _shellType in meta (used for CreatedBy/LastModifiedBy stored as SingleLineText)
+    let parsedMeta = null;
+    try { parsedMeta = c.meta ? (typeof c.meta === 'string' ? JSON.parse(c.meta) : c.meta) : null; } catch {}
+    const shellType = parsedMeta?._shellType;
     const col = {
-      column_id: c.id, title: c.title, type: UIDT_REVERSE[c.uidt] || c.uidt,
-      primary_key: !!c.pk, required: !!c.rqd,
+      column_id: c.id, title: c.title, type: shellType || UIDT_REVERSE[c.uidt] || c.uidt,
+      primary_key: !!c.pk || !!c.pv, required: !!c.rqd,
     };
     // Pass through select options
     if (c.colOptions?.options) {
@@ -851,7 +965,13 @@ app.get('/api/data/tables/:table_id', authenticateAgent, async (req, res) => {
     }
     return view;
   });
-  res.json({ table_id: t.id, title: t.title, columns, views, created_at: t.created_at, updated_at: t.updated_at });
+  // Use display title from meta if available
+  let displayTitle = t.title;
+  try {
+    const m = typeof t.meta === 'string' ? JSON.parse(t.meta) : t.meta;
+    if (m?._displayTitle) displayTitle = m._displayTitle;
+  } catch {}
+  res.json({ table_id: t.id, title: displayTitle, columns, views, created_at: t.created_at, updated_at: t.updated_at });
 });
 
 // Add a column to a table
@@ -866,9 +986,10 @@ app.post('/api/data/tables/:table_id/columns', authenticateAgent, async (req, re
   const UIDT_MAP = {
     'CreatedTime': 'CreateTime',
     'LastModifiedTime': 'LastModifiedTime',
-    'CreatedBy': 'CreatedBy',           // NocoDB v0.202 does NOT support — will return error
-    'LastModifiedBy': 'LastModifiedBy', // NocoDB v0.202 does NOT support — will return error
+    'CreatedBy': 'SingleLineText',     // NocoDB v0.202 doesn't support CreatedBy — use text, Gateway fills on insert
+    'LastModifiedBy': 'SingleLineText', // NocoDB v0.202 doesn't support LastModifiedBy — use text, Gateway fills on update
     'User': 'Collaborator',            // NocoDB v0.202 uses Collaborator, not User
+    'Links': 'LinkToAnotherRecord',    // NocoDB v0.202 uses LinkToAnotherRecord, not Links
   };
   let uidt = UIDT_MAP[rawUidt] || rawUidt;
   // Number with decimals > 0 should use Decimal uidt to preserve precision
@@ -877,21 +998,42 @@ app.post('/api/data/tables/:table_id/columns', authenticateAgent, async (req, re
   }
   const body = { column_name: title, title, uidt };
   if (uidt === 'SingleSelect' || uidt === 'MultiSelect') {
-    // Always provide colOptions for select types — NocoDB crashes on row updates if colOptions is null
+    // Always provide colOptions for select types — NocoDB crashes on row insert if colOptions is null
     const optsList = (options || []).filter(o => o && (o.title || typeof o === 'string'));
     body.colOptions = { options: optsList.map((o, i) => ({ title: o.title || o, color: o.color, order: i + 1 })) };
+    // NocoDB bug: colOptions stays null even with colOptions in create body.
+    // Must use dtxp to initialize — NocoDB v0.202 uses single quotes in dtxp.
+    if (optsList.length > 0) {
+      body.dtxp = optsList.map(o => `'${(o.title || o).replace(/'/g, "''")}'`).join(',');
+    } else {
+      // Provide a default placeholder option — users can rename/delete it
+      body.dtxp = "'Option 1'";
+      body.colOptions = { options: [{ title: 'Option 1', order: 1 }] };
+    }
   }
-  if (meta) body.meta = meta;
+  // Store original Shell type in meta for types that get remapped (CreatedBy, LastModifiedBy)
+  const metaObj = meta ? (typeof meta === 'string' ? JSON.parse(meta) : { ...meta }) : {};
+  if (rawUidt === 'CreatedBy' || rawUidt === 'LastModifiedBy') {
+    metaObj._shellType = rawUidt;
+  }
+  if (Object.keys(metaObj).length > 0) body.meta = JSON.stringify(metaObj);
   // Formula
   if (uidt === 'Formula' && req.body.formula_raw) {
     body.formula_raw = req.body.formula_raw;
   }
   // Links (relation between tables)
   if ((uidt === 'Links' || uidt === 'LinkToAnotherRecord') && req.body.childId) {
-    // NocoDB requires parentId (current table) and childId (target table) as top-level properties
-    body.parentId = req.params.table_id;
-    body.childId = req.body.childId;
-    body.type = req.body.relationType || 'mm';
+    const relType = req.body.relationType || 'mm';
+    if (relType === 'bt') {
+      // For bt (belongs-to / single select): current table holds the FK, so current = child, target = parent
+      body.parentId = req.body.childId;
+      body.childId = req.params.table_id;
+    } else {
+      // For mm / hm: current table is parent, target is child
+      body.parentId = req.params.table_id;
+      body.childId = req.body.childId;
+    }
+    body.type = relType;
   }
   // Lookup — NocoDB v0.202 expects fk_* at top level, NOT in colOptions
   if (uidt === 'Lookup' && req.body.fk_relation_column_id && req.body.fk_lookup_column_id) {
@@ -907,13 +1049,77 @@ app.post('/api/data/tables/:table_id/columns', authenticateAgent, async (req, re
   const result = await nc('POST', `/api/v1/db/meta/tables/${req.params.table_id}/columns`, body);
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   const c = result.data;
+
+  // Backfill system columns for existing rows (NocoDB v0.202 does not auto-populate these)
+  const needsBackfill = ['AutoNumber', 'CreateTime', 'LastModifiedTime'].includes(uidt)
+    || (rawUidt === 'CreatedBy' || rawUidt === 'LastModifiedBy');
+  if (needsBackfill) {
+    try {
+      // Fetch all existing rows
+      const allRows = await nc('GET', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}?limit=10000`);
+      if (allRows.status < 400 && allRows.data?.list?.length > 0) {
+        const rows = allRows.data.list;
+        for (let i = 0; i < rows.length; i++) {
+          const rowId = rows[i].Id;
+          if (rowId == null) continue;
+          let value;
+          if (uidt === 'AutoNumber') {
+            value = i + 1;
+          } else if (uidt === 'CreateTime') {
+            value = rows[i].created_at || new Date().toISOString();
+          } else if (uidt === 'LastModifiedTime') {
+            value = rows[i].updated_at || new Date().toISOString();
+          } else if (rawUidt === 'CreatedBy' || rawUidt === 'LastModifiedBy') {
+            value = req.agent.display_name || req.agent.name || 'system';
+          }
+          if (value !== undefined) {
+            await nc('PATCH', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${rowId}`, { [title]: value });
+          }
+        }
+      }
+    } catch (backfillErr) {
+      console.error('System column backfill failed (non-fatal):', backfillErr.message);
+    }
+  }
+
   // NocoDB returns table object for Links, column object for others
   if (c.columns) {
     // Links: find the newly created column by matching title
     const newCol = c.columns.find(col => col.title === title);
-    res.status(201).json({ column_id: newCol?.id || c.id, title: title, type: uidt });
+
+    // Rename reverse column on target table to use source table's display name
+    if ((uidt === 'Links' || uidt === 'LinkToAnotherRecord') && req.body.childId) {
+      try {
+        // Get source table's display name
+        const srcMeta = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+        let srcDisplayName = req.params.table_id;
+        if (srcMeta.status < 400 && srcMeta.data) {
+          try {
+            const m = typeof srcMeta.data.meta === 'string' ? JSON.parse(srcMeta.data.meta) : srcMeta.data.meta;
+            srcDisplayName = m?._displayTitle || srcMeta.data.title || req.params.table_id;
+          } catch { srcDisplayName = srcMeta.data.title || req.params.table_id; }
+        }
+        // Find the reverse column on the target table
+        const targetMeta = await nc('GET', `/api/v1/db/meta/tables/${req.body.childId}`);
+        if (targetMeta.status < 400 && targetMeta.data?.columns) {
+          const reverseCol = targetMeta.data.columns.find(col =>
+            (col.uidt === 'LinkToAnotherRecord' || col.uidt === 'Links') && !col.system &&
+            col.colOptions?.fk_related_model_id === req.params.table_id &&
+            col.id !== (newCol?.id || '')
+          );
+          if (reverseCol) {
+            await nc('PATCH', `/api/v1/db/meta/columns/${reverseCol.id}`, {
+              title: srcDisplayName, column_name: srcDisplayName,
+              uidt: reverseCol.uidt,
+            });
+          }
+        }
+      } catch (e) { console.error('Reverse column rename failed (non-fatal):', e.message); }
+    }
+
+    res.status(201).json({ column_id: newCol?.id || c.id, title: title, type: rawUidt });
   } else {
-    res.status(201).json({ column_id: c.id, title: c.title, type: c.uidt });
+    res.status(201).json({ column_id: c.id, title: c.title, type: rawUidt });
   }
 });
 
@@ -921,18 +1127,98 @@ app.post('/api/data/tables/:table_id/columns', authenticateAgent, async (req, re
 // Body: { title?: string, uidt?: string, options?: [{title, color?}] }
 app.patch('/api/data/tables/:table_id/columns/:column_id', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
-  const body = {};
-  if (req.body.title) { body.title = req.body.title; body.column_name = req.body.title; }
-  if (req.body.uidt) body.uidt = req.body.uidt;
-  // Pass select options through to NocoDB
+  // Always fetch current column metadata to preserve column_name and get current uidt
+  const colMeta = await nc('GET', `/api/v1/db/meta/columns/${req.params.column_id}`);
+  if (colMeta.status >= 400) return res.status(colMeta.status).json({ error: 'UPSTREAM_ERROR', detail: colMeta.data });
+  const currentCol = colMeta.data;
+  // NocoDB PATCH requires title + column_name to avoid 'replace' crash
+  const body = {
+    title: req.body.title || currentCol.title,
+    column_name: currentCol.column_name || currentCol.title,
+  };
+  // Map Shell type names to NocoDB UIType names for type changes
+  const UIDT_MAP = { 'CreatedTime': 'CreateTime', 'User': 'Collaborator', 'Links': 'LinkToAnotherRecord' };
+  if (req.body.uidt) body.uidt = UIDT_MAP[req.body.uidt] || req.body.uidt;
+  // When updating options without explicit uidt, use current column type
+  if (req.body.options && !body.uidt) {
+    if (currentCol.uidt) body.uidt = currentCol.uidt;
+  }
+  // Pass select options through to NocoDB with dtxp (required for persistence)
+  // NocoDB v0.202: dtxp uses single quotes, existing option IDs must be preserved
   if (req.body.options) {
-    body.colOptions = { options: req.body.options.map((o, i) => ({ title: o.title || o, color: o.color, order: i + 1 })) };
+    const existingOpts = currentCol.colOptions?.options || [];
+    const existingMap = new Map(existingOpts.map(o => [o.title, o]));
+    const optsList = req.body.options.map((o, i) => {
+      const title = typeof o === 'string' ? o : (o.title || '');
+      const existing = existingMap.get(title);
+      return {
+        ...(existing ? { id: existing.id } : {}),
+        title,
+        color: o.color || (existing ? existing.color : undefined),
+        order: i + 1,
+      };
+    });
+    body.colOptions = { options: optsList };
+    // NocoDB v0.202 requires dtxp with single quotes for option persistence
+    body.dtxp = optsList.map(o => `'${(o.title || '').replace(/'/g, "''")}'`).join(',');
   }
   // Pass meta through (for number format, rating config, date format, etc.)
   if (req.body.meta !== undefined) {
     body.meta = typeof req.body.meta === 'string' ? req.body.meta : JSON.stringify(req.body.meta);
   }
-  const result = await nc('PATCH', `/api/v1/db/meta/columns/${req.params.column_id}`, body);
+  // Auto-upgrade Number to Decimal when decimals > 0 to preserve precision
+  if ((body.uidt === 'Number' || (!body.uidt)) && body.meta) {
+    try {
+      const metaObj = typeof body.meta === 'string' ? JSON.parse(body.meta) : body.meta;
+      if (metaObj.decimals && metaObj.decimals > 0 && (!body.uidt || body.uidt === 'Number')) {
+        body.uidt = 'Decimal';
+      }
+    } catch {}
+  }
+  let result = await nc('PATCH', `/api/v1/db/meta/columns/${req.params.column_id}`, body);
+  // If type change fails, try delete + recreate approach (preserve column position in all views)
+  if (result.status >= 400 && req.body.uidt && req.body.uidt !== currentCol.uidt) {
+    try {
+      // Save column order in all views before deleting
+      const tableMeta = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+      const viewOrders = [];
+      if (tableMeta.status < 400 && tableMeta.data?.views) {
+        for (const view of tableMeta.data.views) {
+          const vcRes = await nc('GET', `/api/v1/db/meta/views/${view.id}/columns`);
+          if (vcRes.status < 400 && vcRes.data?.list) {
+            const vc = vcRes.data.list.find(c => c.fk_column_id === req.params.column_id);
+            if (vc) viewOrders.push({ viewId: view.id, order: vc.order });
+          }
+        }
+      }
+      const delResult = await nc('DELETE', `/api/v1/db/meta/columns/${req.params.column_id}`);
+      if (delResult.status < 400) {
+        const newTitle = req.body.title || currentCol.title;
+        const newUidt = UIDT_MAP[req.body.uidt] || req.body.uidt;
+        const createBody = { column_name: currentCol.column_name || newTitle, title: newTitle, uidt: newUidt };
+        if (req.body.options) {
+          const optsList = req.body.options.map((o, i) => ({ title: o.title || o, color: o.color, order: i + 1 }));
+          createBody.colOptions = { options: optsList };
+          if (optsList.length > 0) {
+            createBody.dtxp = optsList.map(o => `'${(o.title || '').replace(/'/g, "''")}'`).join(',');
+          }
+        }
+        if (req.body.meta !== undefined) {
+          createBody.meta = typeof req.body.meta === 'string' ? req.body.meta : JSON.stringify(req.body.meta);
+        }
+        result = await nc('POST', `/api/v1/db/meta/tables/${req.params.table_id}/columns`, createBody);
+        // Restore column position in all views
+        if (result.status < 400 && result.data?.id && viewOrders.length > 0) {
+          const newColId = result.data.id;
+          for (const vo of viewOrders) {
+            try {
+              await nc('PATCH', `/api/v1/db/meta/views/${vo.viewId}/columns/${newColId}`, { order: vo.order });
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+  }
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   res.json(result.data);
 });
@@ -945,14 +1231,23 @@ app.delete('/api/data/tables/:table_id/columns/:column_id', authenticateAgent, a
   res.json({ deleted: true });
 });
 
-// Rename a table
+// Rename a table (updates display title in meta, not NocoDB's internal title/alias)
 app.patch('/api/data/tables/:table_id', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
   const { title } = req.body;
   if (!title) return res.status(400).json({ error: 'MISSING_TITLE' });
-  const result = await nc('PATCH', `/api/v1/db/meta/tables/${req.params.table_id}`, { title, table_name: title });
+  // Read current meta, update _displayTitle
+  const info = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+  if (info.status >= 400) return res.status(info.status).json({ error: 'UPSTREAM_ERROR', detail: info.data });
+  let meta = {};
+  try { meta = typeof info.data.meta === 'string' ? JSON.parse(info.data.meta) : (info.data.meta || {}); } catch {}
+  meta._displayTitle = title;
+  const result = await nc('PATCH', `/api/v1/db/meta/tables/${req.params.table_id}`, { meta: JSON.stringify(meta) });
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  res.json(result.data);
+  // Sync title to content_items
+  db.prepare('UPDATE content_items SET title = ?, updated_at = ? WHERE raw_id = ? AND type = ?')
+    .run(title, new Date().toISOString(), req.params.table_id, 'table');
+  res.json({ ...result.data, title });
 });
 
 // Delete a table
@@ -960,6 +1255,8 @@ app.delete('/api/data/tables/:table_id', authenticateAgent, async (req, res) => 
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
   const result = await nc('DELETE', `/api/v1/db/meta/tables/${req.params.table_id}`);
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+  // Also remove from content_items
+  db.prepare('DELETE FROM content_items WHERE raw_id = ? AND type = ?').run(req.params.table_id, 'table');
   res.json({ deleted: true });
 });
 
@@ -1008,6 +1305,17 @@ app.patch('/api/data/views/:view_id/kanban', authenticateAgent, async (req, res)
   if (fk_grp_col_id) body.fk_grp_col_id = fk_grp_col_id;
   if (fk_cover_image_col_id) body.fk_cover_image_col_id = fk_cover_image_col_id;
   const result = await nc('PATCH', `/api/v1/db/meta/kanbans/${req.params.view_id}`, body);
+  if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+  res.json({ updated: true });
+});
+
+// Update gallery view config (set cover image column)
+app.patch('/api/data/views/:view_id/gallery', authenticateAgent, async (req, res) => {
+  if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
+  const { fk_cover_image_col_id } = req.body;
+  const body = {};
+  if (fk_cover_image_col_id !== undefined) body.fk_cover_image_col_id = fk_cover_image_col_id;
+  const result = await nc('PATCH', `/api/v1/db/meta/galleries/${req.params.view_id}`, body);
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   res.json({ updated: true });
 });
@@ -1105,6 +1413,14 @@ app.delete('/api/data/sorts/:sort_id', authenticateAgent, async (req, res) => {
   res.json({ deleted: true });
 });
 
+// Update a sort
+app.patch('/api/data/sorts/:sort_id', authenticateAgent, async (req, res) => {
+  if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
+  const result = await nc('PATCH', `/api/v1/db/meta/sorts/${req.params.sort_id}`, req.body);
+  if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+  res.json(result.data);
+});
+
 // Query rows through a specific view (applies view's filters/sorts)
 app.get('/api/data/:table_id/views/:view_id/rows', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
@@ -1132,15 +1448,98 @@ app.get('/api/data/:table_id/rows', authenticateAgent, async (req, res) => {
 // Insert row(s)
 app.post('/api/data/:table_id/rows', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
-  const result = await nc('POST', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}`, req.body);
+  // Auto-generate PK value and system columns for new rows
+  let rowData = req.body;
+  try {
+    const meta = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+    if (meta.status < 400 && meta.data?.columns) {
+      const columns = meta.data.columns;
+      // Auto-generate PK if SingleLineText and value is missing
+      const pkCol = columns.find(c => c.pk && c.uidt === 'SingleLineText');
+      if (pkCol && !rowData[pkCol.title] && !rowData[pkCol.column_name]) {
+        // Fetch all PK values to find the true numeric max (string sort fails for "9" vs "10")
+        const allResult = await nc('GET', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}?limit=1000&fields=${encodeURIComponent(pkCol.title)}`);
+        let nextId = 1;
+        if (allResult.status < 400 && allResult.data?.list?.length > 0) {
+          let maxVal = 0;
+          for (const row of allResult.data.list) {
+            const v = parseInt(row[pkCol.title], 10);
+            if (!isNaN(v) && v > maxVal) maxVal = v;
+          }
+          nextId = maxVal + 1;
+        }
+        rowData = { ...rowData, [pkCol.title]: String(nextId) };
+      }
+      // Auto-fill AutoNumber columns
+      for (const col of columns) {
+        if (col.uidt === 'AutoNumber' && !rowData[col.title]) {
+          const maxResult = await nc('GET', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}?limit=1&sort=-${encodeURIComponent(col.title)}&fields=${encodeURIComponent(col.title)}`);
+          let nextNum = 1;
+          if (maxResult.status < 400 && maxResult.data?.list?.length > 0) {
+            const maxVal = parseInt(maxResult.data.list[0][col.title], 10);
+            nextNum = isNaN(maxVal) ? 1 : maxVal + 1;
+          }
+          rowData = { ...rowData, [col.title]: nextNum };
+        }
+      }
+      // Auto-fill CreatedBy/LastModifiedBy with the agent name (these are stored as SingleLineText, NocoDB won't auto-manage)
+      // NOTE: CreatedTime/LastModifiedTime are NocoDB native types — NocoDB auto-manages them, do NOT override
+      for (const col of columns) {
+        if (col.system) continue;
+        if ((col.uidt === 'CreatedBy') && !rowData[col.title]) {
+          rowData = { ...rowData, [col.title]: req.agent.display_name || req.agent.name };
+        }
+        if ((col.uidt === 'LastModifiedBy') && !rowData[col.title]) {
+          rowData = { ...rowData, [col.title]: req.agent.display_name || req.agent.name };
+        }
+      }
+    }
+  } catch (e) { /* proceed with original data if detection fails */ }
+  let result = await nc('POST', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}`, rowData);
+  // NocoDB bug: SingleSelect/MultiSelect with null colOptions crashes on insert
+  // Auto-fix by adding a temp option (forces NocoDB to create colOptions record) then removing it
+  if (result.status === 400 && result.data?.msg?.includes?.('options') && result.data?.msg?.includes?.('null')) {
+    try {
+      const meta = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+      if (meta.status < 400 && meta.data?.columns) {
+        for (const col of meta.data.columns) {
+          if ((col.uidt === 'SingleSelect' || col.uidt === 'MultiSelect') && !col.colOptions) {
+            // Use dtxp to force NocoDB to initialize colOptions (colOptions patch alone doesn't work)
+            await nc('PATCH', `/api/v1/db/meta/columns/${col.id}`, {
+              title: col.title, column_name: col.column_name, uidt: col.uidt,
+              dtxp: "'Option 1'",
+              colOptions: { options: [{ title: 'Option 1', order: 1 }] },
+            });
+          }
+        }
+        result = await nc('POST', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}`, rowData);
+      }
+    } catch { /* fall through to original error */ }
+  }
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   res.status(201).json(result.data);
+  // Async auto-snapshot
+  maybeAutoSnapshot(req.params.table_id, req.agent.display_name || req.agent.name).catch(() => {});
 });
 
 // Update row
 app.patch('/api/data/:table_id/rows/:row_id', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
-  const result = await nc('PATCH', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${req.params.row_id}`, req.body);
+  // Auto-update LastModifiedBy columns (stored as SingleLineText, NocoDB won't auto-manage)
+  // NOTE: LastModifiedTime is NocoDB native type — NocoDB auto-manages it, do NOT override
+  let updateData = req.body;
+  try {
+    const meta = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+    if (meta.status < 400 && meta.data?.columns) {
+      for (const col of meta.data.columns) {
+        if (col.system) continue;
+        if (col.uidt === 'LastModifiedBy') {
+          updateData = { ...updateData, [col.title]: req.agent.display_name || req.agent.name };
+        }
+      }
+    }
+  } catch (e) { /* proceed without auto-fill */ }
+  const result = await nc('PATCH', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${req.params.row_id}`, updateData);
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   res.json(result.data);
 
@@ -1183,6 +1582,8 @@ app.patch('/api/data/:table_id/rows/:row_id', authenticateAgent, async (req, res
       if (target.webhook_url) deliverWebhook(target, evt).catch(() => {});
     }
   } catch (e) { console.error(`[gateway] User assignment notification error: ${e.message}`); }
+  // Async auto-snapshot
+  maybeAutoSnapshot(req.params.table_id, req.agent.display_name || req.agent.name).catch(() => {});
 });
 
 // Delete row
@@ -1191,6 +1592,82 @@ app.delete('/api/data/:table_id/rows/:row_id', authenticateAgent, async (req, re
   const result = await nc('DELETE', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${req.params.row_id}`);
   if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
   res.json({ deleted: true });
+  // Async auto-snapshot
+  maybeAutoSnapshot(req.params.table_id, req.agent.display_name || req.agent.name).catch(() => {});
+});
+
+// Duplicate a table (schema + data)
+app.post('/api/data/:table_id/duplicate', authenticateAgent, async (req, res) => {
+  if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
+  try {
+    // 1. Get source table meta
+    const metaResult = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+    if (metaResult.status >= 400) return res.status(metaResult.status).json({ error: 'UPSTREAM_ERROR', detail: metaResult.data });
+    const srcTitle = metaResult.data.title || 'Untitled';
+    const srcCols = metaResult.data.columns || [];
+
+    // 2. Create new table with same columns (skip system cols)
+    const SYSTEM_UIDTS = new Set(['ID', 'CreateTime', 'LastModifiedTime', 'CreatedBy', 'LastModifiedBy', 'AutoNumber', 'Links', 'LinkToAnotherRecord', 'Lookup', 'Rollup', 'Formula', 'Count']);
+    const newCols = srcCols
+      .filter(c => !c.pk && !c.system && !SYSTEM_UIDTS.has(c.uidt))
+      .map(c => {
+        const col = { column_name: c.title, title: c.title, uidt: c.uidt };
+        if ((c.uidt === 'SingleSelect' || c.uidt === 'MultiSelect') && c.colOptions?.options) {
+          col.colOptions = { options: c.colOptions.options.map((o, i) => ({ title: o.title, color: o.color, order: i + 1 })) };
+        }
+        if (c.meta) col.meta = c.meta;
+        return col;
+      });
+
+    const createResult = await nc('POST', `/api/v1/db/meta/bases/${NC_BASE_ID}/tables`, {
+      table_name: `${srcTitle} (copy)`,
+      title: `${srcTitle} (copy)`,
+      columns: [
+        { column_name: 'Title', title: 'Title', uidt: 'SingleLineText', pv: true },
+        ...newCols,
+      ],
+    });
+    if (createResult.status >= 400) return res.status(createResult.status).json({ error: 'CREATE_FAILED', detail: createResult.data });
+    const newTableId = createResult.data.id;
+
+    // 3. Copy rows (skip system fields)
+    const allRows = [];
+    let offset = 0;
+    while (true) {
+      const rowResult = await nc('GET', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}?limit=1000&offset=${offset}`);
+      if (rowResult.status >= 400) break;
+      const list = rowResult.data?.list || [];
+      allRows.push(...list);
+      if (list.length < 1000) break;
+      offset += 1000;
+    }
+
+    const skipFields = new Set(['Id', 'id', 'nc_id', 'CreatedAt', 'UpdatedAt', 'created_at', 'updated_at', 'ncRecordId', 'ncRecordHash']);
+    const validCols = new Set(newCols.map(c => c.title));
+    let copiedRows = 0;
+    for (const row of allRows) {
+      const cleanRow = {};
+      for (const [key, val] of Object.entries(row)) {
+        if (skipFields.has(key)) continue;
+        if (validCols.has(key)) cleanRow[key] = val;
+      }
+      if (Object.keys(cleanRow).length > 0) {
+        await nc('POST', `/api/v1/db/data/noco/${NC_BASE_ID}/${newTableId}`, cleanRow);
+        copiedRows++;
+      }
+    }
+
+    console.log(`[gateway] Duplicated table ${req.params.table_id} → ${newTableId} (${copiedRows} rows)`);
+    // Write to content_items for sidebar
+    const srcItem = db.prepare('SELECT * FROM content_items WHERE raw_id = ? AND type = ?').get(req.params.table_id, 'table');
+    const displayTitle = srcItem ? `${srcItem.title} (copy)` : `${srcTitle} (copy)`;
+    const nodeId = `table:${newTableId}`;
+    contentItemsUpsert.run(nodeId, newTableId, 'table', displayTitle, null, srcItem?.parent_id || null, null, req.agent?.name || null, null, new Date().toISOString(), null, null, Date.now());
+    res.json({ success: true, new_table_id: newTableId, copied_rows: copiedRows });
+  } catch (e) {
+    console.error(`[gateway] Duplicate table failed: ${e.message}`);
+    res.status(500).json({ error: 'DUPLICATE_FAILED', message: e.message });
+  }
 });
 
 // Post a comment on a row (agent posts as their own NocoDB identity)
@@ -1292,19 +1769,41 @@ app.get('/api/data/:table_id/rows/:row_id/links/:column_id', authenticateAgent, 
 app.post('/api/data/:table_id/rows/:row_id/links/:column_id', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
   const relType = await resolveRelationType(req.params.table_id, req.params.column_id);
-  // Body: [{ Id: rowId }, ...] — array of records to link
-  const result = await nc('POST', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${req.params.row_id}/${relType}/${req.params.column_id}`, req.body);
-  if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  res.json(result.data);
+  // NocoDB 0.202.10: target row ID goes in URL path, one at a time
+  const records = Array.isArray(req.body) ? req.body : [];
+  const basePath = `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${req.params.row_id}/${relType}/${req.params.column_id}`;
+  try {
+    for (const rec of records) {
+      const targetId = rec.Id || rec.id;
+      if (!targetId) continue;
+      const result = await nc('POST', `${basePath}/${targetId}`);
+      if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+    }
+    res.json({ msg: 'Links created successfully' });
+  } catch (e) {
+    console.error('[gateway] Link creation error:', e.message);
+    res.status(500).json({ error: 'LINK_FAILED', detail: e.message });
+  }
 });
 
 app.delete('/api/data/:table_id/rows/:row_id/links/:column_id', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
   const relType = await resolveRelationType(req.params.table_id, req.params.column_id);
-  // Body: [{ Id: rowId }, ...] — array of records to unlink
-  const result = await nc('DELETE', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${req.params.row_id}/${relType}/${req.params.column_id}`, req.body);
-  if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  res.json(result.data);
+  // NocoDB 0.202.10: target row ID goes in URL path, one at a time
+  const records = Array.isArray(req.body) ? req.body : [];
+  const basePath = `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${req.params.row_id}/${relType}/${req.params.column_id}`;
+  try {
+    for (const rec of records) {
+      const targetId = rec.Id || rec.id;
+      if (!targetId) continue;
+      const result = await nc('DELETE', `${basePath}/${targetId}`);
+      if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+    }
+    res.json({ msg: 'Links removed successfully' });
+  } catch (e) {
+    console.error('[gateway] Unlink error:', e.message);
+    res.status(500).json({ error: 'UNLINK_FAILED', detail: e.message });
+  }
 });
 
 // ─── Catchup ─────────────────────────────────────
@@ -2226,12 +2725,376 @@ app.put('/api/doc-icons/:doc_id', authenticateAgent, (req, res) => {
   const now = Date.now();
   db.prepare('INSERT INTO doc_icons (doc_id, icon, updated_at) VALUES (?, ?, ?) ON CONFLICT(doc_id) DO UPDATE SET icon = excluded.icon, updated_at = excluded.updated_at')
     .run(req.params.doc_id, icon, now);
+  // Also update content_items if exists (both doc: and table: prefixed)
+  db.prepare('UPDATE content_items SET icon = ? WHERE raw_id = ?').run(icon, req.params.doc_id);
   res.json({ doc_id: req.params.doc_id, icon, updated_at: now });
 });
 
 app.delete('/api/doc-icons/:doc_id', authenticateAgent, (req, res) => {
   db.prepare('DELETE FROM doc_icons WHERE doc_id = ?').run(req.params.doc_id);
+  // Clear icon in content_items too
+  db.prepare('UPDATE content_items SET icon = NULL WHERE raw_id = ?').run(req.params.doc_id);
   res.json({ deleted: true });
+});
+
+// ─── Content Items (unified sidebar metadata) ─────
+// Sync doc/table metadata from Outline + NocoDB into content_items table
+// Shell reads from here instead of calling Outline + NocoDB + doc-icons separately
+
+const contentItemsUpsert = db.prepare(`
+  INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, collection_id, created_by, updated_by, created_at, updated_at, deleted_at, synced_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title,
+    icon = COALESCE((SELECT icon FROM doc_icons WHERE doc_id = excluded.raw_id), excluded.icon),
+    parent_id = excluded.parent_id,
+    collection_id = excluded.collection_id,
+    created_by = excluded.created_by,
+    updated_by = excluded.updated_by,
+    created_at = excluded.created_at,
+    updated_at = excluded.updated_at,
+    deleted_at = excluded.deleted_at,
+    synced_at = excluded.synced_at
+`);
+
+async function syncContentItems() {
+  const now = Date.now();
+  console.log('[gateway] Syncing content items from Outline + NocoDB...');
+
+  // 1. Sync docs from Outline
+  let docCount = 0;
+  if (OL_TOKEN) {
+    try {
+      let offset = 0;
+      const limit = 100;
+      while (true) {
+        const result = await upstream(OL_URL, 'POST', '/api/documents.list', { limit, offset, sort: 'updatedAt', direction: 'DESC' }, OL_TOKEN);
+        if (!result.data?.data) break;
+        const docs = result.data.data;
+        for (const doc of docs) {
+          const nodeId = `doc:${doc.id}`;
+          const parentId = doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null;
+          // Check for custom icon in doc_icons table
+          const customIcon = db.prepare('SELECT icon FROM doc_icons WHERE doc_id = ?').get(doc.id);
+          const icon = customIcon?.icon || doc.icon || doc.emoji || null;
+          contentItemsUpsert.run(
+            nodeId, doc.id, 'doc', doc.title || '',
+            icon, parentId, doc.collectionId || null,
+            doc.createdBy?.name || null, doc.updatedBy?.name || null,
+            doc.createdAt || null, doc.updatedAt || null, doc.deletedAt || null,
+            now
+          );
+          docCount++;
+        }
+        if (docs.length < limit) break;
+        offset += limit;
+      }
+    } catch (err) {
+      console.error('[gateway] Content sync: Outline error:', err.message);
+    }
+  }
+
+  // 2. Sync tables from NocoDB
+  let tableCount = 0;
+  if (NC_EMAIL && NC_PASSWORD) {
+    try {
+      const result = await nc('GET', `/api/v1/db/meta/projects/${NC_BASE_ID}/tables`);
+      if (result.status < 400 && result.data?.list) {
+        for (const t of result.data.list) {
+          let displayTitle = t.title;
+          try {
+            const m = typeof t.meta === 'string' ? JSON.parse(t.meta) : t.meta;
+            if (m?._displayTitle) displayTitle = m._displayTitle;
+          } catch {}
+          const nodeId = `table:${t.id}`;
+          const customIcon = db.prepare('SELECT icon FROM doc_icons WHERE doc_id = ?').get(t.id);
+          contentItemsUpsert.run(
+            nodeId, t.id, 'table', displayTitle || '',
+            customIcon?.icon || null, null, null,
+            null, null,
+            t.created_at || null, t.updated_at || null, null,
+            now
+          );
+          tableCount++;
+        }
+      }
+    } catch (err) {
+      console.error('[gateway] Content sync: NocoDB error:', err.message);
+    }
+  }
+
+  // 3. Remove stale items (not seen in this sync cycle)
+  db.prepare('DELETE FROM content_items WHERE synced_at < ? AND deleted_at IS NULL').run(now);
+
+  console.log(`[gateway] Content sync done: ${docCount} docs, ${tableCount} tables`);
+}
+
+// API: list content items for sidebar (or trash)
+app.get('/api/content-items', authenticateAgent, (req, res) => {
+  if (req.query.deleted === 'true') {
+    const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all();
+    return res.json({ items: rows });
+  }
+  const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NULL ORDER BY sort_order ASC, created_at ASC').all();
+  res.json({ items: rows });
+});
+
+// API: create content item (doc or table) — Gateway is source of truth
+app.post('/api/content-items', authenticateAgent, async (req, res) => {
+  const { type, title = '', parent_id = null, collection_id, columns } = req.body;
+  if (!type || !['doc', 'table'].includes(type)) {
+    return res.status(400).json({ error: 'INVALID_TYPE', message: 'type must be "doc" or "table"' });
+  }
+
+  const now = new Date().toISOString();
+  const agentName = req.agent?.name || null;
+
+  if (type === 'doc') {
+    // Determine collection: use provided or fall back to first available
+    let collId = collection_id;
+    if (!collId && OL_TOKEN) {
+      try {
+        const colResult = await upstream(OL_URL, 'POST', '/api/collections.list', {}, OL_TOKEN);
+        if (colResult.data?.data?.length > 0) collId = colResult.data.data[0].id;
+      } catch {}
+    }
+    if (!collId) return res.status(400).json({ error: 'NO_COLLECTION', message: 'No collection_id and none found in Outline' });
+
+    // Parse parent: only doc parents go to Outline; table parents are sidebar-only
+    let olParentId = null;
+    if (parent_id && parent_id.startsWith('doc:')) {
+      olParentId = parent_id.slice(4);
+    }
+
+    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
+    const olBody = { title: title || '', text: '', collectionId: collId, publish: true };
+    if (olParentId) olBody.parentDocumentId = olParentId;
+    const result = await upstream(OL_URL, 'POST', '/api/documents.create', olBody, agentOlToken);
+    if (!result.data?.ok) {
+      return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+    }
+    const doc = result.data.data;
+    const nodeId = `doc:${doc.id}`;
+    contentItemsUpsert.run(
+      nodeId, doc.id, 'doc', title || '',
+      null, parent_id, collId,
+      doc.createdBy?.name || agentName, doc.updatedBy?.name || agentName,
+      doc.createdAt || now, doc.updatedAt || now, null, Date.now()
+    );
+    const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+    return res.status(201).json({ item });
+  }
+
+  if (type === 'table') {
+    if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
+
+    const tableTitle = title || 'Untitled';
+    const tableCols = columns || [
+      { title: 'Name', uidt: 'SingleLineText' },
+      { title: 'Notes', uidt: 'LongText' },
+    ];
+    const hasPk = tableCols.some(c => c.pk);
+    const normalizeCol = c => {
+      const col = { column_name: c.column_name || c.title, title: c.title || c.column_name, uidt: c.uidt };
+      if (c.pk !== undefined) col.pk = c.pk;
+      if (c.ai !== undefined) col.ai = c.ai;
+      if (c.required !== undefined) col.rqd = c.required;
+      if (c.uidt === 'SingleSelect' || c.uidt === 'MultiSelect') {
+        const optsList = (c.options || []).filter(o => o && (o.title || typeof o === 'string'));
+        if (optsList.length > 0) {
+          col.dtxp = optsList.map(o => `'${(typeof o === 'string' ? o : o.title).replace(/'/g, "''")}'`).join(',');
+          col.colOptions = { options: optsList.map((o, i) => ({ title: typeof o === 'string' ? o : o.title, color: o.color, order: i + 1 })) };
+        }
+      }
+      return col;
+    };
+    const fullColumns = [
+      ...(hasPk ? [] : [{ column_name: 'Id', title: 'Id', uidt: 'ID', pk: true, ai: true }]),
+      ...tableCols.map(normalizeCol),
+      { column_name: 'created_by', title: 'created_by', uidt: 'SingleLineText' },
+    ];
+    const suffix = `_${Math.random().toString(36).slice(2, 8)}_${Date.now()}`;
+    const internalTitle = `t${suffix}`;
+    const meta = JSON.stringify({ _displayTitle: tableTitle });
+    const ncBody = { table_name: internalTitle, title: internalTitle, columns: fullColumns, meta };
+    const result = await nc('POST', `/api/v1/db/meta/projects/${NC_BASE_ID}/tables`, ncBody);
+    if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
+
+    const tableId = result.data.id;
+    // Rename default view to "Grid"
+    try {
+      const viewsResult = await nc('GET', `/api/v1/db/meta/tables/${tableId}`);
+      if (viewsResult.data?.views?.length > 0) {
+        await nc('PATCH', `/api/v1/db/meta/views/${viewsResult.data.views[0].id}`, { title: 'Grid' });
+      }
+    } catch {}
+
+    const nodeId = `table:${tableId}`;
+    contentItemsUpsert.run(
+      nodeId, tableId, 'table', tableTitle,
+      null, parent_id, null,
+      agentName, agentName,
+      now, now, null, Date.now()
+    );
+    const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+    return res.status(201).json({ item, table_id: tableId, columns: result.data.columns });
+  }
+});
+
+// API: soft-delete content item (move to trash)
+app.delete('/api/content-items/:id', authenticateAgent, async (req, res) => {
+  const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const mode = req.query.mode || 'only'; // 'only' or 'all'
+  const now = new Date().toISOString();
+
+  if (item.type === 'doc') {
+    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
+
+    if (mode === 'all') {
+      // Collect all descendants recursively
+      const collectDescendants = (parentId) => {
+        const children = db.prepare('SELECT * FROM content_items WHERE parent_id = ? AND deleted_at IS NULL').all(parentId);
+        let all = [...children];
+        for (const child of children) {
+          all = all.concat(collectDescendants(child.id));
+        }
+        return all;
+      };
+      const descendants = collectDescendants(req.params.id);
+
+      // Soft-delete this item
+      db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
+      // Delete from Outline
+      await upstream(OL_URL, 'POST', '/api/documents.delete', { id: item.raw_id }, agentOlToken).catch(() => {});
+
+      // Soft-delete descendants
+      for (const desc of descendants) {
+        db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, desc.id);
+        if (desc.type === 'doc') {
+          await upstream(OL_URL, 'POST', '/api/documents.delete', { id: desc.raw_id }, agentOlToken).catch(() => {});
+        }
+        // Tables: just soft-delete in content_items, don't delete from NocoDB yet
+      }
+    } else {
+      // mode === 'only': reparent children, then delete this node
+      const children = db.prepare('SELECT * FROM content_items WHERE parent_id = ? AND deleted_at IS NULL').all(req.params.id);
+      for (const child of children) {
+        db.prepare('UPDATE content_items SET parent_id = ? WHERE id = ?').run(item.parent_id, child.id);
+        // If child is a doc, also move in Outline
+        if (child.type === 'doc') {
+          const newOlParent = item.parent_id?.startsWith('doc:') ? item.parent_id.slice(4) : null;
+          await upstream(OL_URL, 'POST', '/api/documents.move', {
+            id: child.raw_id,
+            parentDocumentId: newOlParent,
+          }, agentOlToken).catch(() => {});
+        }
+      }
+      // Soft-delete this item
+      db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
+      // Delete from Outline
+      await upstream(OL_URL, 'POST', '/api/documents.delete', { id: item.raw_id }, agentOlToken).catch(() => {});
+    }
+  } else if (item.type === 'table') {
+    // Soft-delete only — NocoDB table data preserved until permanent delete
+    db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
+  }
+
+  res.json({ deleted: true });
+});
+
+// API: restore content item from trash
+app.post('/api/content-items/:id/restore', authenticateAgent, async (req, res) => {
+  const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (!item.deleted_at) return res.status(400).json({ error: 'NOT_DELETED' });
+
+  // Clear deleted_at
+  db.prepare('UPDATE content_items SET deleted_at = NULL WHERE id = ?').run(req.params.id);
+
+  // Restore in upstream if doc
+  if (item.type === 'doc') {
+    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
+    // Outline's unarchive restores from trash
+    await upstream(OL_URL, 'POST', '/api/documents.restore', { id: item.raw_id }, agentOlToken).catch(() => {});
+  }
+  // Tables: nothing to do in NocoDB (data was never deleted)
+
+  const restored = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
+  res.json({ item: restored });
+});
+
+// API: permanently delete content item
+app.delete('/api/content-items/:id/permanent', authenticateAgent, async (req, res) => {
+  const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  if (item.type === 'doc') {
+    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
+    await upstream(OL_URL, 'POST', '/api/documents.delete', { id: item.raw_id, permanent: true }, agentOlToken).catch(() => {});
+  } else if (item.type === 'table') {
+    if (NC_EMAIL && NC_PASSWORD) {
+      await nc('DELETE', `/api/v1/db/meta/tables/${item.raw_id}`).catch(() => {});
+    }
+  }
+
+  // Remove from content_items
+  db.prepare('DELETE FROM content_items WHERE id = ?').run(req.params.id);
+  // Clean up related data
+  db.prepare('DELETE FROM doc_icons WHERE doc_id = ?').run(item.raw_id);
+
+  res.json({ deleted: true });
+});
+
+// API: force sync content items (manual/repair tool only — not used in normal operation)
+app.post('/api/content-items/sync', authenticateAgent, async (req, res) => {
+  await syncContentItems();
+  const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NULL ORDER BY sort_order ASC, created_at ASC').all();
+  res.json({ items: rows, synced_at: Date.now() });
+});
+
+// API: update content item metadata (icon, parent, sort_order) — local-only changes
+app.patch('/api/content-items/:id', authenticateAgent, (req, res) => {
+  const { icon, parent_id, sort_order, title } = req.body;
+  const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
+  if (!item) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const updates = [];
+  const params = [];
+  if (icon !== undefined) { updates.push('icon = ?'); params.push(icon); }
+  if (parent_id !== undefined) { updates.push('parent_id = ?'); params.push(parent_id); }
+  if (sort_order !== undefined) { updates.push('sort_order = ?'); params.push(sort_order); }
+  if (title !== undefined) { updates.push('title = ?'); params.push(title); }
+  if (updates.length === 0) return res.json(item);
+
+  params.push(req.params.id);
+  db.prepare(`UPDATE content_items SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  // Also sync icon to doc_icons for backward compat
+  if (icon !== undefined) {
+    if (icon) {
+      db.prepare('INSERT INTO doc_icons (doc_id, icon, updated_at) VALUES (?, ?, ?) ON CONFLICT(doc_id) DO UPDATE SET icon = excluded.icon, updated_at = excluded.updated_at')
+        .run(item.raw_id, icon, Date.now());
+    } else {
+      db.prepare('DELETE FROM doc_icons WHERE doc_id = ?').run(item.raw_id);
+    }
+  }
+  const updated = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
+  res.json(updated);
+});
+
+// API: batch update sort/parent for drag-and-drop reordering
+app.put('/api/content-items/tree', authenticateAgent, (req, res) => {
+  const { items } = req.body; // [{ id, parent_id, sort_order }]
+  if (!Array.isArray(items)) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: '"items" array required' });
+  const stmt = db.prepare('UPDATE content_items SET parent_id = ?, sort_order = ? WHERE id = ?');
+  const tx = db.transaction((list) => {
+    for (const item of list) {
+      stmt.run(item.parent_id ?? null, item.sort_order ?? 0, item.id);
+    }
+  });
+  tx(items);
+  res.json({ updated: items.length });
 });
 
 // ─── Preferences (key-value store) ────────────────
@@ -2310,6 +3173,29 @@ app.post('/api/data/upload', authenticateAgent, fileUpload.array('files', 10), a
 });
 
 // ─── File download proxy (for NocoDB attachment URLs) ──────────────
+// Query-parameter based route (preferred — avoids Next.js file-extension routing issues)
+app.get('/api/data/dl', authenticateAgent, async (req, res) => {
+  if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
+  const ncPath = req.query.path;
+  if (!ncPath) return res.status(400).json({ error: 'MISSING_PATH' });
+  try {
+    const ncToken = await getNcJwt();
+    const fullPath = ncPath.startsWith('/') ? ncPath : '/' + ncPath;
+    const ncRes = await fetch(`${NC_URL}${fullPath}`, {
+      headers: { 'xc-auth': ncToken },
+    });
+    if (!ncRes.ok) return res.status(ncRes.status).send('Not found');
+    res.set('Content-Type', ncRes.headers.get('content-type') || 'application/octet-stream');
+    const cacheControl = ncRes.headers.get('cache-control');
+    if (cacheControl) res.set('Cache-Control', cacheControl);
+    const buffer = Buffer.from(await ncRes.arrayBuffer());
+    res.send(buffer);
+  } catch (e) {
+    console.error('[gateway] File download proxy error:', e);
+    res.status(500).json({ error: 'DOWNLOAD_ERROR' });
+  }
+});
+// Legacy path-based route (kept for backward compat)
 app.get('/api/data/download/*', authenticateAgent, async (req, res) => {
   if (!NC_EMAIL || !NC_PASSWORD) return res.status(503).json({ error: 'NOCODB_NOT_CONFIGURED' });
   try {
@@ -2472,6 +3358,196 @@ app.post('/api/data/table-comments/:comment_id/unresolve', authenticateAgent, (r
   res.json({ unresolved: true });
 });
 
+// ─── Table Snapshots (History Versioning) ─────────
+
+// Create a snapshot of a table's current state
+async function createTableSnapshot(tableId, triggerType, agent) {
+  // 1. Fetch table schema from NocoDB
+  const metaResult = await nc('GET', `/api/v1/db/meta/tables/${tableId}`);
+  if (metaResult.status >= 400) throw new Error(`Failed to fetch table meta: ${metaResult.status}`);
+  const columns = (metaResult.data.columns || []).map(c => {
+    const col = { id: c.id, title: c.title, uidt: c.uidt, pk: !!c.pk, rqd: !!c.rqd };
+    if (c.colOptions) col.colOptions = c.colOptions;
+    if (c.meta) col.meta = c.meta;
+    if (c.formula_raw) col.formula_raw = c.formula_raw;
+    return col;
+  });
+  const schemaJson = JSON.stringify(columns);
+
+  // 2. Fetch ALL rows (paginate at 1000 per page)
+  const allRows = [];
+  let offset = 0;
+  const pageSize = 1000;
+  while (true) {
+    const rowResult = await nc('GET', `/api/v1/db/data/noco/${NC_BASE_ID}/${tableId}?limit=${pageSize}&offset=${offset}`);
+    if (rowResult.status >= 400) throw new Error(`Failed to fetch rows: ${rowResult.status}`);
+    const list = rowResult.data?.list || [];
+    allRows.push(...list);
+    if (list.length < pageSize) break;
+    offset += pageSize;
+  }
+  const dataJson = JSON.stringify(allRows);
+
+  // 3. Get next version number
+  const lastVersion = db.prepare('SELECT MAX(version) as maxV FROM table_snapshots WHERE table_id = ?').get(tableId);
+  const version = (lastVersion?.maxV || 0) + 1;
+
+  // 4. Insert snapshot
+  const result = db.prepare(
+    'INSERT INTO table_snapshots (table_id, version, schema_json, data_json, trigger_type, agent, row_count) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(tableId, version, schemaJson, dataJson, triggerType, agent || null, allRows.length);
+
+  // 5. Retention cleanup: keep last 20 or last 30 days, whichever keeps more
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+  const countAll = db.prepare('SELECT COUNT(*) as cnt FROM table_snapshots WHERE table_id = ?').get(tableId);
+  if (countAll.cnt > 20) {
+    // Find the 20th newest snapshot's id
+    const fiftieth = db.prepare('SELECT id FROM table_snapshots WHERE table_id = ? ORDER BY version DESC LIMIT 1 OFFSET 19').get(tableId);
+    if (fiftieth) {
+      // Delete snapshots older than both the 50th and 30 days
+      db.prepare('DELETE FROM table_snapshots WHERE table_id = ? AND id < ? AND created_at < ?')
+        .run(tableId, fiftieth.id, thirtyDaysAgo);
+    }
+  }
+
+  return {
+    id: result.lastInsertRowid,
+    version,
+    table_id: tableId,
+    trigger_type: triggerType,
+    agent: agent || null,
+    row_count: allRows.length,
+    created_at: new Date().toISOString(),
+  };
+}
+
+// Check if auto-snapshot is needed (last snapshot older than 5 minutes)
+async function maybeAutoSnapshot(tableId, agent) {
+  try {
+    const last = db.prepare('SELECT created_at FROM table_snapshots WHERE table_id = ? ORDER BY version DESC LIMIT 1').get(tableId);
+    if (last) {
+      const lastTime = new Date(last.created_at).getTime();
+      if (Date.now() - lastTime < 30 * 60 * 1000) return; // less than 30 minutes ago
+    }
+    await createTableSnapshot(tableId, 'auto', agent);
+  } catch (e) {
+    console.error(`[gateway] Auto-snapshot failed for ${tableId}: ${e.message}`);
+  }
+}
+
+// List snapshots (without large data fields)
+app.get('/api/data/:table_id/snapshots', authenticateAgent, (req, res) => {
+  const snapshots = db.prepare(
+    'SELECT id, version, trigger_type, agent, row_count, created_at FROM table_snapshots WHERE table_id = ? ORDER BY version DESC'
+  ).all(req.params.table_id);
+  res.json({ snapshots });
+});
+
+// Get a single snapshot (full data)
+app.get('/api/data/:table_id/snapshots/:snapshot_id', authenticateAgent, (req, res) => {
+  const snap = db.prepare(
+    'SELECT * FROM table_snapshots WHERE id = ? AND table_id = ?'
+  ).get(req.params.snapshot_id, req.params.table_id);
+  if (!snap) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json(snap);
+});
+
+// Manually create a snapshot
+app.post('/api/data/:table_id/snapshots', authenticateAgent, async (req, res) => {
+  try {
+    const { agent: agentName } = req.body || {};
+    const snap = await createTableSnapshot(req.params.table_id, 'manual', agentName || req.agent.display_name || req.agent.name);
+    res.status(201).json(snap);
+  } catch (e) {
+    console.error(`[gateway] Manual snapshot failed: ${e.message}`);
+    res.status(500).json({ error: 'SNAPSHOT_FAILED', message: e.message });
+  }
+});
+
+// Restore a snapshot
+app.post('/api/data/:table_id/snapshots/:snapshot_id/restore', authenticateAgent, async (req, res) => {
+  const snap = db.prepare('SELECT * FROM table_snapshots WHERE id = ? AND table_id = ?')
+    .get(req.params.snapshot_id, req.params.table_id);
+  if (!snap) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  try {
+    // 1. Create pre-restore snapshot
+    const preRestore = await createTableSnapshot(req.params.table_id, 'pre_restore', req.agent.display_name || req.agent.name);
+
+    // 2. Read snapshot data
+    const snapshotRows = JSON.parse(snap.data_json);
+
+    // 3. Delete all current rows
+    let offset = 0;
+    while (true) {
+      const currentRows = await nc('GET', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}?limit=1000&offset=${offset}`);
+      if (currentRows.status >= 400) break;
+      const list = currentRows.data?.list || [];
+      if (list.length === 0) break;
+      for (const row of list) {
+        const rowId = row.Id || row.id || row.nc_id;
+        if (rowId) {
+          await nc('DELETE', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}/${rowId}`);
+        }
+      }
+      // If we deleted all from this page, check for more (don't increment offset since rows shifted)
+      if (list.length < 1000) break;
+    }
+
+    // 4. Get current schema and recreate missing columns from snapshot
+    const metaResult = await nc('GET', `/api/v1/db/meta/tables/${req.params.table_id}`);
+    const currentCols = new Set((metaResult.data?.columns || []).map(c => c.title));
+
+    // 4b. Recreate columns from snapshot that are missing in current table
+    const snapshotSchema = JSON.parse(snap.schema_json || '[]');
+    const SYSTEM_UIDTS = new Set(['ID', 'CreateTime', 'LastModifiedTime', 'CreatedBy', 'LastModifiedBy', 'AutoNumber']);
+    for (const col of snapshotSchema) {
+      if (currentCols.has(col.title)) continue;
+      if (col.pk) continue; // Skip primary key columns
+      if (SYSTEM_UIDTS.has(col.uidt)) continue; // Skip system-generated column types
+      try {
+        const body = { column_name: col.title, title: col.title, uidt: col.uidt };
+        if ((col.uidt === 'SingleSelect' || col.uidt === 'MultiSelect') && col.colOptions?.options) {
+          body.colOptions = { options: col.colOptions.options.map((o, i) => ({ title: o.title, color: o.color, order: i + 1 })) };
+        }
+        if (col.meta) body.meta = col.meta;
+        if (col.formula_raw) body.formula_raw = col.formula_raw;
+        const createResult = await nc('POST', `/api/v1/db/meta/tables/${req.params.table_id}/columns`, body);
+        if (createResult.status < 400) {
+          currentCols.add(col.title);
+          console.log(`[gateway] Restore: recreated column "${col.title}" (${col.uidt})`);
+        } else {
+          console.warn(`[gateway] Restore: failed to recreate column "${col.title}": ${JSON.stringify(createResult.data)}`);
+        }
+      } catch (colErr) {
+        console.warn(`[gateway] Restore: error recreating column "${col.title}": ${colErr.message}`);
+      }
+    }
+
+    // 5. Insert rows from snapshot
+    let restored = 0;
+    for (const row of snapshotRows) {
+      const cleanRow = {};
+      for (const [key, val] of Object.entries(row)) {
+        // Skip system fields
+        if (['Id', 'id', 'nc_id', 'CreatedAt', 'UpdatedAt', 'created_at', 'updated_at', 'ncRecordId', 'ncRecordHash'].includes(key)) continue;
+        if (currentCols.has(key)) {
+          cleanRow[key] = val;
+        }
+      }
+      if (Object.keys(cleanRow).length > 0) {
+        await nc('POST', `/api/v1/db/data/noco/${NC_BASE_ID}/${req.params.table_id}`, cleanRow);
+        restored++;
+      }
+    }
+
+    res.json({ success: true, restored_rows: restored, pre_restore_snapshot_id: preRestore.id });
+  } catch (e) {
+    console.error(`[gateway] Restore failed: ${e.message}`);
+    res.status(500).json({ error: 'RESTORE_FAILED', message: e.message });
+  }
+});
+
 // ─── Start ───────────────────────────────────────
 app.listen(PORT, async () => {
   console.log(`[gateway] ASuite API Gateway listening on :${PORT}`);
@@ -2484,4 +3560,7 @@ app.listen(PORT, async () => {
   // Start NocoDB comment polling every 15s
   setInterval(pollNcComments, 15000);
   console.log('[gateway] NocoDB comment polling started (15s interval)');
+  // Content items: no periodic sync — Gateway is source of truth.
+  // Use POST /api/content-items/sync manually if needed for repair/migration.
+  console.log('[gateway] Content items managed by Gateway (no periodic sync)');
 });
