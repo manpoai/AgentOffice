@@ -95,6 +95,7 @@ export function MindmapNode({ node }: { node: Node }) {
           onChange={(e) => setText(e.target.value)}
           onBlur={commitEdit}
           onKeyDown={handleKeyDown}
+          onMouseDown={(e) => e.stopPropagation()}
           className="bg-transparent border-none outline-none text-center w-full"
           style={{ fontSize: isRoot ? 16 : d.fontSize, fontWeight: isRoot ? 'bold' : d.fontWeight, color: d.textColor }}
         />

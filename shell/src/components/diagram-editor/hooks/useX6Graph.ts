@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Graph, Shape } from '@antv/x6';
 import { Selection } from '@antv/x6/es/plugin/selection';
 import { Snapline } from '@antv/x6/es/plugin/snapline';
-import { Keyboard } from '@antv/x6/es/plugin/keyboard';
+
 import { Clipboard } from '@antv/x6/es/plugin/clipboard';
 import { History } from '@antv/x6/es/plugin/history';
 import { Transform } from '@antv/x6/es/plugin/transform';
@@ -18,10 +18,12 @@ export function useX6Graph(
 ) {
   const graphRef = useRef<Graph | null>(null);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || graphRef.current) return;
 
+    try {
     registerShapes();
 
     const graph = new Graph({
@@ -101,7 +103,8 @@ export function useX6Graph(
       modifiers: ['shift'],
     }));
     graph.use(new Snapline({ enabled: true }));
-    graph.use(new Keyboard({ enabled: true, global: false }));
+    // Keyboard shortcuts are handled at DOM level in X6DiagramEditor.tsx
+    // to properly support text editing in React node components.
     graph.use(new Clipboard({ enabled: true }));
     graph.use(new History({ enabled: true }));
     graph.use(new Transform({ resizing: { enabled: true, minWidth: 40, minHeight: 30 } }));
@@ -134,7 +137,11 @@ export function useX6Graph(
       graph.dispose();
       graphRef.current = null;
     };
+    } catch (e) {
+      console.error('X6 Graph init failed:', e);
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }, [containerRef, minimapRef]);
 
-  return { graph: graphRef.current, ready };
+  return { graph: graphRef.current, ready, error };
 }

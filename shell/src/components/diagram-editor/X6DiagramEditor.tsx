@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Graph, Node, Cell } from '@antv/x6';
 import * as gw from '@/lib/api/gateway';
@@ -57,7 +57,46 @@ function formatRelativeTime(ts: number): string {
 }
 
 // ─── Main Component ─────────────────────────────────
-export default function X6DiagramEditor({
+// ─── Error Boundary ──
+class DiagramErrorBoundary extends Component<
+  { children: ReactNode; fallback?: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('DiagramEditor crashed:', error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex items-center justify-center h-full bg-gray-50">
+          <div className="text-center p-8 max-w-md">
+            <p className="text-gray-600 text-sm mb-2">图表编辑器加载失败</p>
+            <p className="text-xs text-gray-400 font-mono break-all">{this.state.error.message}</p>
+            <button
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              onClick={() => this.setState({ error: null })}
+            >
+              重试
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function X6DiagramEditor(props: X6DiagramEditorProps) {
+  return (
+    <DiagramErrorBoundary>
+      <X6DiagramEditorInner {...props} />
+    </DiagramErrorBoundary>
+  );
+}
+
+function X6DiagramEditorInner({
   diagramId, breadcrumb, onBack, onDeleted, onCopyLink, docListVisible, onToggleDocList,
 }: X6DiagramEditorProps) {
   const { t } = useT();
@@ -68,7 +107,7 @@ export default function X6DiagramEditor({
   const minimapRef = useRef<HTMLDivElement>(null);
 
   // X6 graph
-  const { graph, ready } = useX6Graph(containerRef, minimapRef);
+  const { graph, ready, error: graphError } = useX6Graph(containerRef, minimapRef);
 
   // State
   const [activeTool, setActiveTool] = useState<ActiveTool>('select');
@@ -132,60 +171,81 @@ export default function X6DiagramEditor({
     }
   }, [graph, ready, diagram]);
 
-  // ─── Keyboard shortcuts ──
+  // ─── Keyboard shortcuts (DOM-level, not graph.bindKey) ──
   useEffect(() => {
     if (!graph || !ready) return;
 
-    // Delete
-    graph.bindKey(['delete', 'backspace'], () => {
-      const cells = graph.getSelectedCells();
-      if (cells.length) graph.removeCells(cells);
-    });
+    const isEditing = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
+      if ((e.target as HTMLElement)?.contentEditable === 'true') return true;
+      return false;
+    };
 
-    // Undo / Redo
-    graph.bindKey(['meta+z', 'ctrl+z'], () => graph.undo());
-    graph.bindKey(['meta+shift+z', 'ctrl+shift+z'], () => graph.redo());
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Never intercept when user is typing in an input
+      if (isEditing(e)) return;
 
-    // Copy / Paste
-    graph.bindKey(['meta+c', 'ctrl+c'], () => {
-      const cells = graph.getSelectedCells();
-      if (cells.length) graph.copy(cells);
-    });
-    graph.bindKey(['meta+v', 'ctrl+v'], () => {
-      if (!graph.isClipboardEmpty()) {
-        graph.paste({ offset: 20 });
+      const meta = e.metaKey || e.ctrlKey;
+
+      // Delete
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const cells = graph.getSelectedCells();
+        if (cells.length) { graph.removeCells(cells); e.preventDefault(); }
+        return;
       }
-    });
 
-    // Select all
-    graph.bindKey(['meta+a', 'ctrl+a'], () => {
-      graph.select(graph.getCells());
-    });
+      // Undo / Redo
+      if (meta && e.shiftKey && e.key === 'z') { graph.redo(); e.preventDefault(); return; }
+      if (meta && e.key === 'z') { graph.undo(); e.preventDefault(); return; }
 
-    // Tool shortcuts
-    graph.bindKey('v', () => setActiveTool('select'));
-    graph.bindKey('t', () => setActiveTool('text'));
-    graph.bindKey('r', () => setActiveTool('rounded-rect'));
-    graph.bindKey('d', () => setActiveTool('diamond'));
-    graph.bindKey('l', () => setActiveTool('connector'));
-    graph.bindKey('m', () => setActiveTool('mindmap'));
+      // Copy / Paste
+      if (meta && e.key === 'c') {
+        const cells = graph.getSelectedCells();
+        if (cells.length) graph.copy(cells);
+        return;
+      }
+      if (meta && e.key === 'v') {
+        if (!graph.isClipboardEmpty()) { graph.paste({ offset: 20 }); e.preventDefault(); }
+        return;
+      }
 
-    // Mindmap keys (Tab, Enter, Shift+Tab)
-    graph.bindKey('tab', (e) => {
-      e.preventDefault();
-      handleMindmapTab();
-    });
-    graph.bindKey('enter', (e) => {
-      handleMindmapEnter(e);
-    });
-    graph.bindKey('shift+tab', (e) => {
-      e.preventDefault();
-      // TODO: add parent node
-    });
-    graph.bindKey(['meta+.', 'ctrl+.'], () => {
-      handleMindmapToggleCollapse();
-    });
-  }, [graph, ready]);
+      // Select all
+      if (meta && e.key === 'a') { graph.select(graph.getCells()); e.preventDefault(); return; }
+
+      // Collapse mindmap (Cmd+.)
+      if (meta && e.key === '.') { handleMindmapToggleCollapse(); e.preventDefault(); return; }
+
+      // Single-key tool shortcuts (only without modifiers)
+      if (!meta && !e.shiftKey && !e.altKey) {
+        switch (e.key.toLowerCase()) {
+          case 'v': setActiveTool('select'); return;
+          case 't': setActiveTool('text'); return;
+          case 'r': setActiveTool('rounded-rect'); return;
+          case 'd': setActiveTool('diamond'); return;
+          case 'l': setActiveTool('connector'); return;
+          case 'm': setActiveTool('mindmap'); return;
+          case 'tab':
+            e.preventDefault();
+            handleMindmapTab();
+            return;
+          case 'enter':
+            handleMindmapEnter(e);
+            return;
+        }
+      }
+
+      // Shift+Tab for mindmap
+      if (e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        // TODO: add parent node
+        return;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [graph, ready, handleMindmapTab, handleMindmapEnter, handleMindmapToggleCollapse]);
 
   // ─── Canvas click: create shape or mindmap ──
   useEffect(() => {
@@ -538,6 +598,16 @@ export default function X6DiagramEditor({
       <div className="flex-1 relative overflow-hidden">
         {/* X6 container */}
         <div ref={containerRef} className="w-full h-full" />
+
+        {/* Error fallback */}
+        {graphError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
+            <div className="text-center p-8">
+              <p className="text-gray-500 text-sm mb-2">图表编辑器加载失败</p>
+              <p className="text-xs text-gray-400 font-mono">{graphError}</p>
+            </div>
+          </div>
+        )}
 
         {/* Left toolbar */}
         <LeftToolbar

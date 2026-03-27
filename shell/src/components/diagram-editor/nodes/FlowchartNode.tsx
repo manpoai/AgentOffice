@@ -55,6 +55,8 @@ export function FlowchartNode({ node }: { node: Node }) {
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Stop propagation so X6 keyboard handler doesn't intercept
+    e.stopPropagation();
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       commitEdit();
@@ -91,6 +93,7 @@ export function FlowchartNode({ node }: { node: Node }) {
       onChange={(e) => setText(e.target.value)}
       onBlur={commitEdit}
       onKeyDown={handleKeyDown}
+      onMouseDown={(e) => e.stopPropagation()}
       className="bg-transparent border-none outline-none resize-none text-center w-full h-full"
       style={{ fontSize: d.fontSize, fontWeight: d.fontWeight, fontStyle: d.fontStyle, color: d.textColor }}
     />
