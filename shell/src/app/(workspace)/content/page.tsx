@@ -3,8 +3,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as ol from '@/lib/api/outline';
-import * as nc from '@/lib/api/nocodb';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Copy, CopyPlus, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2 } from 'lucide-react';
+import { FileText, Table2, Pencil, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2 } from 'lucide-react';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -14,6 +13,7 @@ import { Comments } from '@/components/comments/Comments';
 import RevisionHistory from '@/components/RevisionHistory';
 import type { OLRevision } from '@/lib/api/outline';
 import { TableEditor } from '@/components/table-editor/TableEditor';
+import { BoardEditor } from '@/components/board-editor/BoardEditor';
 
 const RevisionPreview = dynamic(() => import('@/components/RevisionPreview'), { ssr: false });
 import * as gw from '@/lib/api/gateway';
@@ -46,15 +46,15 @@ type DropIntent = { overId: string; position: 'before' | 'after' | 'inside' } | 
 type ContentNode = {
   id: string;         // doc:<id> or table:<id>
   rawId: string;      // original id without prefix
-  type: 'doc' | 'table';
+  type: 'doc' | 'table' | 'board';
   title: string;
   emoji?: string;
   createdAt: number;
   updatedAt?: string;
-  parentId: string | null;  // parent node id (doc:<id> or table:<id>)
+  parentId: string | null;  // parent node id (doc:<id> or table:<id> or board:<id>)
 };
 
-type Selection = { type: 'doc'; id: string } | { type: 'table'; id: string } | null;
+type Selection = { type: 'doc'; id: string } | { type: 'table'; id: string } | { type: 'board'; id: string } | null;
 
 /** Tree ordering stored in localStorage */
 interface TreeState {
@@ -65,7 +65,6 @@ interface TreeState {
 }
 
 const TREE_STATE_KEY = 'asuite-content-tree';
-const DELETED_TABLES_KEY = 'asuite-deleted-tables';
 const EXPANDED_STATE_KEY = 'asuite-content-expanded';
 
 function loadTreeState(): TreeState {
@@ -105,21 +104,6 @@ function saveTreeStateToGateway(state: TreeState) {
   }, 500);
 }
 
-/** Soft-deleted tables stored in localStorage (NocoDB has no native trash) */
-interface DeletedTable { id: string; title: string; deletedAt: string; }
-
-function loadDeletedTables(): DeletedTable[] {
-  try {
-    const raw = localStorage.getItem(DELETED_TABLES_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
-  return [];
-}
-
-function saveDeletedTables(tables: DeletedTable[]) {
-  localStorage.setItem(DELETED_TABLES_KEY, JSON.stringify(tables));
-}
-
 // ═══════════════════════════════════════════════════
 // URL ↔ Selection helpers
 // ═══════════════════════════════════════════════════
@@ -132,6 +116,7 @@ function selectionFromURL(): Selection | null {
     if (!id) return null;
     if (id.startsWith('doc:')) return { type: 'doc', id: id.slice(4) };
     if (id.startsWith('table:')) return { type: 'table', id: id.slice(6) };
+    if (id.startsWith('board:')) return { type: 'board', id: id.slice(6) };
   } catch { /* SSR or invalid */ }
   return null;
 }
@@ -160,30 +145,38 @@ function buildContentLink(sel: Selection): string {
 
 export default function ContentPage() {
   const { t } = useT();
-  const [selection, setSelection] = useState<Selection>(() => {
-    // URL param takes priority over sessionStorage
-    const fromURL = selectionFromURL();
-    if (fromURL) return fromURL;
-    try {
-      const saved = sessionStorage.getItem('asuite-content-selection');
-      if (saved) return JSON.parse(saved);
-    } catch { /* ignore */ }
-    return null;
-  });
+  const [selection, setSelection] = useState<Selection>(null);
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [creating, setCreating] = useState(false);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(loadExpandedState()));
-  const [treeState, setTreeState] = useState<TreeState>(() => loadTreeState());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [treeState, setTreeState] = useState<TreeState>({ children: {}, parents: {} });
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<DropIntent>(null);
   const [sidebarView, setSidebarView] = useState<'library' | 'trash'>('library');
   const [showViewMenu, setShowViewMenu] = useState(false);
-  const [deletedTables, setDeletedTables] = useState<DeletedTable[]>(() => loadDeletedTables());
   const [deleteDialog, setDeleteDialog] = useState<{ nodeId: string; hasChildren: boolean } | null>(null);
   const [docListVisible, setDocListVisible] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
   const queryClient = useQueryClient();
+
+  // Hydrate client-only state after mount (avoid SSR mismatch)
+  useEffect(() => {
+    const fromURL = selectionFromURL();
+    if (fromURL) {
+      setSelection(fromURL);
+      setMobileView('detail');
+    } else {
+      try {
+        const saved = sessionStorage.getItem('asuite-content-selection');
+        if (saved) { setSelection(JSON.parse(saved)); setMobileView('detail'); }
+      } catch { /* ignore */ }
+    }
+    setExpandedIds(new Set(loadExpandedState()));
+    setTreeState(loadTreeState());
+    setHydrated(true);
+  }, []);
 
   // On mount: fetch tree state from Gateway (migration from localStorage)
   useEffect(() => {
@@ -195,34 +188,32 @@ export default function ContentPage() {
     }).catch(() => { /* Gateway unavailable — use localStorage */ });
   }, []);
 
-  const { data: docs, isLoading: docsLoading } = useQuery({
-    queryKey: ['outline-docs'],
-    queryFn: () => ol.listDocuments(),
-    staleTime: 5 * 60 * 1000, // Prevent background refetch from overwriting optimistic title updates
-    refetchOnWindowFocus: false, // Prevent window focus refetch from reverting optimistic titles
-    refetchOnReconnect: false, // Prevent network reconnect refetch from reverting titles
+  // Content items from Gateway SQLite (Gateway is source of truth)
+  const { data: contentItems, isLoading: contentLoading } = useQuery({
+    queryKey: ['content-items'],
+    queryFn: gw.listContentItems,
+    staleTime: 60 * 1000,
   });
+
+  // Derive icon map from content items
+  const customIcons = useMemo(() => {
+    if (!contentItems) return undefined;
+    const icons: Record<string, string> = {};
+    for (const i of contentItems) {
+      if (i.icon) icons[i.raw_id] = i.icon;
+    }
+    return icons;
+  }, [contentItems]);
 
   const { data: collections } = useQuery({
     queryKey: ['outline-collections'],
     queryFn: ol.listCollections,
-  });
-
-  const { data: tables, isLoading: tablesLoading } = useQuery({
-    queryKey: ['nc-tables'],
-    queryFn: nc.listTables,
-  });
-
-  // Custom doc icons stored in Gateway SQLite
-  const { data: customIcons } = useQuery({
-    queryKey: ['doc-icons'],
-    queryFn: gw.getDocIcons,
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: deletedDocs, isLoading: deletedLoading } = useQuery({
-    queryKey: ['outline-deleted-docs'],
-    queryFn: () => ol.listDeletedDocuments(),
+  const { data: deletedItems, isLoading: deletedLoading } = useQuery({
+    queryKey: ['content-items-deleted'],
+    queryFn: gw.listDeletedContentItems,
     enabled: sidebarView === 'trash',
     staleTime: 30 * 1000,
   });
@@ -235,6 +226,7 @@ export default function ContentPage() {
 
   const selectedDocId = selection?.type === 'doc' ? selection.id : null;
   const selectedTableId = selection?.type === 'table' ? selection.id : null;
+  const selectedBoardId = selection?.type === 'board' ? selection.id : null;
 
   const { data: selectedDoc } = useQuery({
     queryKey: ['outline-doc', selectedDocId],
@@ -244,38 +236,23 @@ export default function ContentPage() {
     refetchOnWindowFocus: false, // Prevent refetch from overwriting local editor state
   });
 
-  // Build unified node map
+  // Build unified node map directly from contentItems (Gateway is source of truth)
   const nodeMap = useMemo(() => {
     const map = new Map<string, ContentNode>();
-    (docs || []).forEach(doc => {
-      const nodeId = `doc:${doc.id}`;
-      map.set(nodeId, {
-        id: nodeId,
-        rawId: doc.id,
-        type: 'doc',
-        title: doc.title || t('content.untitled'),
-        emoji: customIcons?.[doc.id] || doc.icon || doc.emoji,
-        createdAt: new Date(doc.createdAt || 0).getTime(),
-        updatedAt: doc.updatedAt,
-        parentId: doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null,
+    for (const item of (contentItems || [])) {
+      map.set(item.id, {
+        id: item.id,
+        rawId: item.raw_id,
+        type: item.type as 'doc' | 'table' | 'board',
+        title: item.title || (item.type === 'doc' ? t('content.untitled') : item.type === 'table' ? t('content.untitledTable') : t('content.untitledBoard')),
+        emoji: item.icon || undefined,
+        createdAt: new Date(item.created_at || 0).getTime(),
+        updatedAt: item.updated_at || undefined,
+        parentId: item.parent_id,
       });
-    });
-    const deletedTableIds = new Set(deletedTables.map(dt => dt.id));
-    (tables || []).forEach(tbl => {
-      if (deletedTableIds.has(tbl.id)) return; // skip soft-deleted tables
-      const nodeId = `table:${tbl.id}`;
-      map.set(nodeId, {
-        id: nodeId,
-        rawId: tbl.id,
-        type: 'table',
-        title: tbl.title || t('content.untitledTable'),
-        emoji: customIcons?.[tbl.id],
-        createdAt: new Date(tbl.created_at || 0).getTime(),
-        parentId: null, // tables don't have native parent; use treeState
-      });
-    });
+    }
     return map;
-  }, [docs, tables, customIcons, deletedTables, t]);
+  }, [contentItems, t]);
 
   // Apply treeState parents to nodes (for tables parented under docs, etc.)
   const effectiveNodes = useMemo(() => {
@@ -432,73 +409,8 @@ export default function ContentPage() {
     if (isSelected) selectNearbyDoc(nodeId);
 
     try {
-      if (node.type === 'table') {
-        // Soft-delete table
-        const next = [...deletedTables, { id: node.rawId, title: node.title, deletedAt: new Date().toISOString() }];
-        setDeletedTables(next);
-        saveDeletedTables(next);
-        return;
-      }
-
-      // Doc deletion
-      if (mode === 'all') {
-        // Collect all descendant doc IDs recursively
-        const collectDescendants = (nid: string): string[] => {
-          const kids = childrenMap.get(nid) || [];
-          const result: string[] = [];
-          for (const kid of kids) {
-            const kidNode = effectiveNodes.get(kid);
-            if (kidNode?.type === 'doc') {
-              result.push(kidNode.rawId);
-              result.push(...collectDescendants(kid));
-            } else if (kidNode?.type === 'table') {
-              // Soft-delete child tables too
-              const nextDt = [...deletedTables, { id: kidNode.rawId, title: kidNode.title, deletedAt: new Date().toISOString() }];
-              setDeletedTables(nextDt);
-              saveDeletedTables(nextDt);
-            }
-          }
-          return result;
-        };
-        const descendantIds = collectDescendants(nodeId);
-        // Delete parent first, then descendants
-        await ol.deleteDocument(node.rawId);
-        for (const did of descendantIds) {
-          await ol.deleteDocument(did).catch(e => console.error('Delete descendant failed:', e));
-        }
-        queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-          (old || []).filter(d => d.id !== node.rawId && !descendantIds.includes(d.id))
-        );
-      } else {
-        // Mode: 'only' — move children up one level before deleting
-        const children = childrenMap.get(nodeId) || [];
-        const parentRawId = node.parentId
-          ? (effectiveNodes.get(node.parentId)?.type === 'doc' ? effectiveNodes.get(node.parentId)!.rawId : null)
-          : null;
-        // Move each child doc to the parent's level
-        for (const childId of children) {
-          const childNode = effectiveNodes.get(childId);
-          if (!childNode) continue;
-          if (childNode.type === 'doc') {
-            await ol.moveDocument(childNode.rawId, parentRawId).catch(e => console.error('Move child failed:', e));
-          } else if (childNode.type === 'table') {
-            // Update treeState parent for table
-            setTreeState(prev => {
-              const next = { children: { ...prev.children }, parents: { ...prev.parents } };
-              if (node.parentId) {
-                next.parents[childId] = node.parentId;
-              } else {
-                delete next.parents[childId];
-              }
-              saveTreeState(next);
-              return next;
-            });
-          }
-        }
-        // Now delete the parent doc
-        await ol.deleteDocument(node.rawId);
-        queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
-      }
+      await gw.deleteContentItem(nodeId, mode);
+      await queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (err) {
       console.error('Delete failed:', err);
     }
@@ -576,13 +488,12 @@ export default function ContentPage() {
   }, [rootIds, selection, effectiveNodes]);
 
   const refreshDocs = () => {
-    queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
+    queryClient.invalidateQueries({ queryKey: ['content-items'] });
     // Don't invalidate the individual doc query on save — the local state is authoritative.
-    // Refetching would replace original markdown with our serialized version, causing round-trip artifacts (e.g. trailing "\").
   };
 
   const refreshTables = () => {
-    queryClient.invalidateQueries({ queryKey: ['nc-tables'] });
+    queryClient.invalidateQueries({ queryKey: ['content-items'] });
   };
 
   const handleCreateDoc = async (parentNodeId?: string) => {
@@ -590,83 +501,23 @@ export default function ContentPage() {
     const collectionId = collections?.[0]?.id;
     if (!collectionId) return;
     setCreating(true);
-
-    // Optimistic: generate a temp ID and insert into cache immediately
-    const tempId = `temp-${Date.now()}`;
-    const optimisticDoc: ol.OLDocument = {
-      id: tempId,
-      title: '',
-      text: '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      publishedAt: null,
-      archivedAt: null,
-      deletedAt: null,
-      collectionId,
-      parentDocumentId: parentNodeId ? (effectiveNodes.get(parentNodeId)?.type === 'doc' ? effectiveNodes.get(parentNodeId)!.rawId : null) : null,
-      createdBy: { id: '', name: '' },
-      updatedBy: { id: '', name: '' },
-      revision: 0,
-    };
-
-    // Insert optimistic doc into cache
-    queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old => [...(old || []), optimisticDoc]);
-
-    if (parentNodeId) {
-      const parentNode = effectiveNodes.get(parentNodeId);
-      if (parentNode?.type === 'table') {
-        updateTreeParent(`doc:${tempId}`, parentNodeId);
-      }
-      setExpandedIds(prev => new Set(prev).add(parentNodeId));
-    }
-
     try {
-      let parentDocId: string | undefined;
+      const item = await gw.createContentItem({
+        type: 'doc',
+        title: '',
+        parent_id: parentNodeId || null,
+        collection_id: collectionId,
+      });
       if (parentNodeId) {
-        const parentNode = effectiveNodes.get(parentNodeId);
-        if (parentNode?.type === 'doc') parentDocId = parentNode.rawId;
+        setExpandedIds(prev => new Set(prev).add(parentNodeId));
       }
-      const doc = await ol.createDocument('', '', collectionId, parentDocId);
-
-      // Preserve any title/text the user typed while the create API was in-flight
-      // The temp doc in the cache may have been updated optimistically by DocPanel
-      const cachedDocs = queryClient.getQueryData<ol.OLDocument[]>(['outline-docs']);
-      const tempDoc = cachedDocs?.find(d => d.id === tempId);
-      const preservedTitle = tempDoc?.title || doc.title;
-      const preservedEmoji = tempDoc?.emoji || doc.emoji;
-      const realDoc = { ...doc, title: preservedTitle, emoji: preservedEmoji };
-
-      // Replace temp doc with real one in cache (preserving any user edits)
-      queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-        (old || []).map(d => d.id === tempId ? realDoc : d)
-      );
-      // Pre-populate individual doc cache so DocPanel remount picks up the preserved title
-      queryClient.setQueryData<ol.OLDocument>(['outline-doc', doc.id], realDoc);
-
-      // Fix treeState if parent was a table (replace temp ID)
-      if (parentNodeId && effectiveNodes.get(parentNodeId)?.type === 'table') {
-        setTreeState(prev => {
-          const next = { children: { ...prev.children }, parents: { ...prev.parents } };
-          delete next.parents[`doc:${tempId}`];
-          next.parents[`doc:${doc.id}`] = parentNodeId;
-          for (const [k, v] of Object.entries(next.children)) {
-            next.children[k] = v.map(id => id === `doc:${tempId}` ? `doc:${doc.id}` : id);
-          }
-          saveTreeState(next);
-          return next;
-        });
-      }
-
-      const sel = { type: 'doc' as const, id: doc.id };
+      await queryClient.invalidateQueries({ queryKey: ['content-items'] });
+      const sel = { type: 'doc' as const, id: item.raw_id };
       setSelection(sel);
       syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
       console.error('Create doc failed:', e);
-      // Remove optimistic doc on error
-      queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-        (old || []).filter(d => d.id !== tempId)
-      );
     } finally {
       setCreating(false);
     }
@@ -675,66 +526,46 @@ export default function ContentPage() {
   const handleCreateTable = async (parentNodeId?: string) => {
     if (creating) return;
     setCreating(true);
-
-    // Generate unique table title (NocoDB rejects duplicate names)
-    const baseTitle = t('content.untitledTable');
-    const existingTitles = new Set((tables || []).map(t => t.title));
-    let tableTitle = baseTitle;
-    if (existingTitles.has(tableTitle)) {
-      let suffix = 1;
-      while (existingTitles.has(`${baseTitle} ${suffix}`)) suffix++;
-      tableTitle = `${baseTitle} ${suffix}`;
-    }
-
-    // Optimistic: insert temp table into cache
-    const tempId = `temp-${Date.now()}`;
-    const optimisticTable: nc.NCTable = {
-      id: tempId,
-      title: tableTitle,
-      created_at: new Date().toISOString(),
-    };
-    queryClient.setQueryData<nc.NCTable[]>(['nc-tables'], old => [...(old || []), optimisticTable]);
-
-    if (parentNodeId) {
-      updateTreeParent(`table:${tempId}`, parentNodeId);
-      setExpandedIds(prev => new Set(prev).add(parentNodeId));
-    }
-
     try {
-      const table = await nc.createTable(tableTitle, [
-        { title: 'Name', uidt: 'SingleLineText' },
-        { title: 'Notes', uidt: 'LongText' },
-      ]);
-      const tableId = table.id || (table as any).table_id;
-
-      // Replace temp with real in cache
-      queryClient.setQueryData<nc.NCTable[]>(['nc-tables'], old =>
-        (old || []).map(t => t.id === tempId ? { ...table, id: tableId } : t)
-      );
-
-      // Fix treeState (replace temp ID)
+      const item = await gw.createContentItem({
+        type: 'table',
+        title: t('content.untitledTable'),
+        parent_id: parentNodeId || null,
+      });
       if (parentNodeId) {
-        setTreeState(prev => {
-          const next = { children: { ...prev.children }, parents: { ...prev.parents } };
-          delete next.parents[`table:${tempId}`];
-          next.parents[`table:${tableId}`] = parentNodeId;
-          for (const [k, v] of Object.entries(next.children)) {
-            next.children[k] = v.map(id => id === `table:${tempId}` ? `table:${tableId}` : id);
-          }
-          saveTreeState(next);
-          return next;
-        });
+        setExpandedIds(prev => new Set(prev).add(parentNodeId));
       }
-
-      const sel = { type: 'table' as const, id: tableId };
+      await queryClient.invalidateQueries({ queryKey: ['content-items'] });
+      const sel = { type: 'table' as const, id: item.raw_id };
       setSelection(sel);
       syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
       console.error('Create table failed:', e);
-      queryClient.setQueryData<nc.NCTable[]>(['nc-tables'], old =>
-        (old || []).filter(t => t.id !== tempId)
-      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleCreateBoard = async (parentNodeId?: string) => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const item = await gw.createContentItem({
+        type: 'board',
+        title: '',
+        parent_id: parentNodeId || null,
+      });
+      if (parentNodeId) {
+        setExpandedIds(prev => new Set(prev).add(parentNodeId));
+      }
+      await queryClient.invalidateQueries({ queryKey: ['content-items'] });
+      const sel = { type: 'board' as const, id: item.raw_id };
+      setSelection(sel);
+      syncSelectionToURL(sel);
+      setMobileView('detail');
+    } catch (e) {
+      console.error('Create board failed:', e);
     } finally {
       setCreating(false);
     }
@@ -755,7 +586,7 @@ export default function ContentPage() {
     });
   };
 
-  const isLoading = docsLoading || tablesLoading;
+  const isLoading = contentLoading;
 
   // DnD
   const sensors = useSensors(
@@ -1047,6 +878,14 @@ export default function ContentPage() {
                       <Table2 className="h-4 w-4 text-muted-foreground" />
                       {t('content.newTable')}
                     </button>
+                    <button
+                      onClick={() => { setShowNewMenu(false); handleCreateBoard(); }}
+                      disabled={creating}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                    >
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                      {t('content.newBoard')}
+                    </button>
                   </div>
                 </>
               )}
@@ -1113,6 +952,7 @@ export default function ContentPage() {
                         onToggle={toggleExpand}
                         onCreateDoc={handleCreateDoc}
                         onCreateTable={handleCreateTable}
+                        onCreateBoard={handleCreateBoard}
                         onRequestDelete={requestDelete}
                         depth={0}
                         creating={creating}
@@ -1150,15 +990,13 @@ export default function ContentPage() {
                 )}
                 {(() => {
                   if (deletedLoading) return null;
-                  // Merge docs + tables into a single sorted list by delete time (newest first)
-                  type TrashEntry = { key: string; type: 'doc' | 'table'; id: string; title: string; deletedAt: string };
-                  const entries: TrashEntry[] = [];
-                  (deletedDocs || []).forEach(doc => {
-                    entries.push({ key: `doc:${doc.id}`, type: 'doc', id: doc.id, title: doc.title, deletedAt: doc.deletedAt || doc.updatedAt || '' });
-                  });
-                  deletedTables.forEach(tbl => {
-                    entries.push({ key: `table:${tbl.id}`, type: 'table', id: tbl.id, title: tbl.title, deletedAt: tbl.deletedAt });
-                  });
+                  const entries = (deletedItems || []).map(item => ({
+                    key: item.id,
+                    type: item.type as 'doc' | 'table',
+                    nodeId: item.id,
+                    title: item.title,
+                    deletedAt: item.deleted_at || '',
+                  }));
                   entries.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
 
                   if (entries.length === 0) {
@@ -1180,35 +1018,17 @@ export default function ContentPage() {
                       deletedAt={entry.deletedAt}
                       onRestore={async () => {
                         try {
-                          if (entry.type === 'doc') {
-                            await ol.restoreDeletedDocument(entry.id);
-                            queryClient.invalidateQueries({ queryKey: ['outline-deleted-docs'] });
-                            queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
-                          } else {
-                            const next = deletedTables.filter(dt => dt.id !== entry.id);
-                            setDeletedTables(next);
-                            saveDeletedTables(next);
-                          }
+                          await gw.restoreContentItem(entry.nodeId);
+                          queryClient.invalidateQueries({ queryKey: ['content-items'] });
+                          queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
                         } catch (err) { console.error('Restore failed:', err); }
                       }}
                       onPermanentDelete={async () => {
-                        const msg = entry.type === 'doc'
-                          ? (t('content.permanentDeleteConfirm') || 'Permanently delete this document? This cannot be undone.')
-                          : (t('content.permanentDeleteConfirm') || 'Permanently delete this table? This cannot be undone.');
+                        const msg = t('content.permanentDeleteConfirm') || 'Permanently delete? This cannot be undone.';
                         if (!confirm(msg)) return;
                         try {
-                          if (entry.type === 'doc') {
-                            await ol.permanentlyDeleteDocument(entry.id);
-                            queryClient.setQueryData<ol.OLDocument[]>(['outline-deleted-docs'], old =>
-                              (old || []).filter(d => d.id !== entry.id)
-                            );
-                          } else {
-                            await nc.deleteTable(entry.id);
-                            const next = deletedTables.filter(dt => dt.id !== entry.id);
-                            setDeletedTables(next);
-                            saveDeletedTables(next);
-                            queryClient.invalidateQueries({ queryKey: ['nc-tables'] });
-                          }
+                          await gw.permanentlyDeleteContentItem(entry.nodeId);
+                          queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
                         } catch (err) { console.error('Permanent delete failed:', err); }
                       }}
                     />
@@ -1241,8 +1061,50 @@ export default function ContentPage() {
         ) : selectedTableId ? (
           <TableEditor
             tableId={selectedTableId}
+            breadcrumb={(() => {
+              const path: { id: string; title: string }[] = [];
+              let nodeId: string | null = `table:${selectedTableId}`;
+              while (nodeId) {
+                const node = effectiveNodes.get(nodeId);
+                if (!node) break;
+                path.unshift({ id: node.rawId, title: node.title });
+                nodeId = node.parentId;
+              }
+              return path;
+            })()}
             onBack={() => setMobileView('list')}
-            onDeleted={() => { setSelection(null); setMobileView('list'); }}
+            onDeleted={() => {
+              setSelection(null); setMobileView('list');
+              queryClient.invalidateQueries({ queryKey: ['content-items'] });
+            }}
+            onCopyLink={() => {
+              navigator.clipboard.writeText(buildContentLink({ type: 'table', id: selectedTableId }));
+            }}
+            docListVisible={docListVisible}
+            onToggleDocList={() => setDocListVisible(v => !v)}
+          />
+        ) : selectedBoardId ? (
+          <BoardEditor
+            boardId={selectedBoardId}
+            breadcrumb={(() => {
+              const path: { id: string; title: string }[] = [];
+              let nodeId: string | null = `board:${selectedBoardId}`;
+              while (nodeId) {
+                const node = effectiveNodes.get(nodeId);
+                if (!node) break;
+                path.unshift({ id: node.rawId, title: node.title });
+                nodeId = node.parentId;
+              }
+              return path;
+            })()}
+            onBack={() => setMobileView('list')}
+            onDeleted={() => {
+              setSelection(null); setMobileView('list');
+              queryClient.invalidateQueries({ queryKey: ['content-items'] });
+            }}
+            onCopyLink={() => {
+              navigator.clipboard.writeText(buildContentLink({ type: 'board', id: selectedBoardId }));
+            }}
             docListVisible={docListVisible}
             onToggleDocList={() => setDocListVisible(v => !v)}
           />
@@ -1251,6 +1113,7 @@ export default function ContentPage() {
             <div className="flex gap-3 mb-2">
               <FileText className="h-8 w-8 opacity-20" />
               <Table2 className="h-8 w-8 opacity-20" />
+              <Pencil className="h-8 w-8 opacity-20" />
             </div>
             <p className="text-sm">{t('content.selectHint')}</p>
             <p className="text-xs text-muted-foreground/50">{t('content.createHint')}</p>
@@ -1303,7 +1166,7 @@ export default function ContentPage() {
 
 function TreeNodeRecursive({
   nodeId, nodes, childrenMap, selection, expandedIds, onSelect, onToggle,
-  onCreateDoc, onCreateTable, onRequestDelete, depth, creating, dropIntent, dragActiveId,
+  onCreateDoc, onCreateTable, onCreateBoard, onRequestDelete, depth, creating, dropIntent, dragActiveId,
 }: {
   nodeId: string;
   nodes: Map<string, ContentNode>;
@@ -1314,6 +1177,7 @@ function TreeNodeRecursive({
   onToggle: (id: string) => void;
   onCreateDoc: (parentId?: string) => void;
   onCreateTable: (parentId?: string) => void;
+  onCreateBoard: (parentId?: string) => void;
   onRequestDelete: (nodeId: string) => void;
   depth: number;
   creating: boolean;
@@ -1345,7 +1209,8 @@ function TreeNodeRecursive({
         depth={depth}
         onCreateChild={(type) => {
           if (type === 'doc') onCreateDoc(nodeId);
-          else onCreateTable(nodeId);
+          else if (type === 'table') onCreateTable(nodeId);
+          else onCreateBoard(nodeId);
         }}
         onRequestDelete={onRequestDelete}
         creating={creating}
@@ -1366,6 +1231,7 @@ function TreeNodeRecursive({
               onToggle={onToggle}
               onCreateDoc={onCreateDoc}
               onCreateTable={onCreateTable}
+              onCreateBoard={onCreateBoard}
               onRequestDelete={onRequestDelete}
               depth={depth + 1}
               creating={creating}
@@ -1394,7 +1260,7 @@ function DraggableTreeNode({
   isExpanded: boolean;
   onToggle: () => void;
   depth: number;
-  onCreateChild: (type: 'doc' | 'table') => void;
+  onCreateChild: (type: 'doc' | 'table' | 'board') => void;
   onRequestDelete: (nodeId: string) => void;
   creating?: boolean;
   dropPosition?: 'before' | 'after' | 'inside' | null;
@@ -1426,45 +1292,9 @@ function DraggableTreeNode({
 
   const handleIconSelect = async (selectedEmoji: string | null) => {
     setShowIconPicker(false);
-    if (node.type === 'table') {
-      // Tables store icons in doc_icons NocoDB table (reusing same mechanism)
-      const tableId = node.rawId;
-      // Optimistic update
-      queryClient.setQueryData<Record<string, string>>(['doc-icons'], old => {
-        const next = { ...(old || {}) };
-        if (selectedEmoji) next[tableId] = selectedEmoji;
-        else delete next[tableId];
-        return next;
-      });
-      try {
-        if (selectedEmoji) {
-          await gw.setDocIcon(tableId, selectedEmoji);
-        } else {
-          await gw.removeDocIcon(tableId);
-        }
-        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
-      } catch (e) {
-        console.error('Failed to update table icon:', e);
-      }
-      return;
-    }
-    if (node.type !== 'doc') return;
-    const docId = node.rawId;
-    // Optimistic update
-    queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-      (old || []).map(d => d.id === docId ? { ...d, emoji: selectedEmoji || undefined } : d)
-    );
-    const isUrl = selectedEmoji && (selectedEmoji.startsWith('/api/') || selectedEmoji.startsWith('http'));
     try {
-      if (isUrl) {
-        await ol.updateDocument(docId, undefined, undefined, null);
-        await gw.setDocIcon(docId, selectedEmoji);
-        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
-      } else {
-        await ol.updateDocument(docId, undefined, undefined, selectedEmoji);
-        try { await gw.removeDocIcon(docId); } catch { /* ignore */ }
-        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
-      }
+      await gw.updateContentItem(node.id, { icon: selectedEmoji || null });
+      queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (e) {
       console.error('Failed to update icon:', e);
     }
@@ -1547,6 +1377,8 @@ function DraggableTreeNode({
               )
             ) : node.type === 'table'
               ? <Table2 className={cn('h-4 w-4', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+              : node.type === 'board'
+              ? <Pencil className={cn('h-4 w-4', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
               : <FileText className={cn('h-4 w-4', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
             }
           </button>
@@ -1601,6 +1433,14 @@ function DraggableTreeNode({
                     <Table2 className="h-3.5 w-3.5 text-muted-foreground" />
                     {t('content.newTable')}
                   </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowAddMenu(false); onCreateChild('board'); }}
+                    disabled={creating}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                    {t('content.newBoard')}
+                  </button>
                 </div>
               </>
             )}
@@ -1618,35 +1458,7 @@ function DraggableTreeNode({
               <>
                 <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); }} />
                 <div ref={moreMenuRef} className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 w-40 overflow-y-auto" style={getMenuPos(moreBtnRef, moreMenuRef, 160)}>
-                  {node.type === 'doc' && (
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        setShowMoreMenu(false);
-                        try {
-                          const newDoc = await ol.duplicateDocument(node.rawId);
-                          queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old => [...(old || []), newDoc]);
-                        } catch (err) { console.error('Duplicate failed:', err); }
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors"
-                    >
-                      <CopyPlus className="h-3.5 w-3.5 text-muted-foreground" />
-                      {t('content.duplicate')}
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowMoreMenu(false);
-                      // Copy to clipboard
-                      navigator.clipboard.writeText(node.title).catch(() => {});
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors"
-                  >
-                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                    {t('content.copy')}
-                  </button>
-                  <div className="border-t border-border my-1" />
+                  <div className="border-t border-border my-0.5" />
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1706,6 +1518,8 @@ function TreeNodeItem({
         )
       ) : node.type === 'table'
         ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
+        : node.type === 'board'
+        ? <Pencil className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
         : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
       }
       <span className="truncate">{node.title}</span>
@@ -1850,11 +1664,11 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
-  // Optimistically update sidebar doc list cache when title/emoji change
+  // Update sidebar doc list via Gateway when title/emoji change
   const updateDocCache = useCallback((newTitle: string, newEmoji: string | null) => {
-    queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-      (old || []).map(d => d.id === doc.id ? { ...d, title: newTitle, emoji: newEmoji || undefined } : d)
-    );
+    gw.updateContentItem(`doc:${doc.id}`, { title: newTitle, icon: newEmoji }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ['content-items'] });
+    }).catch(() => {});
   }, [doc.id, queryClient]);
 
   useEffect(() => {
@@ -2002,9 +1816,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
       queryClient.setQueryData<ol.OLDocument>(['outline-doc', saveDocId], (old) =>
         old ? { ...old, title: confirmedTitle, text: savingText, emoji: confirmedEmoji } : old
       );
-      queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old =>
-        (old || []).map(d => d.id === saveDocId ? { ...d, title: confirmedTitle, emoji: confirmedEmoji || undefined } : d)
-      );
+      queryClient.invalidateQueries({ queryKey: ['content-items'] });
       if (saveDocId === docIdRef.current) {
         setSaveStatus('saved');
       }
@@ -2071,7 +1883,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
       scheduleTitleSave(title, null);
       try {
         await gw.setDocIcon(doc.id, selectedEmoji);
-        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
+        queryClient.invalidateQueries({ queryKey: ['content-items'] });
       } catch (e) {
         console.error('Failed to save custom icon:', e);
       }
@@ -2080,7 +1892,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
       scheduleTitleSave(title, selectedEmoji);
       try {
         await gw.removeDocIcon(doc.id);
-        queryClient.invalidateQueries({ queryKey: ['doc-icons'] });
+        queryClient.invalidateQueries({ queryKey: ['content-items'] });
       } catch (e) {
         // Ignore if no custom icon existed
       }
@@ -2168,15 +1980,6 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
                 <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
                   <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => { setShowDocMenu(false); setShowHistory(true); }} />
                   <DocMenuBtn icon={Link2} label={t('content.copyLink')} onClick={() => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); setShowDocMenu(false); }} />
-                  <DocMenuBtn icon={Copy} label={t('content.copy')} onClick={() => { navigator.clipboard.writeText(doc.text); setShowDocMenu(false); }} />
-                  <DocMenuBtn icon={CopyPlus} label={t('content.duplicate')} onClick={async () => {
-                    setShowDocMenu(false);
-                    try {
-                      const newDoc = await ol.duplicateDocument(doc.id);
-                      queryClient.setQueryData<ol.OLDocument[]>(['outline-docs'], old => [...(old || []), newDoc]);
-                      onNavigate(newDoc.id);
-                    } catch (e) { console.error('Duplicate failed:', e); }
-                  }} />
                   <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
                     const blob = new Blob([doc.text], { type: 'text/markdown' });
                     const url = URL.createObjectURL(blob);
@@ -2380,7 +2183,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
           onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
           onRestored={async () => {
             await queryClient.invalidateQueries({ queryKey: ['outline-doc', doc.id] });
-            await queryClient.invalidateQueries({ queryKey: ['outline-docs'] });
+            await queryClient.invalidateQueries({ queryKey: ['content-items'] });
             const restored = await queryClient.fetchQuery({ queryKey: ['outline-doc', doc.id], queryFn: () => ol.getDocument(doc.id) });
             setTitle(restored.title);
             setText(restored.text);
