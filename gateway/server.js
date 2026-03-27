@@ -160,6 +160,23 @@ try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_doc_revisions_doc ON document_revisions(document_id)`);
 } catch { /* already exists */ }
 
+// Migrate: create document_comments table
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS document_comments (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    parent_id TEXT,
+    data_json TEXT,
+    actor TEXT,
+    actor_id TEXT,
+    resolved_by TEXT,
+    resolved_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_doc_comments_doc ON document_comments(document_id)`);
+} catch { /* already exists */ }
+
 // ─── Helpers ─────────────────────────────────────
 function genId(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -443,27 +460,98 @@ app.patch('/api/docs/:doc_id', authenticateAgent, (req, res) => {
   res.json({ doc_id: req.params.doc_id, updated_at: new Date(now).getTime() });
 });
 
-// ─── Comments (stub — full implementation in Task 3) ────────────────────────
-// TODO(Task 3): implement document_comments table and full CRUD
+// ─── Agent-facing comment endpoints ─────────────────────────────────────────
+
+// POST /api/comments — agent posts a comment on a document (plain text → ProseMirror)
 app.post('/api/comments', authenticateAgent, (req, res) => {
   const { doc_id, text, parent_comment_id } = req.body;
   if (!doc_id || !text) {
     return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'doc_id and text required' });
   }
-  // Stub: return empty success until Task 3 implements document_comments table
+
+  const doc = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(doc_id);
+  if (!doc) return res.status(404).json({ error: 'DOC_NOT_FOUND' });
+
+  const agent = req.agent;
   const commentId = genId('cmt');
   const now = new Date().toISOString();
+
+  // Convert plain text to minimal ProseMirror JSON
+  const pmData = {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  };
+
+  db.prepare(`INSERT INTO document_comments (id, document_id, parent_id, data_json, actor, actor_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(commentId, doc_id, parent_comment_id || null, JSON.stringify(pmData),
+      agent.display_name || agent.name, agent.id, now, now);
+
+  // @mention detection
+  try {
+    const allAgents = db.prepare('SELECT * FROM agent_accounts').all();
+    const nowMs = Date.now();
+    for (const target of allAgents) {
+      if (target.id === agent.id) continue;
+      const mentionName = new RegExp(`@${target.name}(?![\\w-])`, 'i');
+      const mentionDisplay = target.display_name ? new RegExp(`@${target.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i') : null;
+      if (!mentionName.test(text) && !(mentionDisplay && mentionDisplay.test(text))) continue;
+
+      const cleanText = text.replace(new RegExp(`@${target.name}(?![\\w-])\\s*`, 'gi'), '').trim();
+      const evt = {
+        event: 'doc.commented',
+        source: 'document_comments',
+        event_id: genId('evt'),
+        timestamp: nowMs,
+        data: {
+          comment_id: commentId,
+          doc_id,
+          parent_id: parent_comment_id || null,
+          text: cleanText,
+          raw_text: text,
+          sender: { name: agent.display_name || agent.name, type: agent.type || 'agent' },
+        },
+      };
+      db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(evt.event_id, target.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), nowMs);
+      pushEvent(target.id, evt);
+      if (target.webhook_url) deliverWebhook(target, evt).catch(() => {});
+      console.log(`[gateway] Event ${evt.event} → ${target.name} (doc: ${doc_id})`);
+    }
+  } catch (e) {
+    console.error(`[gateway] Doc comment notification error: ${e.message}`);
+  }
+
   res.status(201).json({
     comment_id: commentId,
     doc_id,
+    parent_comment_id: parent_comment_id || null,
+    actor: agent.display_name || agent.name,
+    actor_id: agent.id,
     created_at: new Date(now).getTime(),
   });
 });
 
-// List document comments (stub — full implementation in Task 3)
-// TODO(Task 3): query document_comments table
+// GET /api/docs/:doc_id/comments — list comments for a document (agent-facing, simplified)
 app.get('/api/docs/:doc_id/comments', authenticateAgent, (req, res) => {
-  res.json({ comments: [] });
+  const rows = db.prepare(
+    'SELECT * FROM document_comments WHERE document_id = ? ORDER BY created_at ASC'
+  ).all(req.params.doc_id);
+
+  const comments = rows.map(r => {
+    let pmData = null;
+    try { pmData = JSON.parse(r.data_json); } catch { /* ignore */ }
+    return {
+      id: r.id,
+      text: extractTextFromProseMirror(pmData),
+      actor: r.actor,
+      parent_id: r.parent_id,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+    };
+  });
+
+  res.json({ comments });
 });
 
 function extractTextFromProseMirror(pmData) {
@@ -676,6 +764,142 @@ app.post('/api/documents/:id/revisions/:revisionId/restore', authenticateAgent, 
 
   const updated = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
   res.json(updated);
+});
+
+// ─── Document Comments (Shell-facing) ───────────────────────────────────────
+
+function formatDocComment(r) {
+  let pmData = null;
+  try { pmData = JSON.parse(r.data_json); } catch { /* ignore */ }
+  return {
+    id: r.id,
+    documentId: r.document_id,
+    parentCommentId: r.parent_id || null,
+    data: pmData,
+    createdById: r.actor_id || '',
+    createdBy: { id: r.actor_id || '', name: r.actor || '' },
+    resolvedById: r.resolved_by || null,
+    resolvedBy: r.resolved_by ? { id: r.resolved_by, name: r.resolved_by } : null,
+    resolvedAt: r.resolved_at || null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+// GET /api/documents/:id/comments — list comments for a document
+app.get('/api/documents/:id/comments', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT id FROM documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const rows = db.prepare(
+    'SELECT * FROM document_comments WHERE document_id = ? ORDER BY created_at ASC'
+  ).all(req.params.id);
+
+  res.json({ data: rows.map(formatDocComment) });
+});
+
+// POST /api/documents/:id/comments — create comment
+app.post('/api/documents/:id/comments', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { data, parent_comment_id } = req.body;
+  if (!data) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'data (ProseMirror JSON) required' });
+
+  const agent = req.agent;
+  const commentId = genId('cmt');
+  const now = new Date().toISOString();
+  const nowMs = Date.now();
+
+  db.prepare(`INSERT INTO document_comments (id, document_id, parent_id, data_json, actor, actor_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(commentId, req.params.id, parent_comment_id || null, JSON.stringify(data),
+      agent.display_name || agent.name, agent.id, now, now);
+
+  // @mention detection
+  try {
+    const commentText = extractTextFromProseMirror(data);
+    const allAgents = db.prepare('SELECT * FROM agent_accounts').all();
+    for (const target of allAgents) {
+      if (target.id === agent.id) continue;
+      const mentionName = new RegExp(`@${target.name}(?![\\w-])`, 'i');
+      const mentionDisplay = target.display_name
+        ? new RegExp(`@${target.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i')
+        : null;
+      if (!mentionName.test(commentText) && !(mentionDisplay && mentionDisplay.test(commentText))) continue;
+
+      const cleanText = commentText.replace(new RegExp(`@${target.name}(?![\\w-])\\s*`, 'gi'), '').trim();
+      const evt = {
+        event: 'doc.commented',
+        source: 'document_comments',
+        event_id: genId('evt'),
+        timestamp: nowMs,
+        data: {
+          comment_id: commentId,
+          doc_id: req.params.id,
+          parent_id: parent_comment_id || null,
+          text: cleanText,
+          raw_text: commentText,
+          sender: { name: agent.display_name || agent.name, type: agent.type || 'agent' },
+        },
+      };
+      db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(evt.event_id, target.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), nowMs);
+      pushEvent(target.id, evt);
+      if (target.webhook_url) deliverWebhook(target, evt).catch(() => {});
+      console.log(`[gateway] Event ${evt.event} → ${target.name} (doc: ${req.params.id})`);
+    }
+  } catch (e) {
+    console.error(`[gateway] Doc comment mention error: ${e.message}`);
+  }
+
+  const inserted = db.prepare('SELECT * FROM document_comments WHERE id = ?').get(commentId);
+  res.status(201).json(formatDocComment(inserted));
+});
+
+// PATCH /api/documents/comments/:commentId — update comment data
+app.patch('/api/documents/comments/:commentId', authenticateAgent, (req, res) => {
+  const { data } = req.body;
+  if (!data) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'data (ProseMirror JSON) required' });
+
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    'UPDATE document_comments SET data_json = ?, updated_at = ? WHERE id = ?'
+  ).run(JSON.stringify(data), now, req.params.commentId);
+  if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const updated = db.prepare('SELECT * FROM document_comments WHERE id = ?').get(req.params.commentId);
+  res.json(formatDocComment(updated));
+});
+
+// DELETE /api/documents/comments/:commentId — delete comment
+app.delete('/api/documents/comments/:commentId', authenticateAgent, (req, res) => {
+  const result = db.prepare('DELETE FROM document_comments WHERE id = ?').run(req.params.commentId);
+  if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json({ deleted: true });
+});
+
+// POST /api/documents/comments/:commentId/resolve — mark resolved
+app.post('/api/documents/comments/:commentId/resolve', authenticateAgent, (req, res) => {
+  const agent = req.agent;
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    'UPDATE document_comments SET resolved_by = ?, resolved_at = ?, updated_at = ? WHERE id = ?'
+  ).run(agent.display_name || agent.name, now, now, req.params.commentId);
+  if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+  const updated = db.prepare('SELECT * FROM document_comments WHERE id = ?').get(req.params.commentId);
+  res.json(formatDocComment(updated));
+});
+
+// POST /api/documents/comments/:commentId/unresolve — unmark resolved
+app.post('/api/documents/comments/:commentId/unresolve', authenticateAgent, (req, res) => {
+  const now = new Date().toISOString();
+  const result = db.prepare(
+    'UPDATE document_comments SET resolved_by = NULL, resolved_at = NULL, updated_at = ? WHERE id = ?'
+  ).run(now, req.params.commentId);
+  if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+  const updated = db.prepare('SELECT * FROM document_comments WHERE id = ?').get(req.params.commentId);
+  res.json(formatDocComment(updated));
 });
 
 // ─── Tasks (Plane) ──────────────────────────────
