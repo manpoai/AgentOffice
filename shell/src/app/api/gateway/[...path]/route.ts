@@ -64,8 +64,13 @@ async function proxy(req: NextRequest, pathParts: string[], hasBody?: boolean) {
   });
 
   const data = await resp.arrayBuffer();
-  return new NextResponse(data, {
-    status: resp.status,
-    headers: { 'Content-Type': resp.headers.get('Content-Type') || 'application/json' },
-  });
+  const contentType = resp.headers.get('Content-Type') || 'application/json';
+  const respHeaders: Record<string, string> = { 'Content-Type': contentType };
+
+  // Cache uploaded files (images, etc.)
+  if (pathParts[0] === 'uploads' && (contentType.startsWith('image/') || contentType.startsWith('application/'))) {
+    respHeaders['Cache-Control'] = 'public, max-age=31536000, immutable';
+  }
+
+  return new NextResponse(data, { status: resp.status, headers: respHeaders });
 }

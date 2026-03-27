@@ -5,7 +5,7 @@
 import { Plugin } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Schema } from 'prosemirror-model';
-import * as ol from '@/lib/api/outline';
+import * as docApi from '@/lib/api/documents';
 
 /** Find a valid block-level insertion position at or near `pos`. */
 function findInsertPos(view: EditorView, pos: number): number {
@@ -70,8 +70,8 @@ export async function uploadAndInsert(view: EditorView, file: File, rawPos: numb
     view.dispatch(tr);
 
     try {
-      const result = await ol.uploadAttachment(uploadFile, docId);
-      const url = result.data.url;
+      const result = await docApi.uploadFile(uploadFile, docId);
+      const url = result.url;
 
       // Find and replace the placeholder image
       let found = false;

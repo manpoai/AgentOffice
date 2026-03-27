@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { MessageSquare, FileText, CheckSquare, Users, Settings, Search, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as gw from '@/lib/api/gateway';
-import * as ol from '@/lib/api/outline';
+import type { Document as DocType } from '@/lib/api/documents';
 import { useT } from '@/lib/i18n';
 
 interface CommandItem {
@@ -30,11 +30,10 @@ export function CommandPalette() {
   const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: gw.listTasks, staleTime: 30_000 });
   const { data: contentItems } = useQuery({ queryKey: ['content-items'], queryFn: gw.listContentItems, staleTime: 30_000 });
   const docs = useMemo(() => contentItems?.filter(i => i.type === 'doc').map(i => ({
-    id: i.raw_id, title: i.title, text: '', icon: i.icon || undefined, createdAt: i.created_at || '',
-    updatedAt: i.updated_at || '', publishedAt: null, archivedAt: null, deletedAt: null,
-    collectionId: i.collection_id || '', parentDocumentId: i.parent_id?.startsWith('doc:') ? i.parent_id.slice(4) : null,
-    createdBy: { id: '', name: i.created_by || '' }, updatedBy: { id: '', name: i.updated_by || '' }, revision: 0,
-  } as ol.OLDocument)), [contentItems]);
+    id: i.raw_id, title: i.title, text: '', icon: i.icon || undefined,
+    full_width: false, created_by: i.created_by || null, updated_by: i.updated_by || null,
+    created_at: i.created_at || '', updated_at: i.updated_at || '',
+  } as DocType)), [contentItems]);
   const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: gw.listAgents, staleTime: 30_000 });
 
   // Listen for Cmd+K / Ctrl+K
