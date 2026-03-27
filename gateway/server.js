@@ -177,6 +177,21 @@ try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_doc_comments_doc ON document_comments(document_id)`);
 } catch { /* already exists */ }
 
+// Migrate: FTS5 virtual table and sync triggers for documents
+db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+  id UNINDEXED, title, text, content='documents', content_rowid='rowid'
+)`);
+db.exec(`CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
+  INSERT INTO documents_fts(id, title, text) VALUES (new.id, new.title, new.text);
+END`);
+db.exec(`CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
+  DELETE FROM documents_fts WHERE id = old.id;
+  INSERT INTO documents_fts(id, title, text) VALUES (new.id, new.title, new.text);
+END`);
+db.exec(`CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
+  DELETE FROM documents_fts WHERE id = old.id;
+END`);
+
 // ─── Helpers ─────────────────────────────────────
 function genId(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -582,29 +597,79 @@ app.get('/api/docs', authenticateAgent, (req, res) => {
   const { query, limit = '25' } = req.query;
   const lim = Math.min(parseInt(limit) || 25, 100);
 
-  let docs;
   if (query) {
-    // LIKE-based search (FTS5 added in Task 5)
-    const pattern = `%${query}%`;
-    docs = db.prepare(
-      `SELECT * FROM documents WHERE deleted_at IS NULL AND (title LIKE ? OR text LIKE ?) ORDER BY updated_at DESC LIMIT ?`
-    ).all(pattern, pattern, lim);
-  } else {
-    docs = db.prepare(
-      `SELECT * FROM documents WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?`
-    ).all(lim);
+    try {
+      const docs = db.prepare(`
+        SELECT d.*, snippet(documents_fts, 2, '', '', '...', 40) as context
+        FROM documents_fts fts JOIN documents d ON d.id = fts.id
+        WHERE documents_fts MATCH ? AND d.deleted_at IS NULL
+        ORDER BY rank LIMIT ?
+      `).all(query, lim);
+      return res.json({ docs: docs.map(d => ({ doc_id: d.id, title: d.title, url: null, snippet: d.context, collection_id: null, updated_at: new Date(d.updated_at).getTime() })) });
+    } catch {
+      // fallback to LIKE
+      const docs = db.prepare('SELECT * FROM documents WHERE deleted_at IS NULL AND (title LIKE ? OR text LIKE ?) ORDER BY updated_at DESC LIMIT ?').all(`%${query}%`, `%${query}%`, lim);
+      return res.json({ docs: docs.map(d => ({ doc_id: d.id, title: d.title, url: null, snippet: d.text?.substring(0, 200), collection_id: null, updated_at: new Date(d.updated_at).getTime() })) });
+    }
   }
+
+  const docs = db.prepare(
+    `SELECT * FROM documents WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?`
+  ).all(lim);
 
   res.json({
     docs: docs.map(d => ({
       doc_id: d.id,
       title: d.title,
+      url: null,
+      snippet: null,
+      collection_id: null,
       updated_at: new Date(d.updated_at).getTime(),
     })),
   });
 });
 
 // ─── Documents (new /api/documents namespace) ───────────────────────────────
+// GET /api/documents/search — FTS5 full-text search (must be before /:id)
+app.get('/api/documents/search', authenticateAgent, (req, res) => {
+  const { q, limit = '25' } = req.query;
+  if (!q) return res.status(400).json({ error: 'MISSING_QUERY' });
+  const lim = Math.min(parseInt(limit) || 25, 100);
+
+  try {
+    const results = db.prepare(`
+      SELECT d.*, snippet(documents_fts, 2, '<mark>', '</mark>', '...', 40) as context
+      FROM documents_fts fts
+      JOIN documents d ON d.id = fts.id
+      WHERE documents_fts MATCH ? AND d.deleted_at IS NULL
+      ORDER BY rank
+      LIMIT ?
+    `).all(q, lim);
+
+    res.json({
+      data: results.map(r => ({
+        document: {
+          id: r.id, title: r.title, text: r.text, icon: r.icon,
+          full_width: !!r.full_width,
+          created_by: r.created_by, updated_by: r.updated_by,
+          created_at: r.created_at, updated_at: r.updated_at,
+        },
+        context: r.context,
+      })),
+    });
+  } catch (e) {
+    // Fallback for invalid FTS syntax
+    const results = db.prepare('SELECT * FROM documents WHERE deleted_at IS NULL AND (title LIKE ? OR text LIKE ?) ORDER BY updated_at DESC LIMIT ?')
+      .all(`%${q}%`, `%${q}%`, lim);
+    res.json({
+      data: results.map(r => ({
+        document: { id: r.id, title: r.title, text: r.text, icon: r.icon, full_width: !!r.full_width, created_by: r.created_by, updated_by: r.updated_by, created_at: r.created_at, updated_at: r.updated_at },
+        context: r.text?.substring(0, 200) || '',
+      })),
+    });
+  }
+});
+
 // GET /api/documents/:id — read single document (full content)
 app.get('/api/documents/:id', authenticateAgent, (req, res) => {
   const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
@@ -2891,6 +2956,49 @@ app.post('/api/agents/:name/avatar', authenticateAgent, avatarUpload.single('ava
   const avatarUrl = `/api/gateway/uploads/avatars/${req.file.filename}`;
   db.prepare('UPDATE agent_accounts SET avatar_url = ?, updated_at = ? WHERE id = ?').run(avatarUrl, Date.now(), target.id);
   res.json({ ok: true, avatar_url: avatarUrl });
+});
+
+// ─── File Upload (general) ───────────────────────
+const UPLOADS_DIR = path.join(__dirname, 'uploads', 'files');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const fileUploadStorage = multer({
+  storage: multer.diskStorage({
+    destination: UPLOADS_DIR,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname) || '.bin';
+      const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+      cb(null, name);
+    },
+  }),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
+app.post('/api/uploads', authenticateAgent, fileUploadStorage.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
+  const url = `/api/uploads/files/${req.file.filename}`;
+  res.status(201).json({
+    url,
+    name: req.file.originalname,
+    size: req.file.size,
+    content_type: req.file.mimetype,
+  });
+});
+
+app.get('/api/uploads/files/:filename', (req, res) => {
+  const filePath = path.join(UPLOADS_DIR, req.params.filename);
+  if (!filePath.startsWith(UPLOADS_DIR)) return res.status(403).json({ error: 'FORBIDDEN' });
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf', '.mp4': 'video/mp4',
+  };
+  res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  fs.createReadStream(filePath).pipe(res);
 });
 
 // Helper: find Town Square channel ID
