@@ -2,7 +2,7 @@
 /**
  * ASuite API Gateway
  * Implements Agent接入协议v1: registration, messages, docs, tasks, events
- * Routes operations to Mattermost / Outline / Plane
+ * Routes operations to Mattermost / Plane, with local SQLite for docs
  */
 
 import express from 'express';
@@ -19,8 +19,7 @@ const PORT = process.env.GATEWAY_PORT || 4000;
 // Upstream service URLs and tokens
 const MM_URL = process.env.MM_URL || 'http://localhost:8065';
 const MM_ADMIN_TOKEN = process.env.MM_ADMIN_TOKEN;
-// const OL_URL = process.env.OL_URL || 'http://localhost:3000'; // removed — Task 1
-// const OL_TOKEN = process.env.OL_TOKEN; // removed — Task 1
+// Outline removed — documents now stored in local SQLite (see migration script in scripts/)
 const PLANE_URL = process.env.PLANE_URL || 'http://localhost:8000';
 const PLANE_TOKEN = process.env.PLANE_TOKEN;
 const PLANE_WORKSPACE = process.env.PLANE_WORKSPACE || 'asuite';
@@ -3118,8 +3117,8 @@ app.delete('/api/doc-icons/:doc_id', authenticateAgent, (req, res) => {
 });
 
 // ─── Content Items (unified sidebar metadata) ─────
-// Sync doc/table metadata from Outline + NocoDB into content_items table
-// Shell reads from here instead of calling Outline + NocoDB + doc-icons separately
+// Sync doc/table metadata from local documents + NocoDB into content_items table
+// Shell reads from here for the unified sidebar tree
 
 const contentItemsUpsert = db.prepare(`
   INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, collection_id, created_by, updated_by, created_at, updated_at, deleted_at, synced_at)
