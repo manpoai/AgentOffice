@@ -2829,6 +2829,68 @@ async function syncContentItems() {
   console.log(`[gateway] Content sync done: ${docCount} docs, ${tableCount} tables`);
 }
 
+// ─── Boards (Excalidraw) ─────────────────────────
+// API: create a board
+app.post('/api/boards', authenticateAgent, (req, res) => {
+  const { title = '' } = req.body;
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  const agentName = req.agent?.name || null;
+  const defaultData = JSON.stringify({
+    type: 'excalidraw',
+    version: 2,
+    source: 'asuite',
+    elements: [],
+    appState: {},
+    files: {},
+  });
+
+  db.prepare(`INSERT INTO boards (id, data_json, created_by, updated_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)`).run(id, defaultData, agentName, agentName, now, now);
+
+  // Create content_item entry
+  const nodeId = `board:${id}`;
+  const isoNow = new Date().toISOString();
+  contentItemsUpsert.run(
+    nodeId, id, 'board', title || '',
+    null, req.body.parent_id || null, null,
+    agentName, agentName, isoNow, isoNow, null, Date.now()
+  );
+
+  const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+  res.status(201).json({ board_id: id, item });
+});
+
+// API: get board data
+app.get('/api/boards/:id', authenticateAgent, (req, res) => {
+  const board = db.prepare('SELECT * FROM boards WHERE id = ?').get(req.params.id);
+  if (!board) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json({
+    id: board.id,
+    data: JSON.parse(board.data_json),
+    created_by: board.created_by,
+    updated_by: board.updated_by,
+    created_at: board.created_at,
+    updated_at: board.updated_at,
+  });
+});
+
+// API: save board data (auto-save from frontend)
+app.patch('/api/boards/:id', authenticateAgent, (req, res) => {
+  const board = db.prepare('SELECT * FROM boards WHERE id = ?').get(req.params.id);
+  if (!board) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { data } = req.body;
+  if (!data) return res.status(400).json({ error: 'MISSING_DATA' });
+
+  const now = Date.now();
+  const agentName = req.agent?.name || null;
+  db.prepare('UPDATE boards SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+    .run(JSON.stringify(data), agentName, now, req.params.id);
+
+  res.json({ saved: true, updated_at: now });
+});
+
 // API: list content items for sidebar (or trash)
 app.get('/api/content-items', authenticateAgent, (req, res) => {
   if (req.query.deleted === 'true') {
@@ -2842,8 +2904,8 @@ app.get('/api/content-items', authenticateAgent, (req, res) => {
 // API: create content item (doc or table) — Gateway is source of truth
 app.post('/api/content-items', authenticateAgent, async (req, res) => {
   const { type, title = '', parent_id = null, collection_id, columns } = req.body;
-  if (!type || !['doc', 'table'].includes(type)) {
-    return res.status(400).json({ error: 'INVALID_TYPE', message: 'type must be "doc" or "table"' });
+  if (!type || !['doc', 'table', 'board'].includes(type)) {
+    return res.status(400).json({ error: 'INVALID_TYPE', message: 'type must be "doc", "table", or "board"' });
   }
 
   const now = new Date().toISOString();
@@ -2939,6 +3001,34 @@ app.post('/api/content-items', authenticateAgent, async (req, res) => {
     const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
     return res.status(201).json({ item, table_id: tableId, columns: result.data.columns });
   }
+
+  if (type === 'board') {
+    const id = crypto.randomUUID();
+    const now = Date.now();
+    const isoNow = new Date().toISOString();
+    const agentName = req.agent?.name || null;
+    const defaultData = JSON.stringify({
+      type: 'excalidraw',
+      version: 2,
+      source: 'asuite',
+      elements: [],
+      appState: {},
+      files: {},
+    });
+
+    db.prepare(`INSERT INTO boards (id, data_json, created_by, updated_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)`).run(id, defaultData, agentName, agentName, now, now);
+
+    const nodeId = `board:${id}`;
+    contentItemsUpsert.run(
+      nodeId, id, 'board', title || '',
+      null, parent_id, null,
+      agentName, agentName, isoNow, isoNow, null, Date.now()
+    );
+
+    const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+    return res.status(201).json({ item });
+  }
 });
 
 // API: soft-delete content item (move to trash)
@@ -2999,6 +3089,9 @@ app.delete('/api/content-items/:id', authenticateAgent, async (req, res) => {
   } else if (item.type === 'table') {
     // Soft-delete only — NocoDB table data preserved until permanent delete
     db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
+  } else if (item.type === 'board') {
+    // Soft-delete only — board data preserved until permanent delete
+    db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
   }
 
   res.json({ deleted: true });
@@ -3037,6 +3130,8 @@ app.delete('/api/content-items/:id/permanent', authenticateAgent, async (req, re
     if (NC_EMAIL && NC_PASSWORD) {
       await nc('DELETE', `/api/v1/db/meta/tables/${item.raw_id}`).catch(() => {});
     }
+  } else if (item.type === 'board') {
+    db.prepare('DELETE FROM boards WHERE id = ?').run(item.raw_id);
   }
 
   // Remove from content_items
