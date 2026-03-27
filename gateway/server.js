@@ -19,8 +19,8 @@ const PORT = process.env.GATEWAY_PORT || 4000;
 // Upstream service URLs and tokens
 const MM_URL = process.env.MM_URL || 'http://localhost:8065';
 const MM_ADMIN_TOKEN = process.env.MM_ADMIN_TOKEN;
-const OL_URL = process.env.OL_URL || 'http://localhost:3000';
-const OL_TOKEN = process.env.OL_TOKEN;
+// const OL_URL = process.env.OL_URL || 'http://localhost:3000'; // removed — Task 1
+// const OL_TOKEN = process.env.OL_TOKEN; // removed — Task 1
 const PLANE_URL = process.env.PLANE_URL || 'http://localhost:8000';
 const PLANE_TOKEN = process.env.PLANE_TOKEN;
 const PLANE_WORKSPACE = process.env.PLANE_WORKSPACE || 'asuite';
@@ -127,6 +127,23 @@ try {
     updated_by TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
+  )`);
+} catch { /* already exists */ }
+
+// Migrate: create documents table
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    data_json TEXT,
+    icon TEXT,
+    full_width INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT
   )`);
 } catch { /* already exists */ }
 
@@ -361,98 +378,79 @@ app.get('/api/channels/:channel_id/messages', authenticateAgent, async (req, res
   res.json({ messages });
 });
 
-// ─── Docs (Outline) ─────────────────────────────
-app.post('/api/docs', authenticateAgent, async (req, res) => {
-  const { title, content_markdown, collection_id } = req.body;
-  if (!title || !content_markdown) {
-    return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'title and content_markdown required' });
+// ─── Docs (local SQLite) ────────────────────────
+app.post('/api/docs', authenticateAgent, (req, res) => {
+  const { title, content_markdown, parent_id, collection_id } = req.body;
+  if (!title) {
+    return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'title required' });
   }
-  const agentOlToken = req.agent.ol_token || OL_TOKEN;
-  const body = { title, text: content_markdown, publish: true };
-  if (collection_id) body.collectionId = collection_id;
+  const now = new Date().toISOString();
+  const agentName = req.agent?.name || null;
+  const docId = genId('doc');
 
-  const result = await upstream(OL_URL, 'POST', '/api/documents.create', body, agentOlToken);
-  if (!result.data?.ok) {
-    return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  // Also write to content_items so sidebar is up to date
-  const doc = result.data.data;
-  const nodeId = `doc:${doc.id}`;
+  db.prepare(`INSERT INTO documents (id, title, text, created_by, updated_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(docId, title, content_markdown || '', agentName, agentName, now, now);
+
+  const nodeId = `doc:${docId}`;
   contentItemsUpsert.run(
-    nodeId, doc.id, 'doc', title,
-    null, doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null,
-    doc.collectionId || collection_id || null,
-    doc.createdBy?.name || req.agent?.name || null, doc.updatedBy?.name || req.agent?.name || null,
-    doc.createdAt || new Date().toISOString(), doc.updatedAt || new Date().toISOString(), null, Date.now()
+    nodeId, docId, 'doc', title,
+    null, parent_id || null, collection_id || null,
+    agentName, agentName, now, now, null, Date.now()
   );
 
   res.status(201).json({
-    doc_id: doc.id,
-    url: `${OL_URL}${doc.url}`,
-    created_at: new Date(doc.createdAt).getTime(),
+    doc_id: docId,
+    created_at: new Date(now).getTime(),
   });
 });
 
-app.patch('/api/docs/:doc_id', authenticateAgent, async (req, res) => {
+app.patch('/api/docs/:doc_id', authenticateAgent, (req, res) => {
   const { title, content_markdown } = req.body;
-  const agentOlToken = req.agent.ol_token || OL_TOKEN;
-  const body = { id: req.params.doc_id };
-  if (title) body.title = title;
-  if (content_markdown) body.text = content_markdown;
+  const now = new Date().toISOString();
+  const agentName = req.agent?.name || null;
 
-  const result = await upstream(OL_URL, 'POST', '/api/documents.update', body, agentOlToken);
-  if (!result.data?.ok) {
-    return res.status(result.data?.status || 500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  // Sync title change to content_items if title was updated
-  if (title) {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.doc_id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const updates = ['updated_at = ?', 'updated_by = ?'];
+  const params = [now, agentName];
+  if (title !== undefined) { updates.push('title = ?'); params.push(title); }
+  if (content_markdown !== undefined) { updates.push('text = ?'); params.push(content_markdown); }
+  params.push(req.params.doc_id);
+
+  db.prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+  // Sync title change to content_items
+  if (title !== undefined) {
     db.prepare('UPDATE content_items SET title = ?, updated_at = ? WHERE raw_id = ? AND type = ?')
-      .run(title, result.data.data.updatedAt || new Date().toISOString(), req.params.doc_id, 'doc');
+      .run(title, now, req.params.doc_id, 'doc');
   }
 
-  res.json({ doc_id: result.data.data.id, updated_at: new Date(result.data.data.updatedAt).getTime() });
+  res.json({ doc_id: req.params.doc_id, updated_at: new Date(now).getTime() });
 });
 
-// ─── Comments (Outline) ─────────────────────────
-app.post('/api/comments', authenticateAgent, async (req, res) => {
+// ─── Comments (stub — full implementation in Task 3) ────────────────────────
+// TODO(Task 3): implement document_comments table and full CRUD
+app.post('/api/comments', authenticateAgent, (req, res) => {
   const { doc_id, text, parent_comment_id } = req.body;
   if (!doc_id || !text) {
     return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'doc_id and text required' });
   }
-  const agentOlToken = req.agent.ol_token || OL_TOKEN;
-  const body = {
-    documentId: doc_id,
-    data: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
-  };
-  if (parent_comment_id) body.parentCommentId = parent_comment_id;
-
-  const result = await upstream(OL_URL, 'POST', '/api/comments.create', body, agentOlToken);
-  if (!result.data?.ok) {
-    return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
+  // Stub: return empty success until Task 3 implements document_comments table
+  const commentId = genId('cmt');
+  const now = new Date().toISOString();
   res.status(201).json({
-    comment_id: result.data.data.id,
+    comment_id: commentId,
     doc_id,
-    created_at: new Date(result.data.data.createdAt).getTime(),
+    created_at: new Date(now).getTime(),
   });
 });
 
-// List document comments
-app.get('/api/docs/:doc_id/comments', authenticateAgent, async (req, res) => {
-  const agentOlToken = req.agent.ol_token || OL_TOKEN;
-  const result = await upstream(OL_URL, 'POST', '/api/comments.list', { documentId: req.params.doc_id }, agentOlToken);
-  if (!result.data?.ok) {
-    return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  const comments = (result.data.data || []).map(c => ({
-    id: c.id,
-    text: extractTextFromProseMirror(c.data),
-    actor: c.createdBy?.name || 'Unknown',
-    parent_id: c.parentCommentId || null,
-    created_at: c.createdAt,
-    updated_at: c.updatedAt,
-  }));
-  res.json({ comments });
+// List document comments (stub — full implementation in Task 3)
+// TODO(Task 3): query document_comments table
+app.get('/api/docs/:doc_id/comments', authenticateAgent, (req, res) => {
+  res.json({ comments: [] });
 });
 
 function extractTextFromProseMirror(pmData) {
@@ -466,58 +464,134 @@ function extractTextFromProseMirror(pmData) {
 }
 
 // Read a single document
-app.get('/api/docs/:doc_id', authenticateAgent, async (req, res) => {
-  const agentOlToken = req.agent.ol_token || OL_TOKEN;
-  const result = await upstream(OL_URL, 'POST', '/api/documents.info', { id: req.params.doc_id }, agentOlToken);
-  if (!result.data?.ok) {
-    return res.status(result.data?.status || 404).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  const d = result.data.data;
+app.get('/api/docs/:doc_id', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.doc_id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({
-    doc_id: d.id, title: d.title, content_markdown: d.text,
-    url: `${OL_URL}${d.url}`, collection_id: d.collectionId,
-    created_at: new Date(d.createdAt).getTime(),
-    updated_at: new Date(d.updatedAt).getTime(),
+    doc_id: doc.id,
+    title: doc.title,
+    content_markdown: doc.text,
+    created_at: new Date(doc.created_at).getTime(),
+    updated_at: new Date(doc.updated_at).getTime(),
   });
 });
 
 // List/search documents
-app.get('/api/docs', authenticateAgent, async (req, res) => {
-  const agentOlToken = req.agent.ol_token || OL_TOKEN;
-  const { query, collection_id, limit = '25' } = req.query;
+app.get('/api/docs', authenticateAgent, (req, res) => {
+  const { query, limit = '25' } = req.query;
+  const lim = Math.min(parseInt(limit) || 25, 100);
 
-  let result;
+  let docs;
   if (query) {
-    // Search
-    const body = { query, limit: Math.min(parseInt(limit), 25) };
-    if (collection_id) body.collectionId = collection_id;
-    result = await upstream(OL_URL, 'POST', '/api/documents.search', body, agentOlToken);
-    if (!result.data?.ok) {
-      return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-    }
-    const docs = (result.data.data || []).map(item => ({
-      doc_id: item.document.id, title: item.document.title,
-      url: `${OL_URL}${item.document.url}`,
-      snippet: item.context, // search context snippet
-      collection_id: item.document.collectionId,
-      updated_at: new Date(item.document.updatedAt).getTime(),
-    }));
-    res.json({ docs });
+    // LIKE-based search (FTS5 added in Task 5)
+    const pattern = `%${query}%`;
+    docs = db.prepare(
+      `SELECT * FROM documents WHERE deleted_at IS NULL AND (title LIKE ? OR text LIKE ?) ORDER BY updated_at DESC LIMIT ?`
+    ).all(pattern, pattern, lim);
   } else {
-    // List recent
-    const body = { limit: Math.min(parseInt(limit), 25), sort: 'updatedAt', direction: 'DESC' };
-    if (collection_id) body.collectionId = collection_id;
-    result = await upstream(OL_URL, 'POST', '/api/documents.list', body, agentOlToken);
-    if (!result.data?.ok) {
-      return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-    }
-    const docs = (result.data.data || []).map(d => ({
-      doc_id: d.id, title: d.title, url: `${OL_URL}${d.url}`,
-      collection_id: d.collectionId,
-      updated_at: new Date(d.updatedAt).getTime(),
-    }));
-    res.json({ docs });
+    docs = db.prepare(
+      `SELECT * FROM documents WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ?`
+    ).all(lim);
   }
+
+  res.json({
+    docs: docs.map(d => ({
+      doc_id: d.id,
+      title: d.title,
+      updated_at: new Date(d.updated_at).getTime(),
+    })),
+  });
+});
+
+// ─── Documents (new /api/documents namespace) ───────────────────────────────
+// GET /api/documents/:id — read single document (full content)
+app.get('/api/documents/:id', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json(doc);
+});
+
+// POST /api/documents — create document
+app.post('/api/documents', authenticateAgent, (req, res) => {
+  const { title = '', text = '', data_json, icon, full_width = 0, parent_id, collection_id } = req.body;
+  const now = new Date().toISOString();
+  const agentName = req.agent?.name || null;
+  const docId = genId('doc');
+
+  db.prepare(`INSERT INTO documents (id, title, text, data_json, icon, full_width, created_by, updated_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(docId, title, text, data_json ? JSON.stringify(data_json) : null, icon || null, full_width ? 1 : 0, agentName, agentName, now, now);
+
+  const nodeId = `doc:${docId}`;
+  contentItemsUpsert.run(
+    nodeId, docId, 'doc', title,
+    icon || null, parent_id || null, collection_id || null,
+    agentName, agentName, now, now, null, Date.now()
+  );
+
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(docId);
+  res.status(201).json(doc);
+});
+
+// PATCH /api/documents/:id — update document
+app.patch('/api/documents/:id', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const now = new Date().toISOString();
+  const agentName = req.agent?.name || null;
+  const { title, text, data_json, icon, full_width } = req.body;
+
+  const updates = ['updated_at = ?', 'updated_by = ?'];
+  const params = [now, agentName];
+  if (title !== undefined) { updates.push('title = ?'); params.push(title); }
+  if (text !== undefined) { updates.push('text = ?'); params.push(text); }
+  if (data_json !== undefined) { updates.push('data_json = ?'); params.push(JSON.stringify(data_json)); }
+  if (icon !== undefined) { updates.push('icon = ?'); params.push(icon); }
+  if (full_width !== undefined) { updates.push('full_width = ?'); params.push(full_width ? 1 : 0); }
+  params.push(req.params.id);
+
+  db.prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+  // Sync title to content_items
+  if (title !== undefined) {
+    db.prepare('UPDATE content_items SET title = ?, updated_at = ? WHERE raw_id = ? AND type = ?')
+      .run(title, now, req.params.id, 'doc');
+  }
+
+  const updated = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  res.json(updated);
+});
+
+// DELETE /api/documents/:id — soft delete (or ?permanent=true for hard delete)
+app.delete('/api/documents/:id', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  if (req.query.permanent === 'true') {
+    db.prepare('DELETE FROM documents WHERE id = ?').run(req.params.id);
+    db.prepare('DELETE FROM content_items WHERE raw_id = ? AND type = ?').run(req.params.id, 'doc');
+    db.prepare('DELETE FROM doc_icons WHERE doc_id = ?').run(req.params.id);
+    return res.json({ deleted: true, permanent: true });
+  }
+
+  const now = new Date().toISOString();
+  db.prepare('UPDATE documents SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
+  db.prepare('UPDATE content_items SET deleted_at = ? WHERE raw_id = ? AND type = ?').run(now, req.params.id, 'doc');
+  res.json({ deleted: true });
+});
+
+// POST /api/documents/:id/restore — restore soft-deleted document
+app.post('/api/documents/:id/restore', authenticateAgent, (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (!doc.deleted_at) return res.status(400).json({ error: 'NOT_DELETED' });
+
+  db.prepare('UPDATE documents SET deleted_at = NULL WHERE id = ?').run(req.params.id);
+  db.prepare('UPDATE content_items SET deleted_at = NULL WHERE raw_id = ? AND type = ?').run(req.params.id, 'doc');
+
+  const restored = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  res.json(restored);
 });
 
 // ─── Tasks (Plane) ──────────────────────────────
@@ -2112,154 +2186,8 @@ async function deliverWebhook(agent, event) {
   });
 }
 
-// ─── Outline Webhook Receiver ────────────────────
-// Receives comment events from Outline and routes to mentioned agents
-app.post('/webhooks/outline', express.json(), async (req, res) => {
-  res.sendStatus(200); // Acknowledge immediately
-  try {
-    const { event, payload } = req.body;
-
-    // Extract plain text from ProseMirror JSON
-    const extractText = (node) => {
-      let t = '';
-      if (node.text) t += node.text;
-      if (node.content) node.content.forEach(c => { t += extractText(c); });
-      return t;
-    };
-
-    const agents = db.prepare('SELECT * FROM agent_accounts').all();
-
-    if (event === 'comments.create') {
-      let comment = payload?.model;
-      if (!comment) return;
-
-      // Outline webhook may send model.data as null — fetch the full comment if needed
-      if (!comment.data && comment.id) {
-        try {
-          const cRes = await upstream(OL_URL, 'POST', '/api/comments.list',
-            { documentId: comment.documentId }, OL_TOKEN);
-          const found = (cRes.data?.data || []).find(c => c.id === comment.id);
-          if (found) comment = { ...comment, ...found };
-        } catch {}
-      }
-
-      // Extract text and mention node labels separately from ProseMirror
-      const extractComment = (node) => {
-        const result = { text: '', mentionLabels: [] };
-        const walk = (n) => {
-          if (n.type === 'mention' && n.attrs?.label) {
-            // Store mention labels separately — do NOT inline into text to avoid substring collisions
-            result.mentionLabels.push(n.attrs.label.toLowerCase()); // e.g. "zylos digger"
-          } else if (n.text) {
-            result.text += n.text;
-          }
-          if (n.content) n.content.forEach(walk);
-        };
-        walk(node);
-        return result;
-      };
-
-      let commentText = '';
-      let mentionLabels = [];
-      if (comment.data) {
-        const extracted = extractComment(comment.data);
-        commentText = extracted.text.trim();
-        mentionLabels = extracted.mentionLabels;
-      }
-
-      // Fetch document content to include in the event
-      let docText = '';
-      try {
-        const docRes = await upstream(OL_URL, 'POST', '/api/documents.info',
-          { id: comment.documentId }, OL_TOKEN);
-        if (docRes.data?.data?.text) docText = docRes.data.data.text;
-      } catch {}
-
-      for (const agent of agents) {
-        // Match mention nodes by display_name (exact, case-insensitive)
-        // OR plain @name in text (for non-UI @mentions)
-        const displayName = (agent.display_name || agent.name).toLowerCase();
-        const nameVariants = [agent.name.toLowerCase(), displayName];
-        const hasMentionNode = mentionLabels.some(l => nameVariants.includes(l));
-        const hasTextMention = new RegExp(`@${agent.name}(?![\\w-])`, 'i').test(commentText);
-        if (!hasMentionNode && !hasTextMention) continue;
-
-        const cleanText = commentText
-          .replace(new RegExp(`@${agent.name}(?![\\w-])\\s*`, 'gi'), '')
-          .trim();
-        const evt = {
-          event: 'comment.mentioned',
-          source: 'outline',
-          event_id: genId('evt'),
-          timestamp: new Date(comment.createdAt).getTime(),
-          data: {
-            doc_id: comment.documentId,
-            comment_id: comment.id,
-            parent_comment_id: comment.parentCommentId || null,
-            text_without_mention: cleanText,
-            anchor_text: null,
-            doc_title: payload?.document?.title || '',
-            doc_content: docText,
-            sender: { id: comment.createdById, name: payload?.actor?.name || 'unknown', type: 'human' },
-          },
-        };
-
-        db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(evt.event_id, agent.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), Date.now());
-
-        pushEvent(agent.id, evt);
-        if (agent.webhook_url) deliverWebhook(agent, evt).catch(() => {});
-        console.log(`[gateway] Event ${evt.event} → ${agent.name} (doc: ${evt.data.doc_id})`);
-      }
-    } else if (event === 'documents.update') {
-      // Handle @mentions in document body
-      const doc = payload?.model;
-      if (!doc) return;
-
-      let text = '';
-      if (doc.content) text = extractText(doc.content);
-
-      const docUpdatedAt = new Date(doc.updatedAt).getTime();
-
-      for (const agent of agents) {
-        const mentionRegex = new RegExp(`@${agent.name}(?![\\w-])`, 'i');
-        if (!mentionRegex.test(text)) continue;
-
-        // Deduplicate: only fire once per (doc, agent, ~minute window)
-        const windowStart = docUpdatedAt - 60000;
-        const existing = db.prepare(
-          `SELECT id FROM events WHERE agent_id=? AND event_type='doc.mentioned' AND payload LIKE ? AND occurred_at > ?`
-        ).get(agent.id, `%"doc_id":"${doc.id}"%`, windowStart);
-        if (existing) continue;
-
-        const cleanText = text.replace(new RegExp(`@${agent.name}(?![\\w-])\\s*`, 'gi'), '').trim();
-        const evt = {
-          event: 'doc.mentioned',
-          source: 'outline',
-          event_id: genId('evt'),
-          timestamp: docUpdatedAt,
-          data: {
-            doc_id: doc.id,
-            doc_title: doc.title || '',
-            text_without_mention: cleanText,
-            sender: { id: payload?.actor?.id, name: payload?.actor?.name || 'unknown', type: 'human' },
-          },
-        };
-
-        db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(evt.event_id, agent.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), Date.now());
-
-        pushEvent(agent.id, evt);
-        if (agent.webhook_url) deliverWebhook(agent, evt).catch(() => {});
-        console.log(`[gateway] Event ${evt.event} → ${agent.name} (doc: ${doc.id})`);
-      }
-    }
-  } catch (e) {
-    console.error(`[gateway] Outline webhook error: ${e.message}`);
-  }
-});
+// NOTE: Outline webhook handler removed — doc mention detection will be added
+// inline in the local document write path (Task 3).
 
 // ─── Plane Polling ───────────────────────────────
 // Plane community edition has no webhooks — poll for new assignments and comments
@@ -2795,39 +2723,28 @@ const contentItemsUpsert = db.prepare(`
 
 async function syncContentItems() {
   const now = Date.now();
-  console.log('[gateway] Syncing content items from Outline + NocoDB...');
+  console.log('[gateway] Syncing content items from local documents + NocoDB...');
 
-  // 1. Sync docs from Outline
+  // 1. Sync docs from local documents table
   let docCount = 0;
-  if (OL_TOKEN) {
-    try {
-      let offset = 0;
-      const limit = 100;
-      while (true) {
-        const result = await upstream(OL_URL, 'POST', '/api/documents.list', { limit, offset, sort: 'updatedAt', direction: 'DESC' }, OL_TOKEN);
-        if (!result.data?.data) break;
-        const docs = result.data.data;
-        for (const doc of docs) {
-          const nodeId = `doc:${doc.id}`;
-          const parentId = doc.parentDocumentId ? `doc:${doc.parentDocumentId}` : null;
-          // Check for custom icon in doc_icons table
-          const customIcon = db.prepare('SELECT icon FROM doc_icons WHERE doc_id = ?').get(doc.id);
-          const icon = customIcon?.icon || doc.icon || doc.emoji || null;
-          contentItemsUpsert.run(
-            nodeId, doc.id, 'doc', doc.title || '',
-            icon, parentId, doc.collectionId || null,
-            doc.createdBy?.name || null, doc.updatedBy?.name || null,
-            doc.createdAt || null, doc.updatedAt || null, doc.deletedAt || null,
-            now
-          );
-          docCount++;
-        }
-        if (docs.length < limit) break;
-        offset += limit;
-      }
-    } catch (err) {
-      console.error('[gateway] Content sync: Outline error:', err.message);
+  try {
+    const docs = db.prepare('SELECT d.*, di.icon as custom_icon FROM documents d LEFT JOIN doc_icons di ON di.doc_id = d.id').all();
+    for (const doc of docs) {
+      const nodeId = `doc:${doc.id}`;
+      // Look up existing content_item to preserve parent_id (not stored on documents)
+      const existing = db.prepare('SELECT parent_id, collection_id FROM content_items WHERE id = ?').get(nodeId);
+      const icon = doc.custom_icon || doc.icon || null;
+      contentItemsUpsert.run(
+        nodeId, doc.id, 'doc', doc.title || '',
+        icon, existing?.parent_id || null, existing?.collection_id || null,
+        doc.created_by || null, doc.updated_by || null,
+        doc.created_at || null, doc.updated_at || null, doc.deleted_at || null,
+        now
+      );
+      docCount++;
     }
+  } catch (err) {
+    console.error('[gateway] Content sync: documents error:', err.message);
   }
 
   // 2. Sync tables from NocoDB
@@ -2859,8 +2776,9 @@ async function syncContentItems() {
     }
   }
 
-  // 3. Remove stale items (not seen in this sync cycle)
-  db.prepare('DELETE FROM content_items WHERE synced_at < ? AND deleted_at IS NULL').run(now);
+  // 3. Remove stale NocoDB table items (not seen in this sync cycle)
+  // Only purge 'table' type — docs/boards/etc. are owned by local DB and not purged here
+  db.prepare("DELETE FROM content_items WHERE type = 'table' AND synced_at < ? AND deleted_at IS NULL").run(now);
 
   console.log(`[gateway] Content sync done: ${docCount} docs, ${tableCount} tables`);
 }
@@ -3178,36 +3096,17 @@ app.post('/api/content-items', authenticateAgent, async (req, res) => {
   const agentName = req.agent?.name || null;
 
   if (type === 'doc') {
-    // Determine collection: use provided or fall back to first available
-    let collId = collection_id;
-    if (!collId && OL_TOKEN) {
-      try {
-        const colResult = await upstream(OL_URL, 'POST', '/api/collections.list', {}, OL_TOKEN);
-        if (colResult.data?.data?.length > 0) collId = colResult.data.data[0].id;
-      } catch {}
-    }
-    if (!collId) return res.status(400).json({ error: 'NO_COLLECTION', message: 'No collection_id and none found in Outline' });
+    // Create document in local documents table (no Outline upstream)
+    const docId = genId('doc');
+    db.prepare(`INSERT INTO documents (id, title, text, created_by, updated_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(docId, title || '', '', agentName, agentName, now, now);
 
-    // Parse parent: only doc parents go to Outline; table parents are sidebar-only
-    let olParentId = null;
-    if (parent_id && parent_id.startsWith('doc:')) {
-      olParentId = parent_id.slice(4);
-    }
-
-    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
-    const olBody = { title: title || '', text: '', collectionId: collId, publish: true };
-    if (olParentId) olBody.parentDocumentId = olParentId;
-    const result = await upstream(OL_URL, 'POST', '/api/documents.create', olBody, agentOlToken);
-    if (!result.data?.ok) {
-      return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-    }
-    const doc = result.data.data;
-    const nodeId = `doc:${doc.id}`;
+    const nodeId = `doc:${docId}`;
     contentItemsUpsert.run(
-      nodeId, doc.id, 'doc', title || '',
-      null, parent_id, collId,
-      doc.createdBy?.name || agentName, doc.updatedBy?.name || agentName,
-      doc.createdAt || now, doc.updatedAt || now, null, Date.now()
+      nodeId, docId, 'doc', title || '',
+      null, parent_id, collection_id || null,
+      agentName, agentName, now, now, null, Date.now()
     );
     const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
     return res.status(201).json({ item });
@@ -3369,8 +3268,6 @@ app.delete('/api/content-items/:id', authenticateAgent, async (req, res) => {
   const now = new Date().toISOString();
 
   if (item.type === 'doc') {
-    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
-
     if (mode === 'all') {
       // Collect all descendants recursively
       const collectDescendants = (parentId) => {
@@ -3383,37 +3280,27 @@ app.delete('/api/content-items/:id', authenticateAgent, async (req, res) => {
       };
       const descendants = collectDescendants(req.params.id);
 
-      // Soft-delete this item
+      // Soft-delete this item and its document
       db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
-      // Delete from Outline
-      await upstream(OL_URL, 'POST', '/api/documents.delete', { id: item.raw_id }, agentOlToken).catch(() => {});
+      db.prepare('UPDATE documents SET deleted_at = ? WHERE id = ?').run(now, item.raw_id);
 
       // Soft-delete descendants
       for (const desc of descendants) {
         db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, desc.id);
         if (desc.type === 'doc') {
-          await upstream(OL_URL, 'POST', '/api/documents.delete', { id: desc.raw_id }, agentOlToken).catch(() => {});
+          db.prepare('UPDATE documents SET deleted_at = ? WHERE id = ?').run(now, desc.raw_id);
         }
         // Tables: just soft-delete in content_items, don't delete from NocoDB yet
       }
     } else {
-      // mode === 'only': reparent children, then delete this node
+      // mode === 'only': reparent children in content_items only (no Outline move needed)
       const children = db.prepare('SELECT * FROM content_items WHERE parent_id = ? AND deleted_at IS NULL').all(req.params.id);
       for (const child of children) {
         db.prepare('UPDATE content_items SET parent_id = ? WHERE id = ?').run(item.parent_id, child.id);
-        // If child is a doc, also move in Outline
-        if (child.type === 'doc') {
-          const newOlParent = item.parent_id?.startsWith('doc:') ? item.parent_id.slice(4) : null;
-          await upstream(OL_URL, 'POST', '/api/documents.move', {
-            id: child.raw_id,
-            parentDocumentId: newOlParent,
-          }, agentOlToken).catch(() => {});
-        }
       }
-      // Soft-delete this item
+      // Soft-delete this item and its document
       db.prepare('UPDATE content_items SET deleted_at = ? WHERE id = ?').run(now, req.params.id);
-      // Delete from Outline
-      await upstream(OL_URL, 'POST', '/api/documents.delete', { id: item.raw_id }, agentOlToken).catch(() => {});
+      db.prepare('UPDATE documents SET deleted_at = ? WHERE id = ?').run(now, item.raw_id);
     }
   } else if (item.type === 'table') {
     // Soft-delete only — NocoDB table data preserved until permanent delete
@@ -3444,11 +3331,9 @@ app.post('/api/content-items/:id/restore', authenticateAgent, async (req, res) =
   // Clear deleted_at
   db.prepare('UPDATE content_items SET deleted_at = NULL WHERE id = ?').run(req.params.id);
 
-  // Restore in upstream if doc
+  // Restore document record if doc
   if (item.type === 'doc') {
-    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
-    // Outline's unarchive restores from trash
-    await upstream(OL_URL, 'POST', '/api/documents.restore', { id: item.raw_id }, agentOlToken).catch(() => {});
+    db.prepare('UPDATE documents SET deleted_at = NULL WHERE id = ?').run(item.raw_id);
   }
   // Tables: nothing to do in NocoDB (data was never deleted)
 
@@ -3462,8 +3347,8 @@ app.delete('/api/content-items/:id/permanent', authenticateAgent, async (req, re
   if (!item) return res.status(404).json({ error: 'NOT_FOUND' });
 
   if (item.type === 'doc') {
-    const agentOlToken = req.agent?.ol_token || OL_TOKEN;
-    await upstream(OL_URL, 'POST', '/api/documents.delete', { id: item.raw_id, permanent: true }, agentOlToken).catch(() => {});
+    // Permanently delete from local documents table
+    db.prepare('DELETE FROM documents WHERE id = ?').run(item.raw_id);
   } else if (item.type === 'table') {
     if (NC_EMAIL && NC_PASSWORD) {
       await nc('DELETE', `/api/v1/db/meta/tables/${item.raw_id}`).catch(() => {});
