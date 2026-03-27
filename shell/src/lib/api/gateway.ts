@@ -213,6 +213,95 @@ export async function listCommentedRows(tableId: string): Promise<{ row_id: stri
   return data.rows;
 }
 
+// ── Content Items (unified sidebar metadata) ──
+
+export interface ContentItem {
+  id: string;          // 'doc:<uuid>' or 'table:<uuid>'
+  raw_id: string;      // original Outline doc ID or NocoDB table ID
+  type: 'doc' | 'table';
+  title: string;
+  icon: string | null;
+  parent_id: string | null;
+  sort_order: number;
+  collection_id: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  deleted_at: string | null;
+  synced_at: number;
+}
+
+export async function listContentItems(): Promise<ContentItem[]> {
+  const data = await gwFetch<{ items: ContentItem[] }>('/content-items');
+  return data.items;
+}
+
+export async function listDeletedContentItems(): Promise<ContentItem[]> {
+  const data = await gwFetch<{ items: ContentItem[] }>('/content-items?deleted=true');
+  return data.items;
+}
+
+export async function createContentItem(opts: {
+  type: 'doc' | 'table' | 'board';
+  title: string;
+  parent_id?: string | null;
+  collection_id?: string;
+  columns?: { title: string; uidt: string }[];
+}): Promise<ContentItem> {
+  const data = await gwFetch<{ item: ContentItem }>('/content-items', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opts),
+  });
+  return data.item;
+}
+
+export async function deleteContentItem(id: string, mode: 'only' | 'all' = 'only'): Promise<void> {
+  await gwFetch(`/content-items/${encodeURIComponent(id)}?mode=${mode}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function restoreContentItem(id: string): Promise<ContentItem> {
+  const data = await gwFetch<{ item: ContentItem }>(`/content-items/${encodeURIComponent(id)}/restore`, {
+    method: 'POST',
+  });
+  return data.item;
+}
+
+export async function permanentlyDeleteContentItem(id: string): Promise<void> {
+  await gwFetch(`/content-items/${encodeURIComponent(id)}/permanent`, {
+    method: 'DELETE',
+  });
+}
+
+export async function updateContentItem(id: string, fields: {
+  icon?: string | null;
+  parent_id?: string | null;
+  sort_order?: number;
+  title?: string;
+}): Promise<ContentItem> {
+  return gwFetch(`/content-items/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+}
+
+export async function updateContentTree(items: { id: string; parent_id: string | null; sort_order: number }[]): Promise<void> {
+  await gwFetch('/content-items/tree', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+}
+
+export async function syncContentItems(): Promise<ContentItem[]> {
+  const data = await gwFetch<{ items: ContentItem[] }>('/content-items/sync', { method: 'POST' });
+  return data.items;
+}
+
 // ── Doc Icons ──
 
 export async function getDocIcons(): Promise<Record<string, string>> {
@@ -248,5 +337,64 @@ export async function setPreference<T = unknown>(key: string, value: T): Promise
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ value }),
+  });
+}
+
+// ── Table Snapshots (History Versioning) ──
+
+export interface TableSnapshot {
+  id: number;
+  version: number;
+  table_id: string;
+  trigger_type: 'auto' | 'manual' | 'pre_bulk' | 'pre_restore';
+  agent: string | null;
+  row_count: number;
+  created_at: string;
+  schema_json?: string;
+  data_json?: string;
+}
+
+export async function listTableSnapshots(tableId: string): Promise<TableSnapshot[]> {
+  const data = await gwFetch<{ snapshots: TableSnapshot[] }>(`/data/${tableId}/snapshots`);
+  return data.snapshots;
+}
+
+export async function getTableSnapshot(tableId: string, snapshotId: number): Promise<TableSnapshot> {
+  return gwFetch(`/data/${tableId}/snapshots/${snapshotId}`);
+}
+
+export async function createTableSnapshot(tableId: string): Promise<TableSnapshot> {
+  return gwFetch(`/data/${tableId}/snapshots`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+export async function restoreTableSnapshot(tableId: string, snapshotId: number): Promise<{ success: boolean; restored_rows: number; pre_restore_snapshot_id: number }> {
+  return gwFetch(`/data/${tableId}/snapshots/${snapshotId}/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+// ─── Boards (Excalidraw) ─────────────────────────
+export async function getBoard(boardId: string): Promise<{
+  id: string;
+  data: Record<string, unknown>;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: number;
+  updated_at: number;
+}> {
+  return gwFetch(`/boards/${boardId}`);
+}
+
+export async function saveBoard(boardId: string, data: Record<string, unknown>): Promise<{ saved: boolean; updated_at: number }> {
+  return gwFetch(`/boards/${boardId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data }),
   });
 }
