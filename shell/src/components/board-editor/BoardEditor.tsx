@@ -335,6 +335,8 @@ export function BoardEditor({
       </div>
 
       {/* Excalidraw canvas */}
+      {/* Hide native hamburger menu button via CSS */}
+      <style>{`.excalidraw .MainMenu--root { display: none !important; }`}</style>
       <div className="flex-1 min-h-0 relative">
         {ExcalidrawComponent && (
           <ExcalidrawComponent
