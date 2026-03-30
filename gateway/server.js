@@ -249,7 +249,7 @@ function authenticateAdmin(req, res, next) {
 
 // ─── App ─────────────────────────────────────────
 const app = express();
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // ─── Admin: Create ticket ────────────────────────
 app.post('/api/admin/tickets', authenticateAdmin, (req, res) => {

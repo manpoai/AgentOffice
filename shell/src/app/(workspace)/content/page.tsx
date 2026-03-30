@@ -94,7 +94,7 @@ function loadExpandedState(): string[] {
 }
 
 function saveExpandedState(ids: Set<string>) {
-  localStorage.setItem(EXPANDED_STATE_KEY, JSON.stringify([...ids]));
+  localStorage.setItem(EXPANDED_STATE_KEY, JSON.stringify(Array.from(ids)));
 }
 
 // Debounced Gateway persistence for tree state
@@ -140,7 +140,7 @@ function syncSelectionToURL(sel: Selection | null) {
 }
 
 /** Build a shareable link for a content item */
-function buildContentLink(sel: Selection): string {
+function buildContentLink(sel: NonNullable<Selection>): string {
   const url = new URL(window.location.href);
   url.searchParams.set('id', `${sel.type}:${sel.id}`);
   return url.toString();
@@ -1720,15 +1720,15 @@ function TreeNodeItem({
         ) : (
           <span className="text-sm shrink-0 leading-none">{node.emoji}</span>
         )
-      ) : node.type === 'table'
+      ) : (node.type as string) === 'table'
         ? <Table2 className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
-        : node.type === 'board'
+        : (node.type as string) === 'board'
         ? <Pencil className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
-        : node.type === 'presentation'
+        : (node.type as string) === 'presentation'
         ? <Presentation className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
-        : node.type === 'spreadsheet'
+        : (node.type as string) === 'spreadsheet'
         ? <Sheet className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
-        : node.type === 'diagram'
+        : (node.type as string) === 'diagram'
         ? <GitBranch className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
         : <FileText className={cn('h-4 w-4 shrink-0', isSelected ? 'text-sidebar-primary' : 'text-muted-foreground')} />
       }

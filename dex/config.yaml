@@ -47,6 +47,6 @@ enablePasswordDB: true
 
 staticPasswords:
   - email: "admin@asuite.local"
-    hash: "$2a$10$xFAV6/St8ZwFyeHVQawatOVY7K5EDFjh45krE8/OhwN6dzLbUS5z."
+    hash: "$2a$10$A.buurZLJPDdK0O.A49Csu10BFTs0cC7iVqhtzTu1pc8.CGraFfRy"
     username: "Admin"
     userID: "admin-001"

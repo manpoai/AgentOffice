@@ -8,9 +8,13 @@ import {
   MoreHorizontal, Link2, Download, Trash2, ChevronRight,
   Plus, Type, Square, Circle as CircleIcon, Triangle as TriangleIcon,
   Image as ImageIcon, Play, Copy, ChevronUp, ChevronDown,
-  Undo2, Redo2, Presentation as PresentationIcon, Minus,
-  MousePointer2, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight,
+  Minus,
+  MousePointer2, Bold, Italic, Underline, Strikethrough,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
   ArrowUpToLine, ArrowDownToLine, MoveUp, MoveDown,
+  FlipHorizontal2, FlipVertical2, RotateCcw,
+  Replace, PanelRightClose, PanelRight, X,
+  Table2, Trash,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
@@ -19,6 +23,7 @@ import { useT } from '@/lib/i18n';
 interface SlideData {
   elements: any[];
   background: string;
+  backgroundImage?: string;
   notes: string;
 }
 
@@ -60,6 +65,29 @@ const DEFAULT_SLIDE: SlideData = {
   notes: '',
 };
 
+const FONT_FAMILIES = [
+  { label: 'Inter', value: 'Inter, system-ui, sans-serif' },
+  { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+  { label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
+  { label: 'Comic Sans MS', value: '"Comic Sans MS", cursive' },
+  { label: '\u601D\u6E90\u9ED1\u4F53', value: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
+  { label: '\u601D\u6E90\u5B8B\u4F53', value: '"Noto Serif SC", "Source Han Serif SC", serif' },
+  { label: '\u5FAE\u8F6F\u96C5\u9ED1', value: '"Microsoft YaHei", sans-serif' },
+  { label: '\u82F9\u679C\u82F9\u65B9', value: '"PingFang SC", sans-serif' },
+];
+
+const FONT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 96];
+
+const STROKE_DASH_STYLES: { label: string; value: number[] | undefined }[] = [
+  { label: 'Solid', value: undefined },
+  { label: 'Dashed', value: [8, 4] },
+  { label: 'Dotted', value: [2, 4] },
+];
+
 function formatRelativeTime(ts: number): string {
   const now = Date.now();
   const diff = now - ts;
@@ -85,17 +113,27 @@ function fitCanvasToContainer(canvas: any, container: HTMLElement | null) {
   const canvasW = Math.round(SLIDE_WIDTH * scale);
   const canvasH = Math.round(SLIDE_HEIGHT * scale);
 
-  // Update Fabric canvas dimensions and zoom
   canvas.setDimensions({ width: canvasW, height: canvasH });
   canvas.setZoom(scale);
   canvas.renderAll();
 
-  // Center the Fabric wrapper div within the container
   const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
   if (wrapper) {
     wrapper.style.marginLeft = `${Math.max(0, Math.round((width - canvasW) / 2))}px`;
     wrapper.style.marginTop = `${Math.max(0, Math.round((height - canvasH) / 2))}px`;
   }
+}
+
+// ─── Helper: get object type normalized ──────────────
+function getObjType(obj: any): string {
+  if (obj?.__isTable) return 'table';
+  const t = (obj?.type || '').toLowerCase();
+  if (t === 'textbox') return 'textbox';
+  if (t === 'rect') return 'rect';
+  if (t === 'circle') return 'circle';
+  if (t === 'triangle') return 'triangle';
+  if (t === 'image') return 'image';
+  return t;
 }
 
 // ─── Main Component ─────────────────────────────────
@@ -120,11 +158,15 @@ export function PresentationEditor({
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [selectedTool, setSelectedTool] = useState<'select' | 'text' | 'rect' | 'circle' | 'triangle'>('select');
   const [isPresenting, setIsPresenting] = useState(false);
+  const [selectedObj, setSelectedObj] = useState<any>(null);
+  // Counter to force property panel re-render when object properties change
+  const [propVersion, setPropVersion] = useState(0);
+  const [showPropertyPanel, setShowPropertyPanel] = useState(true);
 
   // Refs
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasRef = useRef<any>(null);
-  const canvasHostRef = useRef<HTMLDivElement>(null); // div where Fabric mounts its canvas
+  const canvasHostRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -174,7 +216,6 @@ export function PresentationEditor({
   useEffect(() => {
     if (!ready || !canvasHostRef.current || canvasRef.current) return;
 
-    // Create a canvas element outside React's control
     const canvasEl = document.createElement('canvas');
     canvasEl.width = SLIDE_WIDTH;
     canvasEl.height = SLIDE_HEIGHT;
@@ -189,21 +230,20 @@ export function PresentationEditor({
     });
     canvasRef.current = canvas;
 
-    // Initial fit to container — use rAF to ensure layout has settled
     requestAnimationFrame(() => {
       fitCanvasToContainer(canvas, canvasContainerRef.current);
     });
 
-    // Track changes for undo and auto-save — use ref to always get latest closure
-    // Debounce during text editing to avoid cursor lag
+    // Track changes for undo and auto-save
     const handleModified = () => {
       if (isLoadingSlideRef.current) return;
       if (modifiedDebounceRef.current) clearTimeout(modifiedDebounceRef.current);
       modifiedDebounceRef.current = setTimeout(() => {
         saveCurrentSlideToStateRef.current();
+        // Update property panel to reflect changes
+        setPropVersion(v => v + 1);
       }, 300);
     };
-    // Immediate save for add/remove (not frequent like text editing)
     const handleAddRemove = () => {
       if (isLoadingSlideRef.current) return;
       saveCurrentSlideToStateRef.current();
@@ -213,6 +253,23 @@ export function PresentationEditor({
     canvas.on('text:changed', handleModified);
     canvas.on('object:added', handleAddRemove);
     canvas.on('object:removed', handleAddRemove);
+    // Update property panel on scaling/moving
+    canvas.on('object:scaling', () => setPropVersion(v => v + 1));
+    canvas.on('object:moving', () => setPropVersion(v => v + 1));
+    canvas.on('object:rotating', () => setPropVersion(v => v + 1));
+
+    // Selection tracking
+    const onSelect = () => {
+      setSelectedObj(canvas.getActiveObject());
+      setPropVersion(v => v + 1);
+    };
+    const onDeselect = () => {
+      setSelectedObj(null);
+      setPropVersion(v => v + 1);
+    };
+    canvas.on('selection:created', onSelect);
+    canvas.on('selection:updated', onSelect);
+    canvas.on('selection:cleared', onDeselect);
 
     // ResizeObserver for responsive sizing
     const container = canvasContainerRef.current;
@@ -222,22 +279,101 @@ export function PresentationEditor({
       observer.observe(container);
     }
 
+    // Draw table grid lines and text after canvas render
+    canvas.on('after:render', () => {
+      const ctx = canvas.getContext();
+      if (!ctx) return;
+      for (const obj of canvas.getObjects()) {
+        if (!(obj as any).__isTable) continue;
+        const tData: string[][] = (obj as any).__tableData || [];
+        const tRows: number = (obj as any).__tableRows || 3;
+        const tCols: number = (obj as any).__tableCols || 3;
+        const zoom = canvas.getZoom() || 1;
+        const x = (obj.left || 0) * zoom;
+        const y = (obj.top || 0) * zoom;
+        const cellW = 120 * zoom;
+        const cellH = 36 * zoom;
+
+        ctx.save();
+        ctx.strokeStyle = '#d1d5db';
+        ctx.lineWidth = 1;
+        // Draw horizontal lines
+        for (let r = 0; r <= tRows; r++) {
+          ctx.beginPath();
+          ctx.moveTo(x, y + r * cellH);
+          ctx.lineTo(x + tCols * cellW, y + r * cellH);
+          ctx.stroke();
+        }
+        // Draw vertical lines
+        for (let c = 0; c <= tCols; c++) {
+          ctx.beginPath();
+          ctx.moveTo(x + c * cellW, y);
+          ctx.lineTo(x + c * cellW, y + tRows * cellH);
+          ctx.stroke();
+        }
+        // Draw header row background
+        ctx.fillStyle = '#f3f4f6';
+        ctx.fillRect(x, y, tCols * cellW, cellH);
+        // Redraw header border
+        ctx.strokeRect(x, y, tCols * cellW, cellH);
+
+        // Draw cell text
+        ctx.fillStyle = '#1f2937';
+        ctx.font = `${Math.max(10, 12 * zoom)}px Inter, system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let r = 0; r < tRows; r++) {
+          for (let c = 0; c < tCols; c++) {
+            const text = tData[r]?.[c] || '';
+            if (text) {
+              const cx = x + c * cellW + cellW / 2;
+              const cy = y + r * cellH + cellH / 2;
+              ctx.fillText(text, cx, cy, cellW - 8);
+            }
+          }
+        }
+        ctx.restore();
+      }
+    });
+
     return () => {
       observer?.disconnect();
       canvas.dispose();
       canvasRef.current = null;
     };
-    // re-run when ready or when loading completes (so canvasHostRef is in DOM)
   }, [ready, isLoading]);
 
   // ─── Load slide onto canvas ───────────────────────
   const loadSlideToCanvas = useCallback((slide: SlideData) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // FIX 1: Set loading flag BEFORE clear to prevent object:removed from writing empty data
     isLoadingSlideRef.current = true;
 
     canvas.clear();
     canvas.backgroundColor = slide.background || '#ffffff';
+
+    // Background image support
+    if (slide.backgroundImage && fabricModule.FabricImage) {
+      const bgImg = new window.Image();
+      bgImg.crossOrigin = 'anonymous';
+      bgImg.onload = () => {
+        const fImg = new fabricModule.FabricImage(bgImg, {
+          originX: 'left',
+          originY: 'top',
+        });
+        // Scale to cover the slide
+        const scaleX = SLIDE_WIDTH / bgImg.width;
+        const scaleY = SLIDE_HEIGHT / bgImg.height;
+        const scale = Math.max(scaleX, scaleY);
+        fImg.set({ scaleX: scale, scaleY: scale });
+        canvas.backgroundImage = fImg;
+        canvas.renderAll();
+      };
+      bgImg.src = slide.backgroundImage;
+    } else {
+      canvas.backgroundImage = null;
+    }
 
     const { Textbox, Rect, Circle, Triangle, FabricImage } = fabricModule;
 
@@ -264,9 +400,12 @@ export function PresentationEditor({
           fontWeight: el.fontWeight || 'normal',
           fontStyle: el.fontStyle || 'normal',
           underline: el.underline || false,
+          linethrough: el.linethrough || false,
           textAlign: el.textAlign || 'left',
           lineHeight: el.lineHeight || 1.3,
+          charSpacing: el.charSpacing || 0,
           fontFamily: el.fontFamily || 'Inter, system-ui, sans-serif',
+          padding: el.padding || 0,
         });
       } else if (el.type === 'rect') {
         obj = new Rect({
@@ -275,6 +414,8 @@ export function PresentationEditor({
           ry: el.ry || 0,
           stroke: el.stroke || '',
           strokeWidth: el.strokeWidth || 0,
+          strokeDashArray: el.strokeDashArray || undefined,
+          shadow: el.shadow || undefined,
         });
       } else if (el.type === 'circle') {
         obj = new Circle({
@@ -282,15 +423,19 @@ export function PresentationEditor({
           radius: el.radius || 50,
           stroke: el.stroke || '',
           strokeWidth: el.strokeWidth || 0,
+          strokeDashArray: el.strokeDashArray || undefined,
+          shadow: el.shadow || undefined,
         });
       } else if (el.type === 'triangle') {
         obj = new Triangle({
           ...common,
           stroke: el.stroke || '',
           strokeWidth: el.strokeWidth || 0,
+          strokeDashArray: el.strokeDashArray || undefined,
+          shadow: el.shadow || undefined,
         });
       } else if (el.type === 'image' && el.src) {
-        // Async image loading — keep isLoadingSlideRef true until all images load
+        // FIX 2: Use saved scaleX/scaleY directly instead of recalculating
         pendingImages++;
         const imgEl = new window.Image();
         imgEl.crossOrigin = 'anonymous';
@@ -298,10 +443,27 @@ export function PresentationEditor({
           const fabricImg = new FabricImage(imgEl, {
             left: el.left || 0,
             top: el.top || 0,
-            scaleX: (el.width || 200) / imgEl.width,
-            scaleY: (el.height || 200) / imgEl.height,
+            // Use saved scale values directly (preserves original)
+            scaleX: el.scaleX || ((el.displayWidth || el.width || 200) / imgEl.width),
+            scaleY: el.scaleY || ((el.displayHeight || el.height || 200) / imgEl.height),
             angle: el.angle || 0,
+            opacity: el.opacity ?? 1,
           });
+          // Apply clipPath for border radius if saved
+          if (el.borderRadius && el.borderRadius > 0 && fabricModule.Rect) {
+            fabricImg.clipPath = new fabricModule.Rect({
+              width: imgEl.width,
+              height: imgEl.height,
+              rx: el.borderRadius / (el.scaleX || 1),
+              ry: el.borderRadius / (el.scaleY || 1),
+              originX: 'center',
+              originY: 'center',
+            });
+          }
+          if (el.stroke) {
+            fabricImg.set('stroke', el.stroke);
+            fabricImg.set('strokeWidth', el.strokeWidth || 0);
+          }
           canvas.add(fabricImg);
           canvas.renderAll();
           pendingImages--;
@@ -317,6 +479,27 @@ export function PresentationEditor({
         };
         imgEl.src = el.src;
         continue;
+      } else if (el.type === 'table') {
+        // Recreate table placeholder rect
+        const { Rect: RectCls } = fabricModule;
+        const cellW = 120;
+        const cellH = 36;
+        const tRows = el.tableRows || 3;
+        const tCols = el.tableCols || 3;
+        obj = new RectCls({
+          ...common,
+          width: cellW * tCols,
+          height: cellH * tRows,
+          fill: '#ffffff',
+          stroke: '#d1d5db',
+          strokeWidth: 1,
+          rx: 2,
+          ry: 2,
+        });
+        (obj as any).__tableData = el.tableData || Array.from({ length: tRows }, () => Array(tCols).fill(''));
+        (obj as any).__tableRows = tRows;
+        (obj as any).__tableCols = tCols;
+        (obj as any).__isTable = true;
       }
 
       if (obj) {
@@ -325,7 +508,6 @@ export function PresentationEditor({
     }
 
     canvas.renderAll();
-    // Only mark loading done if no async images are pending
     if (pendingImages === 0) {
       isLoadingSlideRef.current = false;
     }
@@ -335,7 +517,7 @@ export function PresentationEditor({
   const slidesRef = useRef<SlideData[]>(slides);
   slidesRef.current = slides;
 
-  // Load current slide when index changes (NOT when slides change — that causes infinite loop with images)
+  // Load current slide when index changes
   useEffect(() => {
     if (slidesRef.current.length > 0 && canvasRef.current) {
       loadSlideToCanvas(slidesRef.current[currentSlideIndex] || DEFAULT_SLIDE);
@@ -346,6 +528,8 @@ export function PresentationEditor({
   const serializeCanvas = useCallback((): SlideData | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
+    // FIX 4: Refuse to serialize during loading
+    if (isLoadingSlideRef.current) return null;
 
     const elements: any[] = [];
     const objects = canvas.getObjects();
@@ -363,7 +547,9 @@ export function PresentationEditor({
         opacity: obj.opacity ?? 1,
       };
 
-      if (obj.type === 'textbox' || obj.type === 'Textbox') {
+      const objType = getObjType(obj);
+
+      if (objType === 'textbox') {
         elements.push({
           ...base,
           type: 'textbox',
@@ -372,11 +558,14 @@ export function PresentationEditor({
           fontWeight: obj.fontWeight || 'normal',
           fontStyle: obj.fontStyle || 'normal',
           underline: obj.underline || false,
+          linethrough: obj.linethrough || false,
           textAlign: obj.textAlign || 'left',
           lineHeight: obj.lineHeight || 1.3,
+          charSpacing: obj.charSpacing || 0,
           fontFamily: obj.fontFamily || 'Inter, system-ui, sans-serif',
+          padding: obj.padding || 0,
         });
-      } else if (obj.type === 'rect' || obj.type === 'Rect') {
+      } else if (objType === 'rect') {
         elements.push({
           ...base,
           type: 'rect',
@@ -384,27 +573,50 @@ export function PresentationEditor({
           ry: obj.ry || 0,
           stroke: obj.stroke || '',
           strokeWidth: obj.strokeWidth || 0,
+          strokeDashArray: obj.strokeDashArray || undefined,
+          shadow: obj.shadow ? { color: obj.shadow.color, blur: obj.shadow.blur, offsetX: obj.shadow.offsetX, offsetY: obj.shadow.offsetY } : undefined,
         });
-      } else if (obj.type === 'circle' || obj.type === 'Circle') {
+      } else if (objType === 'circle') {
         elements.push({
           ...base,
           type: 'circle',
           radius: obj.radius || 50,
           stroke: obj.stroke || '',
           strokeWidth: obj.strokeWidth || 0,
+          strokeDashArray: obj.strokeDashArray || undefined,
+          shadow: obj.shadow ? { color: obj.shadow.color, blur: obj.shadow.blur, offsetX: obj.shadow.offsetX, offsetY: obj.shadow.offsetY } : undefined,
         });
-      } else if (obj.type === 'triangle' || obj.type === 'Triangle') {
+      } else if (objType === 'triangle') {
         elements.push({
           ...base,
           type: 'triangle',
           stroke: obj.stroke || '',
           strokeWidth: obj.strokeWidth || 0,
+          strokeDashArray: obj.strokeDashArray || undefined,
+          shadow: obj.shadow ? { color: obj.shadow.color, blur: obj.shadow.blur, offsetX: obj.shadow.offsetX, offsetY: obj.shadow.offsetY } : undefined,
         });
-      } else if (obj.type === 'image' || obj.type === 'Image') {
+      } else if (objType === 'image') {
+        // FIX 2: Save actual scaleX/scaleY from Fabric object, plus natural dimensions
         elements.push({
           ...base,
           type: 'image',
           src: obj.getSrc?.() || '',
+          // Save native image dimensions
+          width: obj.width || 0,
+          height: obj.height || 0,
+          scaleX: obj.scaleX || 1,
+          scaleY: obj.scaleY || 1,
+          stroke: obj.stroke || '',
+          strokeWidth: obj.strokeWidth || 0,
+          borderRadius: obj.clipPath?.rx ? Math.round(obj.clipPath.rx * (obj.scaleX || 1)) : 0,
+        });
+      } else if (objType === 'table') {
+        elements.push({
+          ...base,
+          type: 'table',
+          tableData: obj.__tableData || [],
+          tableRows: obj.__tableRows || 3,
+          tableCols: obj.__tableCols || 3,
         });
       }
     }
@@ -412,6 +624,7 @@ export function PresentationEditor({
     return {
       elements,
       background: canvas.backgroundColor || '#ffffff',
+      backgroundImage: slides[currentSlideIndex]?.backgroundImage || undefined,
       notes: slides[currentSlideIndex]?.notes || '',
     };
   }, [currentSlideIndex, slides]);
@@ -428,7 +641,6 @@ export function PresentationEditor({
     });
   }, [currentSlideIndex, serializeCanvas, triggerSave]);
 
-  // Keep ref in sync so canvas event handlers always use the latest version
   saveCurrentSlideToStateRef.current = saveCurrentSlideToState;
 
   // ─── Slide Operations ─────────────────────────────
@@ -516,36 +728,97 @@ export function PresentationEditor({
     setSelectedTool('select');
   }, []);
 
+  // FIX 3: Upload images to server instead of base64
   const addImage = useCallback(() => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.onchange = () => {
+    input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const canvas = canvasRef.current;
-        if (!canvas || !fabricModule) return;
-        const { FabricImage } = fabricModule;
-        const imgEl = new window.Image();
-        imgEl.onload = () => {
-          const scale = Math.min(600 / imgEl.width, 400 / imgEl.height, 1);
-          const fabricImg = new FabricImage(imgEl, {
-            left: 80,
-            top: 80,
-            scaleX: scale,
-            scaleY: scale,
-          });
-          canvas.add(fabricImg);
-          canvas.setActiveObject(fabricImg);
-          canvas.renderAll();
-        };
-        imgEl.src = reader.result as string;
+
+      const canvas = canvasRef.current;
+      if (!canvas || !fabricModule) return;
+      const { FabricImage } = fabricModule;
+
+      let imgSrc: string;
+
+      try {
+        // Upload to gateway
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch('/api/gateway/uploads', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!resp.ok) throw new Error('Upload failed');
+        const data = await resp.json();
+        // Prefix with gateway base URL for full URL
+        imgSrc = data.url?.startsWith('http') ? data.url : `/api/gateway${data.url?.replace(/^\/api/, '')}`;
+      } catch (err) {
+        console.error('Image upload failed, falling back to base64:', err);
+        // Fallback to base64 if upload fails
+        imgSrc = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const imgEl = new window.Image();
+      imgEl.crossOrigin = 'anonymous';
+      imgEl.onload = () => {
+        const scale = Math.min(600 / imgEl.width, 400 / imgEl.height, 1);
+        const fabricImg = new FabricImage(imgEl, {
+          left: 80,
+          top: 80,
+          scaleX: scale,
+          scaleY: scale,
+        });
+        canvas.add(fabricImg);
+        canvas.setActiveObject(fabricImg);
+        canvas.renderAll();
       };
-      reader.readAsDataURL(file);
+      imgEl.src = imgSrc;
     };
     input.click();
+  }, []);
+
+  // ─── Table insertion ─────────────────────────────────
+  const addTable = useCallback((rows = 3, cols = 3) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !fabricModule) return;
+    const { Rect, Textbox, Group } = fabricModule;
+
+    const cellW = 120;
+    const cellH = 36;
+    const tableW = cellW * cols;
+    const tableH = cellH * rows;
+
+    // Create a placeholder rect for the table on canvas
+    const tableBg = new Rect({
+      left: 80,
+      top: 80,
+      width: tableW,
+      height: tableH,
+      fill: '#ffffff',
+      stroke: '#d1d5db',
+      strokeWidth: 1,
+      rx: 2,
+      ry: 2,
+    });
+
+    // Store table data in the object's custom property
+    const tableData: string[][] = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ''));
+    (tableBg as any).__tableData = tableData;
+    (tableBg as any).__tableRows = rows;
+    (tableBg as any).__tableCols = cols;
+    (tableBg as any).__isTable = true;
+
+    canvas.add(tableBg);
+    canvas.setActiveObject(tableBg);
+    canvas.renderAll();
+    setSelectedTool('select');
   }, []);
 
   const deleteSelected = useCallback(() => {
@@ -563,8 +836,10 @@ export function PresentationEditor({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (isEditingTitle) return;
+      // Bug 3 fix: Don't delete canvas objects when focus is in an input/select/textarea
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Don't delete when editing text inside a textbox
         const canvas = canvasRef.current;
         if (canvas && !canvas.isEditing) {
           const active = canvas.getActiveObject();
@@ -620,25 +895,37 @@ export function PresentationEditor({
     setIsPresenting(true);
   }, [saveCurrentSlideToState]);
 
-  // (resize observer is set up in canvas setup effect above)
-
-  // ─── Property Panel (selected object) ─────────────
-  const [selectedObj, setSelectedObj] = useState<any>(null);
-
-  useEffect(() => {
+  // ─── Slide background change (for property panel) ──
+  const handleSlideBackgroundChange = useCallback((bg: string) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const onSelect = () => setSelectedObj(canvas.getActiveObject());
-    const onDeselect = () => setSelectedObj(null);
-    canvas.on('selection:created', onSelect);
-    canvas.on('selection:updated', onSelect);
-    canvas.on('selection:cleared', onDeselect);
-    return () => {
-      canvas.off('selection:created', onSelect);
-      canvas.off('selection:updated', onSelect);
-      canvas.off('selection:cleared', onDeselect);
-    };
-  }, [ready, isLoading]);
+    canvas.backgroundColor = bg;
+    canvas.renderAll();
+    setSlides(prev => {
+      const updated = [...prev];
+      updated[currentSlideIndex] = { ...updated[currentSlideIndex], background: bg };
+      triggerSave(updated);
+      return updated;
+    });
+  }, [currentSlideIndex, triggerSave]);
+
+  const handleApplyBackgroundToAll = useCallback(() => {
+    const bg = slides[currentSlideIndex]?.background || '#ffffff';
+    setSlides(prev => {
+      const updated = prev.map(s => ({ ...s, background: bg }));
+      triggerSave(updated);
+      return updated;
+    });
+  }, [currentSlideIndex, slides, triggerSave]);
+
+  const handleSlideBackgroundImageChange = useCallback((bgImage: string | undefined) => {
+    setSlides(prev => {
+      const updated = [...prev];
+      updated[currentSlideIndex] = { ...updated[currentSlideIndex], backgroundImage: bgImage };
+      triggerSave(updated);
+      return updated;
+    });
+  }, [currentSlideIndex, triggerSave]);
 
   // ─── Presenter Mode ──────────────────────────────
   if (isPresenting) {
@@ -671,7 +958,7 @@ export function PresentationEditor({
 
   return (
     <div ref={containerRef} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-card">
-      {/* ─── Header Bar (consistent with BoardEditor) ─── */}
+      {/* ─── Header Bar ─── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <button onClick={onBack} className="md:hidden p-1 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
@@ -761,7 +1048,7 @@ export function PresentationEditor({
         </div>
       </div>
 
-      {/* ─── Toolbar ──────────────────────────────────── */}
+      {/* ─── Toolbar (simplified) ──────────────────────── */}
       <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border shrink-0 bg-muted/30">
         <ToolBtn icon={MousePointer2} active={selectedTool === 'select'} onClick={() => setSelectedTool('select')} title="Select" />
         <div className="w-px h-5 bg-border mx-1" />
@@ -770,81 +1057,23 @@ export function PresentationEditor({
         <ToolBtn icon={CircleIcon} onClick={() => addShape('circle')} title="Circle" />
         <ToolBtn icon={TriangleIcon} onClick={() => addShape('triangle')} title="Triangle" />
         <ToolBtn icon={ImageIcon} onClick={addImage} title="Image" />
+        <ToolBtn icon={Table2} onClick={() => addTable(3, 3)} title="Table" />
         <div className="w-px h-5 bg-border mx-1" />
-        {selectedObj && (selectedObj.type === 'textbox' || selectedObj.type === 'Textbox') && (
-          <TextFormatBar obj={selectedObj} canvas={canvasRef.current} />
-        )}
-        {selectedObj && (
-          <div className="flex items-center gap-1 ml-2">
-            <label className="text-xs text-muted-foreground">Fill:</label>
-            <input
-              type="color"
-              value={selectedObj.fill || '#333333'}
-              onChange={(e) => {
-                selectedObj.set('fill', e.target.value);
-                canvasRef.current?.renderAll();
-              }}
-              className="w-6 h-6 rounded border border-border cursor-pointer"
-            />
-            {/* Stroke color — for shapes (not textbox) */}
-            {selectedObj.type !== 'textbox' && selectedObj.type !== 'Textbox' && (
-              <>
-                <label className="text-xs text-muted-foreground ml-1">Stroke:</label>
-                <input
-                  type="color"
-                  value={selectedObj.stroke || '#94a3b8'}
-                  onChange={(e) => {
-                    selectedObj.set('stroke', e.target.value);
-                    if (!selectedObj.strokeWidth) selectedObj.set('strokeWidth', 1);
-                    canvasRef.current?.renderAll();
-                  }}
-                  className="w-6 h-6 rounded border border-border cursor-pointer"
-                />
-                <select
-                  value={selectedObj.strokeWidth || 0}
-                  onChange={(e) => {
-                    selectedObj.set('strokeWidth', Number(e.target.value));
-                    canvasRef.current?.renderAll();
-                  }}
-                  className="text-xs bg-transparent border border-border rounded px-1 py-0.5 text-foreground w-[44px]"
-                >
-                  {[0, 1, 2, 3, 4, 5, 8].map(w => (
-                    <option key={w} value={w}>{w}px</option>
-                  ))}
-                </select>
-              </>
-            )}
-            {/* Layer ordering */}
-            <div className="w-px h-4 bg-border mx-1" />
-            <button
-              onClick={() => { canvasRef.current?.bringObjectForward(selectedObj); canvasRef.current?.renderAll(); }}
-              className="p-1 text-muted-foreground hover:text-foreground" title="Bring forward"
-            >
-              <MoveUp className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => { canvasRef.current?.sendObjectBackwards(selectedObj); canvasRef.current?.renderAll(); }}
-              className="p-1 text-muted-foreground hover:text-foreground" title="Send backward"
-            >
-              <MoveDown className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => { canvasRef.current?.bringObjectToFront(selectedObj); canvasRef.current?.renderAll(); }}
-              className="p-1 text-muted-foreground hover:text-foreground" title="Bring to front"
-            >
-              <ArrowUpToLine className="h-3.5 w-3.5" />
-            </button>
-            <button
-              onClick={() => { canvasRef.current?.sendObjectToBack(selectedObj); canvasRef.current?.renderAll(); }}
-              className="p-1 text-muted-foreground hover:text-foreground" title="Send to back"
-            >
-              <ArrowDownToLine className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
+        {/* Spacer to push format toggle to the right */}
+        <div className="flex-1" />
+        <button
+          onClick={() => setShowPropertyPanel(v => !v)}
+          className={cn(
+            'p-1 rounded transition-colors',
+            showPropertyPanel ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'
+          )}
+          title={showPropertyPanel ? 'Hide properties' : 'Show properties'}
+        >
+          {showPropertyPanel ? <PanelRightClose className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+        </button>
       </div>
 
-      {/* ─── Main Area: Slide List + Canvas + Properties ── */}
+      {/* ─── Main Area: Slide List + Canvas + Property Panel ── */}
       <div className="flex-1 flex min-h-0">
         {/* Slide List (left) */}
         <div className="w-[220px] border-r border-border flex flex-col shrink-0 bg-muted/20">
@@ -908,9 +1137,863 @@ export function PresentationEditor({
           <div className="canvas-wrapper absolute">
             <div ref={canvasHostRef} className="shadow-xl rounded-sm" />
           </div>
+          {/* Floating text toolbar */}
+          {selectedObj && getObjType(selectedObj) === 'textbox' && (
+            <FloatingTextToolbar
+              obj={selectedObj}
+              canvas={canvasRef.current}
+              containerRef={canvasContainerRef}
+              propVersion={propVersion}
+            />
+          )}
+          {/* Table DOM overlay for direct editing */}
+          {selectedObj && getObjType(selectedObj) === 'table' && (
+            <TableOverlay
+              obj={selectedObj}
+              canvas={canvasRef.current}
+              containerRef={canvasContainerRef}
+              propVersion={propVersion}
+            />
+          )}
         </div>
+
+        {/* Property Panel (right) */}
+        {showPropertyPanel && (
+          <PropertyPanel
+            selectedObj={selectedObj}
+            canvas={canvasRef.current}
+            currentSlide={slides[currentSlideIndex] || DEFAULT_SLIDE}
+            onSlideBackgroundChange={handleSlideBackgroundChange}
+            onSlideBackgroundImageChange={handleSlideBackgroundImageChange}
+            onApplyBackgroundToAll={handleApplyBackgroundToAll}
+            propVersion={propVersion}
+            onClose={() => setShowPropertyPanel(false)}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+// ─── Property Panel ─────────────────────────────────
+function PropertyPanel({
+  selectedObj,
+  canvas,
+  currentSlide,
+  onSlideBackgroundChange,
+  onSlideBackgroundImageChange,
+  onApplyBackgroundToAll,
+  propVersion,
+  onClose,
+}: {
+  selectedObj: any;
+  canvas: any;
+  currentSlide: SlideData;
+  onSlideBackgroundChange: (bg: string) => void;
+  onSlideBackgroundImageChange: (bgImage: string | undefined) => void;
+  onApplyBackgroundToAll: () => void;
+  propVersion: number;
+  onClose: () => void;
+}) {
+  const objType = selectedObj ? getObjType(selectedObj) : null;
+
+  const updateProp = (prop: string, val: any) => {
+    if (!selectedObj || !canvas) return;
+    selectedObj.set(prop, val);
+    canvas.renderAll();
+  };
+
+  const updateAndSave = (prop: string, val: any) => {
+    updateProp(prop, val);
+    // Fire modified event so auto-save picks it up
+    canvas?.fire('object:modified', { target: selectedObj });
+  };
+
+  // Get visual width/height (accounting for scale)
+  const getVisualW = () => selectedObj ? Math.round((selectedObj.width || 0) * (selectedObj.scaleX || 1)) : 0;
+  const getVisualH = () => selectedObj ? Math.round((selectedObj.height || 0) * (selectedObj.scaleY || 1)) : 0;
+
+  const setVisualW = (newW: number) => {
+    if (!selectedObj || !newW) return;
+    const newScaleX = newW / (selectedObj.width || 1);
+    updateAndSave('scaleX', newScaleX);
+  };
+
+  const setVisualH = (newH: number) => {
+    if (!selectedObj || !newH) return;
+    const newScaleY = newH / (selectedObj.height || 1);
+    updateAndSave('scaleY', newScaleY);
+  };
+
+  return (
+    <div className="w-[280px] border-l border-border flex flex-col shrink-0 bg-card overflow-y-auto">
+      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+          {selectedObj ? `${objType || 'Object'} Properties` : 'Slide Properties'}
+        </span>
+        <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors" title="Close panel">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="p-3 space-y-4 text-xs">
+        {!selectedObj ? (
+          /* ─── Slide Properties ─── */
+          <SlidePropertiesSection
+            currentSlide={currentSlide}
+            onBackgroundChange={onSlideBackgroundChange}
+            onBackgroundImageChange={onSlideBackgroundImageChange}
+            onApplyToAll={onApplyBackgroundToAll}
+          />
+        ) : (
+          <>
+            {/* ─── Common Properties ─── */}
+            <CommonPropertiesSection
+              obj={selectedObj}
+              canvas={canvas}
+              getVisualW={getVisualW}
+              getVisualH={getVisualH}
+              setVisualW={setVisualW}
+              setVisualH={setVisualH}
+              updateAndSave={updateAndSave}
+              propVersion={propVersion}
+            />
+
+            {/* ─── Type-specific Properties ─── */}
+            {objType === 'textbox' && (
+              <TextPropertiesSection obj={selectedObj} canvas={canvas} updateAndSave={updateAndSave} propVersion={propVersion} />
+            )}
+            {(objType === 'rect' || objType === 'circle' || objType === 'triangle') && (
+              <ShapePropertiesSection obj={selectedObj} canvas={canvas} updateAndSave={updateAndSave} propVersion={propVersion} />
+            )}
+            {objType === 'image' && (
+              <ImagePropertiesSection obj={selectedObj} canvas={canvas} updateAndSave={updateAndSave} propVersion={propVersion} />
+            )}
+            {objType === 'table' && (
+              <TablePropertiesSection obj={selectedObj} canvas={canvas} propVersion={propVersion} />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Slide Properties Section ───────────────────────
+function SlidePropertiesSection({
+  currentSlide,
+  onBackgroundChange,
+  onBackgroundImageChange,
+  onApplyToAll,
+}: {
+  currentSlide: SlideData;
+  onBackgroundChange: (bg: string) => void;
+  onBackgroundImageChange: (bgImage: string | undefined) => void;
+  onApplyToAll: () => void;
+}) {
+  const handleUploadBgImage = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch('/api/gateway/uploads', { method: 'POST', body: formData });
+        if (!resp.ok) throw new Error('Upload failed');
+        const data = await resp.json();
+        const url = data.url?.startsWith('http') ? data.url : `/api/gateway${data.url?.replace(/^\/api/, '')}`;
+        onBackgroundImageChange(url);
+      } catch (err) {
+        console.error('Background image upload failed:', err);
+      }
+    };
+    input.click();
+  };
+
+  return (
+    <>
+      <SectionLabel label="Background" />
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-14 shrink-0">Color</label>
+          <input
+            type="color"
+            value={currentSlide.background || '#ffffff'}
+            onChange={(e) => onBackgroundChange(e.target.value)}
+            className="w-8 h-7 rounded border border-border cursor-pointer"
+          />
+          <span className="text-muted-foreground">{currentSlide.background || '#ffffff'}</span>
+        </div>
+
+        {/* Background Image */}
+        <div className="space-y-1.5">
+          <label className="text-muted-foreground">Image</label>
+          {currentSlide.backgroundImage ? (
+            <div className="relative rounded border border-border overflow-hidden" style={{ aspectRatio: '16/9' }}>
+              <img src={currentSlide.backgroundImage} alt="Background" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 hover:opacity-100">
+                <button
+                  onClick={handleUploadBgImage}
+                  className="px-2 py-1 rounded bg-white/90 text-xs text-gray-700 hover:bg-white"
+                >
+                  Replace
+                </button>
+                <button
+                  onClick={() => onBackgroundImageChange(undefined)}
+                  className="px-2 py-1 rounded bg-white/90 text-xs text-red-600 hover:bg-white"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={handleUploadBgImage}
+              className="w-full py-3 rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors text-xs flex items-center justify-center gap-1.5"
+            >
+              <ImageIcon className="h-3.5 w-3.5" />
+              Upload Background Image
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={onApplyToAll}
+          className="w-full py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors text-xs"
+        >
+          Apply to All Slides
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─── Common Properties Section ──────────────────────
+function CommonPropertiesSection({
+  obj,
+  canvas,
+  getVisualW,
+  getVisualH,
+  setVisualW,
+  setVisualH,
+  updateAndSave,
+  propVersion,
+}: {
+  obj: any;
+  canvas: any;
+  getVisualW: () => number;
+  getVisualH: () => number;
+  setVisualW: (w: number) => void;
+  setVisualH: (h: number) => void;
+  updateAndSave: (prop: string, val: any) => void;
+  propVersion: number;
+}) {
+  return (
+    <>
+      <SectionLabel label="Position" />
+      <div className="grid grid-cols-2 gap-2">
+        <PropInput label="X" value={Math.round(obj.left || 0)} onChange={(v) => updateAndSave('left', v)} />
+        <PropInput label="Y" value={Math.round(obj.top || 0)} onChange={(v) => updateAndSave('top', v)} />
+      </div>
+
+      <SectionLabel label="Size" />
+      <div className="grid grid-cols-2 gap-2">
+        <PropInput label="W" value={getVisualW()} onChange={(v) => setVisualW(v)} />
+        <PropInput label="H" value={getVisualH()} onChange={(v) => setVisualH(v)} />
+      </div>
+
+      <SectionLabel label="Transform" />
+      <div className="grid grid-cols-2 gap-2">
+        <PropInput label="Angle" value={Math.round(obj.angle || 0)} onChange={(v) => updateAndSave('angle', v)} />
+        <div className="flex items-center gap-1">
+          <label className="text-muted-foreground w-10 shrink-0">Alpha</label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round((obj.opacity ?? 1) * 100)}
+            onChange={(e) => updateAndSave('opacity', Number(e.target.value) / 100)}
+            className="flex-1 h-1 accent-primary"
+          />
+          <span className="text-muted-foreground w-7 text-right">{Math.round((obj.opacity ?? 1) * 100)}</span>
+        </div>
+      </div>
+
+      {/* Layer order */}
+      <SectionLabel label="Layer" />
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => { canvas?.bringObjectToFront(obj); canvas?.renderAll(); canvas?.fire('object:modified', { target: obj }); }}
+          className="flex-1 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center gap-1"
+          title="Bring to front"
+        >
+          <ArrowUpToLine className="h-3 w-3" /> Front
+        </button>
+        <button
+          onClick={() => { canvas?.bringObjectForward(obj); canvas?.renderAll(); canvas?.fire('object:modified', { target: obj }); }}
+          className="flex-1 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center gap-1"
+          title="Bring forward"
+        >
+          <MoveUp className="h-3 w-3" />
+        </button>
+        <button
+          onClick={() => { canvas?.sendObjectBackwards(obj); canvas?.renderAll(); canvas?.fire('object:modified', { target: obj }); }}
+          className="flex-1 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center gap-1"
+          title="Send backward"
+        >
+          <MoveDown className="h-3 w-3" />
+        </button>
+        <button
+          onClick={() => { canvas?.sendObjectToBack(obj); canvas?.renderAll(); canvas?.fire('object:modified', { target: obj }); }}
+          className="flex-1 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center gap-1"
+          title="Send to back"
+        >
+          <ArrowDownToLine className="h-3 w-3" /> Back
+        </button>
+      </div>
+
+      {/* Flip */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => { obj.set('flipX', !obj.flipX); canvas?.renderAll(); canvas?.fire('object:modified', { target: obj }); }}
+          className="flex-1 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center gap-1"
+          title="Flip horizontal"
+        >
+          <FlipHorizontal2 className="h-3 w-3" /> Flip H
+        </button>
+        <button
+          onClick={() => { obj.set('flipY', !obj.flipY); canvas?.renderAll(); canvas?.fire('object:modified', { target: obj }); }}
+          className="flex-1 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center gap-1"
+          title="Flip vertical"
+        >
+          <FlipVertical2 className="h-3 w-3" /> Flip V
+        </button>
+      </div>
+
+      <div className="border-t border-border" />
+    </>
+  );
+}
+
+// ─── Text Properties Section ────────────────────────
+function TextPropertiesSection({
+  obj,
+  canvas,
+  updateAndSave,
+  propVersion,
+}: {
+  obj: any;
+  canvas: any;
+  updateAndSave: (prop: string, val: any) => void;
+  propVersion: number;
+}) {
+  return (
+    <>
+      <SectionLabel label="Text" />
+      <div className="space-y-2">
+        {/* Font family */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-10 shrink-0">Font</label>
+          <select
+            value={obj.fontFamily || 'Inter, system-ui, sans-serif'}
+            onChange={(e) => updateAndSave('fontFamily', e.target.value)}
+            className="flex-1 h-7 bg-transparent border border-border rounded px-1.5 text-foreground text-xs"
+          >
+            {FONT_FAMILIES.map(f => (
+              <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Font size (editable number input) */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-10 shrink-0">Size</label>
+          <input
+            type="number"
+            value={obj.fontSize || 24}
+            onChange={(e) => updateAndSave('fontSize', Math.max(1, Number(e.target.value)))}
+            className="w-16 h-7 bg-transparent border border-border rounded px-1.5 text-foreground text-xs"
+            min={1}
+            max={200}
+          />
+          <span className="text-muted-foreground">px</span>
+        </div>
+
+        {/* Style toggles */}
+        <div className="flex items-center gap-1">
+          <ToggleBtn
+            active={obj.fontWeight === 'bold'}
+            onClick={() => updateAndSave('fontWeight', obj.fontWeight === 'bold' ? 'normal' : 'bold')}
+            title="Bold"
+          >
+            <Bold className="h-3.5 w-3.5" />
+          </ToggleBtn>
+          <ToggleBtn
+            active={obj.fontStyle === 'italic'}
+            onClick={() => updateAndSave('fontStyle', obj.fontStyle === 'italic' ? 'normal' : 'italic')}
+            title="Italic"
+          >
+            <Italic className="h-3.5 w-3.5" />
+          </ToggleBtn>
+          <ToggleBtn
+            active={!!obj.underline}
+            onClick={() => updateAndSave('underline', !obj.underline)}
+            title="Underline"
+          >
+            <Underline className="h-3.5 w-3.5" />
+          </ToggleBtn>
+          <ToggleBtn
+            active={!!obj.linethrough}
+            onClick={() => updateAndSave('linethrough', !obj.linethrough)}
+            title="Strikethrough"
+          >
+            <Strikethrough className="h-3.5 w-3.5" />
+          </ToggleBtn>
+        </div>
+
+        {/* Text align */}
+        <div className="flex items-center gap-1">
+          <ToggleBtn active={obj.textAlign === 'left'} onClick={() => updateAndSave('textAlign', 'left')} title="Left">
+            <AlignLeft className="h-3.5 w-3.5" />
+          </ToggleBtn>
+          <ToggleBtn active={obj.textAlign === 'center'} onClick={() => updateAndSave('textAlign', 'center')} title="Center">
+            <AlignCenter className="h-3.5 w-3.5" />
+          </ToggleBtn>
+          <ToggleBtn active={obj.textAlign === 'right'} onClick={() => updateAndSave('textAlign', 'right')} title="Right">
+            <AlignRight className="h-3.5 w-3.5" />
+          </ToggleBtn>
+          <ToggleBtn active={obj.textAlign === 'justify'} onClick={() => updateAndSave('textAlign', 'justify')} title="Justify">
+            <AlignJustify className="h-3.5 w-3.5" />
+          </ToggleBtn>
+        </div>
+
+        {/* Line height + char spacing */}
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput label="LnH" value={Number((obj.lineHeight || 1.3).toFixed(1))} onChange={(v) => updateAndSave('lineHeight', v)} step={0.1} min={0.5} max={5} />
+          <PropInput label="Spc" value={Math.round(obj.charSpacing || 0)} onChange={(v) => updateAndSave('charSpacing', v)} />
+        </div>
+
+        {/* Fill color */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-10 shrink-0">Color</label>
+          <input
+            type="color"
+            value={obj.fill || '#333333'}
+            onChange={(e) => updateAndSave('fill', e.target.value)}
+            className="w-8 h-7 rounded border border-border cursor-pointer"
+          />
+          <span className="text-muted-foreground">{obj.fill || '#333333'}</span>
+        </div>
+
+        {/* Padding */}
+        <PropInput label="Padding" value={obj.padding || 0} onChange={(v) => updateAndSave('padding', v)} min={0} max={100} />
+      </div>
+    </>
+  );
+}
+
+// ─── Shape Properties Section ───────────────────────
+function ShapePropertiesSection({
+  obj,
+  canvas,
+  updateAndSave,
+  propVersion,
+}: {
+  obj: any;
+  canvas: any;
+  updateAndSave: (prop: string, val: any) => void;
+  propVersion: number;
+}) {
+  const objType = getObjType(obj);
+  const [shadowEnabled, setShadowEnabled] = useState(!!obj.shadow);
+
+  return (
+    <>
+      <SectionLabel label="Shape" />
+      <div className="space-y-2">
+        {/* Fill color */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-14 shrink-0">Fill</label>
+          <input
+            type="color"
+            value={obj.fill || '#e2e8f0'}
+            onChange={(e) => updateAndSave('fill', e.target.value)}
+            className="w-8 h-7 rounded border border-border cursor-pointer"
+          />
+          <span className="text-muted-foreground">{obj.fill || '#e2e8f0'}</span>
+        </div>
+
+        {/* Stroke color */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-14 shrink-0">Stroke</label>
+          <input
+            type="color"
+            value={obj.stroke || '#94a3b8'}
+            onChange={(e) => {
+              updateAndSave('stroke', e.target.value);
+              if (!obj.strokeWidth) updateAndSave('strokeWidth', 1);
+            }}
+            className="w-8 h-7 rounded border border-border cursor-pointer"
+          />
+          <span className="text-muted-foreground">{obj.stroke || '#94a3b8'}</span>
+        </div>
+
+        {/* Stroke width */}
+        <PropInput label="Stroke W" value={obj.strokeWidth || 0} onChange={(v) => updateAndSave('strokeWidth', v)} min={0} max={20} />
+
+        {/* Stroke dash style */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-14 shrink-0">Dash</label>
+          <select
+            value={
+              !obj.strokeDashArray ? 'solid'
+                : obj.strokeDashArray[0] === 2 ? 'dotted'
+                  : 'dashed'
+            }
+            onChange={(e) => {
+              const val = e.target.value;
+              const dash = val === 'dashed' ? [8, 4] : val === 'dotted' ? [2, 4] : undefined;
+              updateAndSave('strokeDashArray', dash || null);
+            }}
+            className="flex-1 h-7 bg-transparent border border-border rounded px-1.5 text-foreground text-xs"
+          >
+            <option value="solid">Solid</option>
+            <option value="dashed">Dashed</option>
+            <option value="dotted">Dotted</option>
+          </select>
+        </div>
+
+        {/* Border radius (for rect) */}
+        {objType === 'rect' && (
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput label="rx" value={obj.rx || 0} onChange={(v) => { updateAndSave('rx', v); updateAndSave('ry', v); }} min={0} max={200} />
+            <PropInput label="ry" value={obj.ry || 0} onChange={(v) => updateAndSave('ry', v)} min={0} max={200} />
+          </div>
+        )}
+
+        {/* Shadow */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-14 shrink-0">Shadow</label>
+          <button
+            onClick={() => {
+              if (shadowEnabled) {
+                obj.set('shadow', null);
+                canvas?.renderAll();
+                canvas?.fire('object:modified', { target: obj });
+                setShadowEnabled(false);
+              } else {
+                const { Shadow } = fabricModule;
+                obj.set('shadow', new Shadow({ color: 'rgba(0,0,0,0.3)', blur: 10, offsetX: 4, offsetY: 4 }));
+                canvas?.renderAll();
+                canvas?.fire('object:modified', { target: obj });
+                setShadowEnabled(true);
+              }
+            }}
+            className={cn(
+              'px-2 py-1 rounded border text-xs transition-colors',
+              shadowEnabled
+                ? 'border-primary text-primary bg-primary/10'
+                : 'border-border text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {shadowEnabled ? 'On' : 'Off'}
+          </button>
+        </div>
+        {shadowEnabled && obj.shadow && (
+          <div className="space-y-2 pl-4">
+            <div className="flex items-center gap-2">
+              <label className="text-muted-foreground w-10 shrink-0">Color</label>
+              <input
+                type="color"
+                value={obj.shadow.color?.startsWith('rgba') ? '#000000' : (obj.shadow.color || '#000000')}
+                onChange={(e) => {
+                  const { Shadow } = fabricModule;
+                  obj.set('shadow', new Shadow({ ...obj.shadow, color: e.target.value }));
+                  canvas?.renderAll();
+                  canvas?.fire('object:modified', { target: obj });
+                }}
+                className="w-8 h-7 rounded border border-border cursor-pointer"
+              />
+            </div>
+            <PropInput label="Blur" value={obj.shadow.blur || 0} onChange={(v) => {
+              const { Shadow } = fabricModule;
+              obj.set('shadow', new Shadow({ ...obj.shadow, blur: v }));
+              canvas?.renderAll();
+              canvas?.fire('object:modified', { target: obj });
+            }} min={0} max={50} />
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput label="offX" value={obj.shadow.offsetX || 0} onChange={(v) => {
+                const { Shadow } = fabricModule;
+                obj.set('shadow', new Shadow({ ...obj.shadow, offsetX: v }));
+                canvas?.renderAll();
+                canvas?.fire('object:modified', { target: obj });
+              }} />
+              <PropInput label="offY" value={obj.shadow.offsetY || 0} onChange={(v) => {
+                const { Shadow } = fabricModule;
+                obj.set('shadow', new Shadow({ ...obj.shadow, offsetY: v }));
+                canvas?.renderAll();
+                canvas?.fire('object:modified', { target: obj });
+              }} />
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ─── Image Properties Section ───────────────────────
+function ImagePropertiesSection({
+  obj,
+  canvas,
+  updateAndSave,
+  propVersion,
+}: {
+  obj: any;
+  canvas: any;
+  updateAndSave: (prop: string, val: any) => void;
+  propVersion: number;
+}) {
+  const [borderRadius, setBorderRadius] = useState(
+    obj.clipPath?.rx ? Math.round(obj.clipPath.rx * (obj.scaleX || 1)) : 0
+  );
+  const [shadowEnabled, setShadowEnabled] = useState(!!obj.shadow);
+
+  const applyBorderRadius = (r: number) => {
+    setBorderRadius(r);
+    if (r > 0 && fabricModule.Rect) {
+      obj.clipPath = new fabricModule.Rect({
+        width: obj.width,
+        height: obj.height,
+        rx: r / (obj.scaleX || 1),
+        ry: r / (obj.scaleY || 1),
+        originX: 'center',
+        originY: 'center',
+      });
+    } else {
+      obj.clipPath = undefined;
+    }
+    canvas?.renderAll();
+    canvas?.fire('object:modified', { target: obj });
+  };
+
+  const replaceImage = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      let imgSrc: string;
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await fetch('/api/gateway/uploads', { method: 'POST', body: formData });
+        if (!resp.ok) throw new Error('Upload failed');
+        const data = await resp.json();
+        imgSrc = data.url?.startsWith('http') ? data.url : `/api/gateway${data.url?.replace(/^\/api/, '')}`;
+      } catch {
+        imgSrc = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const imgEl = new window.Image();
+      imgEl.crossOrigin = 'anonymous';
+      imgEl.onload = () => {
+        // Keep current position, set new image element
+        const { FabricImage } = fabricModule;
+        const newImg = new FabricImage(imgEl, {
+          left: obj.left,
+          top: obj.top,
+          scaleX: obj.scaleX,
+          scaleY: obj.scaleY,
+          angle: obj.angle,
+          opacity: obj.opacity,
+        });
+        canvas?.remove(obj);
+        canvas?.add(newImg);
+        canvas?.setActiveObject(newImg);
+        canvas?.renderAll();
+      };
+      imgEl.src = imgSrc;
+    };
+    input.click();
+  };
+
+  const resetToDefault = () => {
+    if (!obj) return;
+    const naturalW = obj.width || 200;
+    const naturalH = obj.height || 200;
+    const scale = Math.min(600 / naturalW, 400 / naturalH, 1);
+    obj.set('scaleX', scale);
+    obj.set('scaleY', scale);
+    canvas?.renderAll();
+    canvas?.fire('object:modified', { target: obj });
+  };
+
+  return (
+    <>
+      <SectionLabel label="Image" />
+      <div className="space-y-2">
+        {/* Border radius */}
+        <PropInput label="Radius" value={borderRadius} onChange={(v) => applyBorderRadius(v)} min={0} max={200} />
+
+        {/* Border/stroke */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-14 shrink-0">Border</label>
+          <input
+            type="color"
+            value={obj.stroke || '#000000'}
+            onChange={(e) => {
+              updateAndSave('stroke', e.target.value);
+              if (!obj.strokeWidth) updateAndSave('strokeWidth', 1);
+            }}
+            className="w-8 h-7 rounded border border-border cursor-pointer"
+          />
+        </div>
+        <PropInput label="Border W" value={obj.strokeWidth || 0} onChange={(v) => updateAndSave('strokeWidth', v)} min={0} max={20} />
+
+        {/* Shadow */}
+        <div className="flex items-center gap-2">
+          <label className="text-muted-foreground w-14 shrink-0">Shadow</label>
+          <button
+            onClick={() => {
+              if (shadowEnabled) {
+                obj.set('shadow', null);
+                canvas?.renderAll();
+                canvas?.fire('object:modified', { target: obj });
+                setShadowEnabled(false);
+              } else {
+                const { Shadow } = fabricModule;
+                obj.set('shadow', new Shadow({ color: 'rgba(0,0,0,0.3)', blur: 10, offsetX: 4, offsetY: 4 }));
+                canvas?.renderAll();
+                canvas?.fire('object:modified', { target: obj });
+                setShadowEnabled(true);
+              }
+            }}
+            className={cn(
+              'px-2 py-1 rounded border text-xs transition-colors',
+              shadowEnabled
+                ? 'border-primary text-primary bg-primary/10'
+                : 'border-border text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {shadowEnabled ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        <div className="border-t border-border pt-2 space-y-1.5">
+          <button
+            onClick={replaceImage}
+            className="w-full py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors text-xs flex items-center justify-center gap-1"
+          >
+            <Replace className="h-3 w-3" /> Replace Image
+          </button>
+          <button
+            onClick={resetToDefault}
+            className="w-full py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-colors text-xs flex items-center justify-center gap-1"
+          >
+            <RotateCcw className="h-3 w-3" /> Reset to Default
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Table Properties Section ────────────────────────
+function TablePropertiesSection({ obj, canvas, propVersion }: {
+  obj: any;
+  canvas: any;
+  propVersion: number;
+}) {
+  const rows = obj.__tableRows || 3;
+  const cols = obj.__tableCols || 3;
+  return (
+    <>
+      <SectionLabel label="Table" />
+      <div className="space-y-2 text-xs">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <span>{rows} rows × {cols} columns</span>
+        </div>
+        <p className="text-muted-foreground text-[10px]">
+          Click the table on canvas to edit cells directly. Use + Row / + Col buttons to add rows or columns.
+        </p>
+      </div>
+    </>
+  );
+}
+
+// ─── Shared UI Components ───────────────────────────
+
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium pt-1">
+      {label}
+    </div>
+  );
+}
+
+function PropInput({
+  label,
+  value,
+  onChange,
+  step = 1,
+  min,
+  max,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+  min?: number;
+  max?: number;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <label className="text-muted-foreground w-10 shrink-0 text-xs">{label}</label>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        step={step}
+        min={min}
+        max={max}
+        className="w-[70px] h-7 bg-transparent border border-border rounded px-1.5 text-foreground text-xs"
+      />
+    </div>
+  );
+}
+
+function ToggleBtn({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'p-1.5 rounded transition-colors',
+        active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+      )}
+      title={title}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -935,27 +2018,58 @@ function ToolBtn({ icon: Icon, onClick, active, title }: {
   );
 }
 
-// ─── Text Format Bar ────────────────────────────────
-const FONT_FAMILIES = [
-  { label: 'Inter', value: 'Inter, system-ui, sans-serif' },
-  { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
-  { label: 'Georgia', value: 'Georgia, serif' },
-  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
-  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
-  { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
-  { label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
-  { label: 'Comic Sans MS', value: '"Comic Sans MS", cursive' },
-];
+// ─── Text Format Bar (inline toolbar for quick access) ──
+function FloatingTextToolbar({ obj, canvas, containerRef, propVersion }: {
+  obj: any;
+  canvas: any;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  propVersion: number;
+}) {
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
-function TextFormatBar({ obj, canvas }: { obj: any; canvas: any }) {
+  // Compute position above the object
+  useEffect(() => {
+    if (!obj || !canvas || !containerRef.current) return;
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const zoom = canvas.getZoom() || 1;
+
+    // Find the canvas-wrapper offset within the container
+    const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
+    const wrapperLeft = wrapper ? parseFloat(wrapper.style.marginLeft || '0') : 0;
+    const wrapperTop = wrapper ? parseFloat(wrapper.style.marginTop || '0') : 0;
+
+    // Object bounds in canvas coords → pixel coords
+    const objLeft = (obj.left || 0) * zoom + wrapperLeft;
+    const objTop = (obj.top || 0) * zoom + wrapperTop;
+    const objWidth = (obj.width || 0) * (obj.scaleX || 1) * zoom;
+
+    const toolbarW = toolbarRef.current?.offsetWidth || 400;
+    let left = objLeft + objWidth / 2 - toolbarW / 2;
+    // Clamp within container
+    left = Math.max(8, Math.min(left, containerRect.width - toolbarW - 8));
+    let top = objTop - 44;
+    if (top < 4) top = objTop + (obj.height || 0) * (obj.scaleY || 1) * zoom + 8;
+
+    setPos({ left, top });
+  }, [obj, canvas, containerRef, propVersion]);
+
   const update = (prop: string, val: any) => {
     obj.set(prop, val);
     canvas?.renderAll();
+    canvas?.fire('object:modified', { target: obj });
   };
 
+  if (!pos) return null;
+
   return (
-    <div className="flex items-center gap-0.5">
-      {/* Font family */}
+    <div
+      ref={toolbarRef}
+      className="absolute z-30 flex items-center gap-0.5 px-1.5 py-1 rounded-lg border border-border bg-card/95 backdrop-blur shadow-lg"
+      style={{ left: pos.left, top: pos.top }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       <select
         value={obj.fontFamily || 'Inter, system-ui, sans-serif'}
         onChange={(e) => update('fontFamily', e.target.value)}
@@ -966,16 +2080,13 @@ function TextFormatBar({ obj, canvas }: { obj: any; canvas: any }) {
         ))}
       </select>
       <div className="w-px h-4 bg-border mx-0.5" />
-      {/* Font size */}
-      <select
+      <input
+        type="number"
         value={obj.fontSize || 24}
-        onChange={(e) => update('fontSize', Number(e.target.value))}
+        onChange={(e) => update('fontSize', Math.max(1, Number(e.target.value)))}
         className="text-xs bg-transparent border border-border rounded px-1 py-0.5 text-foreground w-[44px]"
-      >
-        {[12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72].map(s => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
+        min={1}
+      />
       <div className="w-px h-4 bg-border mx-0.5" />
       <button
         onClick={() => update('fontWeight', obj.fontWeight === 'bold' ? 'normal' : 'bold')}
@@ -995,16 +2106,197 @@ function TextFormatBar({ obj, canvas }: { obj: any; canvas: any }) {
       >
         <Underline className="h-3.5 w-3.5" />
       </button>
+      <button
+        onClick={() => update('strikethrough', !obj.linethrough)}
+        className={cn('p-1 rounded', obj.linethrough ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground')}
+      >
+        <Strikethrough className="h-3.5 w-3.5" />
+      </button>
       <div className="w-px h-4 bg-border mx-0.5" />
       <button onClick={() => update('textAlign', 'left')} className={cn('p-1 rounded', obj.textAlign === 'left' ? 'text-primary' : 'text-muted-foreground')}>
         <AlignLeft className="h-3.5 w-3.5" />
       </button>
-      <button onClick={() => update('textAlign', 'center')} className={cn('p-1 rounded', obj.textAlign === 'center' ? 'text-primary' : 'text-muted-foreground')}>
+      <button onClick={() => update('textAlign', 'center')} className={cn('p-1 rounded', (obj.textAlign || 'left') === 'center' ? 'text-primary' : 'text-muted-foreground')}>
         <AlignCenter className="h-3.5 w-3.5" />
       </button>
       <button onClick={() => update('textAlign', 'right')} className={cn('p-1 rounded', obj.textAlign === 'right' ? 'text-primary' : 'text-muted-foreground')}>
         <AlignRight className="h-3.5 w-3.5" />
       </button>
+      <div className="w-px h-4 bg-border mx-0.5" />
+      <input
+        type="color"
+        value={typeof obj.fill === 'string' ? obj.fill : '#1a1a1a'}
+        onChange={(e) => update('fill', e.target.value)}
+        className="w-6 h-6 rounded border border-border cursor-pointer"
+        title="Text color"
+      />
+    </div>
+  );
+}
+
+// ─── Table DOM Overlay ───────────────────────────────
+function TableOverlay({ obj, canvas, containerRef, propVersion }: {
+  obj: any;
+  canvas: any;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  propVersion: number;
+}) {
+  const [tableData, setTableData] = useState<string[][]>(obj.__tableData || []);
+  const [rows, setRows] = useState(obj.__tableRows || 3);
+  const [cols, setCols] = useState(obj.__tableCols || 3);
+
+  // Sync from obj when selection changes
+  useEffect(() => {
+    setTableData(obj.__tableData || []);
+    setRows(obj.__tableRows || 3);
+    setCols(obj.__tableCols || 3);
+  }, [obj]);
+
+  const updateCell = (r: number, c: number, val: string) => {
+    const newData = tableData.map(row => [...row]);
+    newData[r][c] = val;
+    setTableData(newData);
+    obj.__tableData = newData;
+    canvas?.fire('object:modified', { target: obj });
+  };
+
+  const addRow = () => {
+    const newData = [...tableData, Array(cols).fill('')];
+    setTableData(newData);
+    const newRows = rows + 1;
+    setRows(newRows);
+    obj.__tableData = newData;
+    obj.__tableRows = newRows;
+    // Resize the rect
+    obj.set('height', newRows * 36);
+    canvas?.renderAll();
+    canvas?.fire('object:modified', { target: obj });
+  };
+
+  const addCol = () => {
+    const newData = tableData.map(row => [...row, '']);
+    setTableData(newData);
+    const newCols = cols + 1;
+    setCols(newCols);
+    obj.__tableData = newData;
+    obj.__tableCols = newCols;
+    obj.set('width', newCols * 120);
+    canvas?.renderAll();
+    canvas?.fire('object:modified', { target: obj });
+  };
+
+  const removeRow = (idx: number) => {
+    if (rows <= 1) return;
+    const newData = tableData.filter((_, i) => i !== idx);
+    setTableData(newData);
+    const newRows = rows - 1;
+    setRows(newRows);
+    obj.__tableData = newData;
+    obj.__tableRows = newRows;
+    obj.set('height', newRows * 36);
+    canvas?.renderAll();
+    canvas?.fire('object:modified', { target: obj });
+  };
+
+  const removeCol = (idx: number) => {
+    if (cols <= 1) return;
+    const newData = tableData.map(row => row.filter((_, i) => i !== idx));
+    setTableData(newData);
+    const newCols = cols - 1;
+    setCols(newCols);
+    obj.__tableData = newData;
+    obj.__tableCols = newCols;
+    obj.set('width', newCols * 120);
+    canvas?.renderAll();
+    canvas?.fire('object:modified', { target: obj });
+  };
+
+  // Position overlay above the canvas object
+  const container = containerRef.current;
+  if (!container || !canvas) return null;
+  const zoom = canvas.getZoom() || 1;
+  const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
+  const wrapperLeft = wrapper ? parseFloat(wrapper.style.marginLeft || '0') : 0;
+  const wrapperTop = wrapper ? parseFloat(wrapper.style.marginTop || '0') : 0;
+
+  const left = (obj.left || 0) * zoom + wrapperLeft;
+  const top = (obj.top || 0) * zoom + wrapperTop;
+  const cellW = 120 * zoom;
+  const cellH = 36 * zoom;
+  const fontSize = Math.max(10, 12 * zoom);
+
+  return (
+    <div
+      className="absolute z-20"
+      style={{ left, top }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <table className="border-collapse" style={{ borderSpacing: 0 }}>
+        <tbody>
+          {tableData.map((row, ri) => (
+            <tr key={ri}>
+              {row.map((cell, ci) => (
+                <td
+                  key={ci}
+                  className="border border-gray-300"
+                  style={{ width: cellW, height: cellH, padding: 0 }}
+                >
+                  <input
+                    value={cell}
+                    onChange={(e) => updateCell(ri, ci, e.target.value)}
+                    className="w-full h-full px-1 bg-transparent outline-none text-center"
+                    style={{ fontSize, border: 'none' }}
+                  />
+                </td>
+              ))}
+              {/* Delete row button */}
+              <td style={{ width: 20, padding: 0 }}>
+                {rows > 1 && (
+                  <button
+                    onClick={() => removeRow(ri)}
+                    className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-destructive text-[10px]"
+                    title="Delete row"
+                  >
+                    ×
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+          {/* Delete column buttons row */}
+          <tr>
+            {tableData[0]?.map((_, ci) => (
+              <td key={ci} style={{ height: 20, padding: 0, textAlign: 'center' }}>
+                {cols > 1 && (
+                  <button
+                    onClick={() => removeCol(ci)}
+                    className="w-5 h-5 inline-flex items-center justify-center text-muted-foreground hover:text-destructive text-[10px]"
+                    title="Delete column"
+                  >
+                    ×
+                  </button>
+                )}
+              </td>
+            ))}
+            <td />
+          </tr>
+        </tbody>
+      </table>
+      {/* Add row/col buttons */}
+      <div className="flex gap-1 mt-1">
+        <button
+          onClick={addRow}
+          className="px-2 py-0.5 text-[10px] rounded bg-muted text-muted-foreground hover:text-foreground border border-border"
+        >
+          + Row
+        </button>
+        <button
+          onClick={addCol}
+          className="px-2 py-0.5 text-[10px] rounded bg-muted text-muted-foreground hover:text-foreground border border-border"
+        >
+          + Col
+        </button>
+      </div>
     </div>
   );
 }
@@ -1035,6 +2327,9 @@ function SlideThumb({ slide }: { slide: SlideData }) {
   const scale = THUMB_WIDTH / SLIDE_WIDTH;
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ backgroundColor: slide.background || '#fff' }}>
+      {slide.backgroundImage && (
+        <img src={slide.backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover" />
+      )}
       {slide.elements.slice(0, 10).map((el, i) => {
         const w = (el.width || 100) * scale * (el.scaleX || 1);
         const h = (el.height || 50) * scale * (el.scaleY || 1);
@@ -1049,7 +2344,6 @@ function SlideThumb({ slide }: { slide: SlideData }) {
 
         if (el.type === 'textbox') {
           const scaledFont = (el.fontSize || 24) * scale;
-          // If text is too small to read, show a colored bar placeholder
           if (scaledFont < 6) {
             const barH = Math.max(2, Math.round(scaledFont * 0.8));
             return (
@@ -1080,11 +2374,17 @@ function SlideThumb({ slide }: { slide: SlideData }) {
           return <div key={i} style={{ ...style, backgroundColor: el.fill || '#e2e8f0', borderRadius: '50%' }} />;
         }
         if (el.type === 'triangle') {
-          // CSS triangle via clip-path
           return <div key={i} style={{ ...style, backgroundColor: el.fill || '#e2e8f0', clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)' }} />;
         }
         if (el.type === 'image') {
           return <img key={i} src={el.src} alt="" style={{ ...style, objectFit: 'cover' }} />;
+        }
+        if (el.type === 'table') {
+          return (
+            <div key={i} style={{ ...style, backgroundColor: '#f9fafb', border: '1px solid #d1d5db' }}>
+              <Table2 className="w-full h-full text-gray-300 p-0.5" />
+            </div>
+          );
         }
         return <div key={i} style={{ ...style, backgroundColor: el.fill || '#e2e8f0' }} />;
       })}
@@ -1130,6 +2430,43 @@ function PresenterMode({
       interactive: false,
     });
     canvasRef.current = canvas;
+
+    // Table grid rendering for presenter mode
+    canvas.on('after:render', () => {
+      const ctx = canvas.getContext();
+      if (!ctx) return;
+      for (const o of canvas.getObjects()) {
+        if (!(o as any).__isTable) continue;
+        const tData: string[][] = (o as any).__tableData || [];
+        const tRows: number = (o as any).__tableRows || 3;
+        const tCols: number = (o as any).__tableCols || 3;
+        const z = canvas.getZoom() || 1;
+        const ox = (o.left || 0) * z;
+        const oy = (o.top || 0) * z;
+        const cw = 120 * z;
+        const ch = 36 * z;
+        ctx.save();
+        ctx.strokeStyle = '#d1d5db';
+        ctx.lineWidth = 1;
+        for (let r = 0; r <= tRows; r++) { ctx.beginPath(); ctx.moveTo(ox, oy + r * ch); ctx.lineTo(ox + tCols * cw, oy + r * ch); ctx.stroke(); }
+        for (let c = 0; c <= tCols; c++) { ctx.beginPath(); ctx.moveTo(ox + c * cw, oy); ctx.lineTo(ox + c * cw, oy + tRows * ch); ctx.stroke(); }
+        ctx.fillStyle = '#f3f4f6';
+        ctx.fillRect(ox, oy, tCols * cw, ch);
+        ctx.strokeRect(ox, oy, tCols * cw, ch);
+        ctx.fillStyle = '#1f2937';
+        ctx.font = `${Math.max(10, 12 * z)}px Inter, system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let r = 0; r < tRows; r++) {
+          for (let c = 0; c < tCols; c++) {
+            const text = tData[r]?.[c] || '';
+            if (text) ctx.fillText(text, ox + c * cw + cw / 2, oy + r * ch + ch / 2, cw - 8);
+          }
+        }
+        ctx.restore();
+      }
+    });
+
     return () => {
       canvas.dispose();
       canvasRef.current = null;
@@ -1144,6 +2481,24 @@ function PresenterMode({
     const slide = slides[index];
     canvas.clear();
     canvas.backgroundColor = slide.background || '#ffffff';
+
+    // Background image in presenter mode
+    if (slide.backgroundImage && fabricModule.FabricImage) {
+      const bgImg = new window.Image();
+      bgImg.crossOrigin = 'anonymous';
+      bgImg.onload = () => {
+        const fImg = new fabricModule.FabricImage(bgImg, { originX: 'left', originY: 'top' });
+        const scX = SLIDE_WIDTH / bgImg.width;
+        const scY = SLIDE_HEIGHT / bgImg.height;
+        const sc = Math.max(scX, scY);
+        fImg.set({ scaleX: sc, scaleY: sc });
+        canvas.backgroundImage = fImg;
+        canvas.renderAll();
+      };
+      bgImg.src = slide.backgroundImage;
+    } else {
+      canvas.backgroundImage = null;
+    }
 
     const { Textbox, Rect, Circle, Triangle, FabricImage } = fabricModule;
     for (const el of slide.elements) {
@@ -1167,12 +2522,38 @@ function PresenterMode({
         const imgEl = new window.Image();
         imgEl.crossOrigin = 'anonymous';
         imgEl.onload = () => {
-          const fi = new FabricImage(imgEl, { left: el.left || 0, top: el.top || 0, scaleX: (el.width || 200) / imgEl.width, scaleY: (el.height || 200) / imgEl.height, selectable: false, evented: false });
+          const fi = new FabricImage(imgEl, {
+            left: el.left || 0,
+            top: el.top || 0,
+            scaleX: el.scaleX || ((el.width || 200) / imgEl.width),
+            scaleY: el.scaleY || ((el.height || 200) / imgEl.height),
+            selectable: false,
+            evented: false,
+          });
           canvas.add(fi);
           canvas.renderAll();
         };
         imgEl.src = el.src;
         continue;
+      } else if (el.type === 'table') {
+        // Render table as rect in presenter mode — grid drawn via after:render
+        const { Rect: RectPres } = fabricModule;
+        const cellW = 120;
+        const cellH = 36;
+        const tRows = el.tableRows || 3;
+        const tCols = el.tableCols || 3;
+        obj = new RectPres({
+          ...common,
+          width: cellW * tCols,
+          height: cellH * tRows,
+          fill: '#ffffff',
+          stroke: '#d1d5db',
+          strokeWidth: 1,
+        });
+        (obj as any).__tableData = el.tableData || [];
+        (obj as any).__tableRows = tRows;
+        (obj as any).__tableCols = tCols;
+        (obj as any).__isTable = true;
       }
       if (obj) canvas.add(obj);
     }
@@ -1220,11 +2601,9 @@ function PresenterMode({
       <div className="presenter-canvas" style={{ width: SLIDE_WIDTH, height: SLIDE_HEIGHT }}>
         <canvas ref={canvasElRef} />
       </div>
-      {/* Slide counter */}
       <div className="fixed bottom-4 right-4 text-white/50 text-sm z-50 cursor-default" onClick={(e) => e.stopPropagation()}>
         {index + 1} / {slides.length}
       </div>
-      {/* Exit button */}
       <button
         className="fixed top-4 right-4 text-white/30 hover:text-white/70 text-sm z-50"
         onClick={(e) => { e.stopPropagation(); document.exitFullscreen?.().catch(() => {}); onExit(); }}

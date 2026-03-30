@@ -27,6 +27,7 @@ function loadExcalidraw() {
       exportToBlobFn = mod.exportToBlob;
     }),
     // Excalidraw requires its CSS for toolbar/UI to render
+    // @ts-ignore css import
     import('@excalidraw/excalidraw/index.css'),
   ]).then(() => {
     excalidrawLoaded = true;

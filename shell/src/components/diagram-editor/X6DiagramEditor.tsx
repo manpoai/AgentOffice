@@ -122,7 +122,7 @@ function X6DiagramEditorInner({
   const mindmapTreeRef = useRef<MindmapTreeNode | null>(null);
   const mindmapGroupIdRef = useRef<string>('');
   const startEditRef = useRef<((node: Node, initialKey?: string) => void) | null>(null);
-  const [selectedMindmapNode, setSelectedMindmapNode] = useState<string | null>(null);
+  const justFinishedEditRef = useRef(0); // timestamp — used to debounce Enter after edit commit
 
   // Auto-save
   const { save, lastSaved, saving } = useAutoSave(graph, diagramId);
@@ -187,10 +187,16 @@ function X6DiagramEditorInner({
       const rootNode = graph.getNodes().find(n => n.getData()?.isRoot && n.getData()?.mindmapGroupId === data.mindmapGroupId);
       renderMindmapToGraph(graph, mindmapTreeRef.current, rootNode?.position().x || 0, rootNode?.position().y || 0, data.mindmapGroupId);
 
-      // Defer selection to next frame so React components for new nodes finish mounting
+      // Defer selection + auto-edit to next frame so React components finish mounting
       requestAnimationFrame(() => {
         const newNode = graph.getCellById(newId);
-        if (newNode) graph.select(newNode);
+        if (newNode) {
+          graph.resetSelection(newNode);
+          // Auto-enter edit mode on the new node
+          setTimeout(() => {
+            if (startEditRef.current) startEditRef.current(newNode as Node);
+          }, 50);
+        }
       });
     }
   }, [graph]);
@@ -213,7 +219,12 @@ function X6DiagramEditorInner({
 
       requestAnimationFrame(() => {
         const newNode = graph.getCellById(newId);
-        if (newNode) graph.select(newNode);
+        if (newNode) {
+          graph.resetSelection(newNode);
+          setTimeout(() => {
+            if (startEditRef.current) startEditRef.current(newNode as Node);
+          }, 50);
+        }
       });
     }
   }, [graph]);
@@ -235,7 +246,7 @@ function X6DiagramEditorInner({
 
     requestAnimationFrame(() => {
       const nodeCell = graph.getCellById(node.id);
-      if (nodeCell) graph.select(nodeCell);
+      if (nodeCell) graph.resetSelection(nodeCell);
     });
   }, [graph]);
 
@@ -272,12 +283,41 @@ function X6DiagramEditorInner({
       // Never intercept when user is typing in an input
       if (isEditing(e)) return;
 
+      // Skip Enter/Tab if we just finished editing (input already unmounted
+      // so isEditing returns false, but the keydown is still from the edit commit)
+      if ((e.key === 'Enter' || e.key === 'Tab') && Date.now() - justFinishedEditRef.current < 100) return;
+
       const meta = e.metaKey || e.ctrlKey;
 
       // Delete
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const cells = graph.getSelectedCells();
-        if (cells.length) { graph.removeCells(cells); e.preventDefault(); }
+        if (cells.length) {
+          // For mindmap nodes, also remove from tree data structure
+          if (mindmapTreeRef.current) {
+            let needsRerender = false;
+            let mmGroupId = '';
+            for (const cell of cells) {
+              if (!cell.isNode()) continue;
+              const data = cell.getData();
+              if (!data?.mindmapGroupId) continue;
+              if (data.isRoot) continue; // don't delete root via backspace
+              removeNode(mindmapTreeRef.current, cell.id);
+              mmGroupId = data.mindmapGroupId;
+              needsRerender = true;
+            }
+            if (needsRerender && mmGroupId) {
+              const rootNode = graph.getNodes().find(n => n.getData()?.isRoot && n.getData()?.mindmapGroupId === mmGroupId);
+              if (rootNode) {
+                renderMindmapToGraph(graph, mindmapTreeRef.current, rootNode.position().x, rootNode.position().y, mmGroupId);
+              }
+              e.preventDefault();
+              return;
+            }
+          }
+          graph.removeCells(cells);
+          e.preventDefault();
+        }
         return;
       }
 
@@ -387,6 +427,7 @@ function X6DiagramEditorInner({
     const finishEdit = () => {
       const node = editingNode;
       editingNode = null;
+      justFinishedEditRef.current = Date.now();
       showSelectionBox();
       if (mousedownListenerActive) {
         document.removeEventListener('mousedown', onMouseDown, true);
@@ -453,10 +494,10 @@ function X6DiagramEditorInner({
 
       editingNode = nodeToEdit;
 
-      // Select the node if not already selected
+      // Ensure only this node is selected
       const selected = graph.getSelectedCells();
       if (selected.length !== 1 || selected[0].id !== nodeToEdit.id) {
-        graph.select(nodeToEdit);
+        graph.resetSelection(nodeToEdit);
       }
 
       hideSelectionBox();
@@ -877,6 +918,18 @@ function X6DiagramEditorInner({
       if (!cell.isNode()) return;
       const data = cell.getData();
       if (!data?.mindmapGroupId || !mindmapTreeRef.current) return;
+
+      // Handle collapse toggle signal from MindmapNode button
+      if (data._collapseToggle) {
+        // Clear the signal
+        cell.setData({ ...data, _collapseToggle: undefined }, { silent: true });
+        toggleCollapse(mindmapTreeRef.current, cell.id);
+        const rootNode = graph.getNodes().find(n => n.getData()?.isRoot && n.getData()?.mindmapGroupId === data.mindmapGroupId);
+        if (rootNode) {
+          renderMindmapToGraph(graph, mindmapTreeRef.current, rootNode.position().x, rootNode.position().y, data.mindmapGroupId);
+        }
+        return;
+      }
 
       // Sync label back to tree
       updateLabel(mindmapTreeRef.current, cell.id, data.label || '');
