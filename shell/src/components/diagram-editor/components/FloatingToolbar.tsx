@@ -6,6 +6,7 @@ import {
   Bold, Italic, Underline, Trash2, Copy, ArrowUp, ArrowDown, MoreHorizontal, Type, ImageIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ColorPicker } from '@/components/shared/ColorPicker';
 import {
   NODE_COLORS, SHAPE_META, SHAPE_ICON_PATHS, CONNECTOR_META,
   FILL_COLORS, BORDER_COLORS, FONT_SIZES, EDGE_WIDTHS,
@@ -136,14 +137,18 @@ export function FloatingToolbar({ graph }: FloatingToolbarProps) {
           />
           <Divider />
           {/* Fill color */}
-          <FillColorPicker
+          <ColorPicker
             color={data.bgColor || '#ffffff'}
             onChange={(c) => updateData({ bgColor: c })}
+            allowTransparent
+            presetColors={FILL_COLORS.filter(c => c !== 'transparent')}
           />
           {/* Border color */}
-          <BorderColorPicker
+          <ColorPicker
             color={data.borderColor || '#374151'}
             onChange={(c) => updateData({ borderColor: c })}
+            allowTransparent
+            presetColors={BORDER_COLORS.filter(c => c !== 'transparent')}
           />
           <Divider />
           {/* Font size */}
@@ -197,13 +202,17 @@ export function FloatingToolbar({ graph }: FloatingToolbarProps) {
 
       {isMindmap && (
         <>
-          <FillColorPicker
+          <ColorPicker
             color={data.bgColor || '#ffffff'}
             onChange={(c) => updateData({ bgColor: c })}
+            allowTransparent
+            presetColors={FILL_COLORS.filter(c => c !== 'transparent')}
           />
-          <BorderColorPicker
+          <ColorPicker
             color={data.borderColor || '#374151'}
             onChange={(c) => updateData({ borderColor: c })}
+            allowTransparent
+            presetColors={BORDER_COLORS.filter(c => c !== 'transparent')}
           />
           <Divider />
           <FontSizePicker
@@ -339,87 +348,7 @@ function ColorButton({ color, onChange }: { color: string; onChange: (c: typeof 
   );
 }
 
-function FillColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="relative">
-      <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted"
-        onClick={() => setOpen(!open)}
-        title="填充色"
-      >
-        <div
-          className="w-4 h-4 rounded border border-border"
-          style={{
-            backgroundColor: color === 'transparent' ? '#fff' : color,
-            backgroundImage: color === 'transparent'
-              ? 'linear-gradient(45deg, #f87171 50%, transparent 50%), linear-gradient(-45deg, #f87171 50%, transparent 50%)'
-              : 'none',
-            backgroundSize: color === 'transparent' ? '100% 2px, 100% 2px' : 'auto',
-          }}
-        />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border p-2 flex flex-wrap gap-1 w-[160px] z-40">
-          {FILL_COLORS.map((c, i) => (
-            <button
-              key={i}
-              className={cn('w-6 h-6 rounded border transition-transform hover:scale-110', color === c && 'ring-2 ring-sidebar-primary')}
-              style={{
-                backgroundColor: c === 'transparent' ? '#fff' : c,
-                borderColor: c === 'transparent' ? '#ef4444' : '#d1d5db',
-              }}
-              onClick={() => { onChange(c); setOpen(false); }}
-              title={c === 'transparent' ? '无填充' : c}
-            >
-              {c === 'transparent' && <span className="text-red-500 text-xs leading-none">∅</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BorderColorPicker({ color, onChange }: { color: string; onChange: (c: string) => void }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div className="relative">
-      <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted"
-        onClick={() => setOpen(!open)}
-        title="边框色"
-      >
-        <div
-          className="w-4 h-4 rounded"
-          style={{
-            border: color === 'transparent' ? '2px dashed #d1d5db' : `2px solid ${color}`,
-          }}
-        />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border p-2 flex flex-wrap gap-1 w-[160px] z-40">
-          {BORDER_COLORS.map((c, i) => (
-            <button
-              key={i}
-              className={cn('w-6 h-6 rounded transition-transform hover:scale-110', color === c && 'ring-2 ring-sidebar-primary')}
-              style={{
-                border: c === 'transparent' ? '2px dashed #d1d5db' : `3px solid ${c}`,
-                backgroundColor: '#fff',
-              }}
-              onClick={() => { onChange(c); setOpen(false); }}
-              title={c === 'transparent' ? '无边框' : c}
-            >
-              {c === 'transparent' && <span className="text-muted-foreground text-xs leading-none">∅</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+// FillColorPicker and BorderColorPicker replaced by shared ColorPicker component
 
 function FontSizePicker({ size, onChange }: { size: number; onChange: (s: number) => void }) {
   const [open, setOpen] = useState(false);

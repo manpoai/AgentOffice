@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, Users, Settings, Search, ArrowRight } from 'lucide-react';
+import { FileText, Table2, Presentation, GitBranch, Users, Settings, Search, ArrowRight, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
@@ -17,15 +17,76 @@ interface CommandItem {
   category: string;
 }
 
+const TYPE_ICON: Record<string, React.ReactNode> = {
+  doc: <FileText className="h-4 w-4" />,
+  table: <Table2 className="h-4 w-4" />,
+  presentation: <Presentation className="h-4 w-4" />,
+  diagram: <GitBranch className="h-4 w-4" />,
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  doc: 'Documents',
+  table: 'Tables',
+  presentation: 'Presentations',
+  diagram: 'Diagrams',
+};
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query || query.length < 2) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-yellow-300/40 dark:bg-yellow-500/30 text-inherit rounded-sm px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+function formatTime(ts?: string): string {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    const now = Date.now();
+    const diff = now - d.getTime();
+    if (diff < 60_000) return 'just now';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    return d.toLocaleDateString('zh-CN');
+  } catch {
+    return '';
+  }
+}
+
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { t } = useT();
 
-  // Fetch data for search
+  // Debounce search query (300ms, min 2 chars)
+  useEffect(() => {
+    if (query.length < 2) {
+      setDebouncedQuery('');
+      return;
+    }
+    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // Global search API
+  const { data: searchData, isFetching: isSearching } = useQuery({
+    queryKey: ['global-search', debouncedQuery],
+    queryFn: () => gw.globalSearch(debouncedQuery, 20),
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 10_000,
+  });
+
+  // Fetch data for fallback commands
   const { data: contentItems } = useQuery({ queryKey: ['content-items'], queryFn: gw.listContentItems, staleTime: 30_000 });
   const docs = useMemo(() => contentItems?.filter(i => i.type === 'doc').map(i => ({
     id: i.raw_id, title: i.title,
@@ -33,16 +94,27 @@ export function CommandPalette() {
   })), [contentItems]);
   const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: gw.listAgents, staleTime: 30_000 });
 
-  // Listen for Cmd+K / Ctrl+K
+  // Listen for open-command-palette custom event (dispatched by KeyboardManager)
   useEffect(() => {
+    const handler = () => {
+      setOpen(v => {
+        if (!v) {
+          setQuery('');
+          setDebouncedQuery('');
+          setSelectedIndex(0);
+        }
+        return !v;
+      });
+    };
+    window.addEventListener('open-command-palette', handler);
+    return () => window.removeEventListener('open-command-palette', handler);
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setOpen(v => !v);
-        setQuery('');
-        setSelectedIndex(0);
-      }
-      if (e.key === 'Escape' && open) {
+      if (e.key === 'Escape') {
         setOpen(false);
       }
     };
@@ -60,8 +132,26 @@ export function CommandPalette() {
     setOpen(false);
   }, [router]);
 
-  // Build command items
-  const items = useMemo<CommandItem[]>(() => {
+  // Determine if we're in search mode (user typed >= 2 chars)
+  const isSearchMode = debouncedQuery.length >= 2;
+
+  // Build search result items (grouped by type)
+  const searchItems = useMemo<CommandItem[]>(() => {
+    if (!isSearchMode || !searchData?.results) return [];
+    return searchData.results.map(r => ({
+      id: `search-${r.id}`,
+      label: r.title,
+      sublabel: r.snippet
+        ? (r.snippet.length > 80 ? r.snippet.slice(0, 80) + '...' : r.snippet)
+        : formatTime(r.updated_at),
+      icon: <span className="text-muted-foreground">{TYPE_ICON[r.type] || <FileText className="h-4 w-4" />}</span>,
+      action: () => navigate(`/content?id=${r.type}:${r.id}`),
+      category: TYPE_LABEL[r.type] || r.type,
+    }));
+  }, [isSearchMode, searchData, navigate]);
+
+  // Build fallback command items (when no search query)
+  const commandItems = useMemo<CommandItem[]>(() => {
     const result: CommandItem[] = [];
 
     // Navigation commands (always available)
@@ -111,43 +201,44 @@ export function CommandPalette() {
     return result;
   }, [docs, agents, navigate, t]);
 
-  // Filter items
-  const filtered = useMemo(() => {
-    if (!query) return items.slice(0, 15);
+  // Items to display: search results in search mode, otherwise filtered commands
+  const displayItems = useMemo(() => {
+    if (isSearchMode) return searchItems;
+    if (!query) return commandItems.slice(0, 15);
     const q = query.toLowerCase();
-    return items.filter(item =>
+    return commandItems.filter(item =>
       item.label.toLowerCase().includes(q) ||
       (item.sublabel || '').toLowerCase().includes(q) ||
       item.category.toLowerCase().includes(q)
     ).slice(0, 15);
-  }, [items, query]);
+  }, [isSearchMode, searchItems, commandItems, query]);
 
   // Reset selection on filter change
-  useEffect(() => { setSelectedIndex(0); }, [filtered.length]);
+  useEffect(() => { setSelectedIndex(0); }, [displayItems.length]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(i => Math.min(i + 1, filtered.length - 1));
+      setSelectedIndex(i => Math.min(i + 1, displayItems.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIndex(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+    } else if (e.key === 'Enter' && displayItems[selectedIndex]) {
       e.preventDefault();
-      filtered[selectedIndex].action();
+      displayItems[selectedIndex].action();
     }
   };
 
   // Group by category
   const grouped = useMemo(() => {
     const map = new Map<string, CommandItem[]>();
-    filtered.forEach(item => {
+    displayItems.forEach(item => {
       const list = map.get(item.category) || [];
       list.push(item);
       map.set(item.category, list);
     });
     return map;
-  }, [filtered]);
+  }, [displayItems]);
 
   if (!open) return null;
 
@@ -171,14 +262,28 @@ export function CommandPalette() {
             placeholder={t('command.placeholder')}
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
           />
+          {isSearching && <Loader2 className="h-4 w-4 text-muted-foreground animate-spin shrink-0" />}
           <kbd className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">ESC</kbd>
         </div>
 
         {/* Results */}
         <div className="max-h-[50vh] overflow-y-auto py-1">
-          {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">{t('command.noResults')}</p>
+          {/* Loading state for search */}
+          {isSearchMode && isSearching && displayItems.length === 0 && (
+            <div className="flex items-center justify-center gap-2 py-8">
+              <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+              <p className="text-sm text-muted-foreground">Searching...</p>
+            </div>
           )}
+
+          {/* No results */}
+          {!isSearching && displayItems.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              {isSearchMode ? 'No results found' : t('command.noResults')}
+            </p>
+          )}
+
+          {/* Grouped results */}
           {Array.from(grouped.entries()).map(([category, categoryItems]) => (
             <div key={category}>
               <div className="px-4 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -198,8 +303,17 @@ export function CommandPalette() {
                     )}
                   >
                     <span className="text-muted-foreground shrink-0">{item.icon}</span>
-                    <span className="text-sm text-foreground flex-1 truncate">{item.label}</span>
-                    {item.sublabel && (
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm text-foreground truncate block">
+                        {isSearchMode ? highlightMatch(item.label, debouncedQuery) : item.label}
+                      </span>
+                      {isSearchMode && item.sublabel && (
+                        <span className="text-xs text-muted-foreground truncate block mt-0.5">
+                          {highlightMatch(item.sublabel, debouncedQuery)}
+                        </span>
+                      )}
+                    </div>
+                    {!isSearchMode && item.sublabel && (
                       <span className="text-xs text-muted-foreground shrink-0">{item.sublabel}</span>
                     )}
                     {selectedIndex === idx && <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />}

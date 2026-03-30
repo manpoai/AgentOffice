@@ -198,6 +198,22 @@ try {
   if (migrated > 0) console.log(`[gateway] Migrated ${migrated} agents to actors table`);
 } catch (e) { /* actors table not yet created or already migrated */ }
 
+// Migrate: create notifications table
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    actor_id TEXT,
+    target_actor_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    link TEXT,
+    read INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_notifications_target ON notifications(target_actor_id, read, created_at DESC)');
+} catch { /* already exists */ }
+
 // Migrate: add pinned column to content_items
 try {
   db.exec('ALTER TABLE content_items ADD COLUMN pinned INTEGER DEFAULT 0');
@@ -3612,6 +3628,113 @@ app.post('/api/data/:table_id/snapshots/:snapshot_id/restore', authenticateAgent
     console.error(`[gateway] Restore failed: ${e.message}`);
     res.status(500).json({ error: 'RESTORE_FAILED', message: e.message });
   }
+});
+
+// ─── Global Search ──────────────────────────────
+app.get('/api/search', authenticateAny, (req, res) => {
+  const { q, limit = '20' } = req.query;
+  if (!q || !q.trim()) return res.status(400).json({ error: 'MISSING_QUERY', message: 'q parameter required' });
+
+  const lim = Math.min(Math.max(parseInt(limit) || 20, 1), 50);
+  const results = [];
+
+  // 1. Search documents via FTS
+  try {
+    const docResults = db.prepare(`
+      SELECT d.id, d.title, snippet(documents_fts, 2, '', '', '...', 40) as snippet, d.updated_at
+      FROM documents_fts fts
+      JOIN documents d ON d.id = fts.id
+      WHERE documents_fts MATCH ? AND d.deleted_at IS NULL
+      ORDER BY rank
+      LIMIT ?
+    `).all(q, lim);
+    for (const r of docResults) {
+      results.push({ id: `doc:${r.id}`, type: 'doc', title: r.title, snippet: r.snippet || '', updated_at: r.updated_at });
+    }
+  } catch {
+    // Fallback for invalid FTS syntax — use LIKE
+    const docResults = db.prepare(
+      'SELECT id, title, text, updated_at FROM documents WHERE deleted_at IS NULL AND (title LIKE ? OR text LIKE ?) ORDER BY updated_at DESC LIMIT ?'
+    ).all(`%${q}%`, `%${q}%`, lim);
+    for (const r of docResults) {
+      const idx = (r.text || '').toLowerCase().indexOf(q.toLowerCase());
+      const snippet = idx >= 0 ? r.text.substring(Math.max(0, idx - 40), idx + q.length + 40) : (r.text || '').substring(0, 80);
+      results.push({ id: `doc:${r.id}`, type: 'doc', title: r.title, snippet, updated_at: r.updated_at });
+    }
+  }
+
+  // 2. Search content_items (tables, presentations, boards, spreadsheets, diagrams) by title
+  try {
+    const itemResults = db.prepare(
+      "SELECT id, type, title, updated_at FROM content_items WHERE deleted_at IS NULL AND type != 'doc' AND title LIKE ? ORDER BY updated_at DESC LIMIT ?"
+    ).all(`%${q}%`, lim);
+    for (const r of itemResults) {
+      results.push({ id: r.id, type: r.type, title: r.title, snippet: '', updated_at: r.updated_at });
+    }
+  } catch { /* content_items may not exist yet */ }
+
+  // Sort combined results by updated_at descending, trim to limit
+  results.sort((a, b) => {
+    const ta = typeof a.updated_at === 'number' ? a.updated_at : new Date(a.updated_at || 0).getTime();
+    const tb = typeof b.updated_at === 'number' ? b.updated_at : new Date(b.updated_at || 0).getTime();
+    return tb - ta;
+  });
+
+  res.json({ results: results.slice(0, lim) });
+});
+
+// ─── Notifications ──────────────────────────────
+// GET /api/notifications — list for current actor
+app.get('/api/notifications', authenticateAny, (req, res) => {
+  const { unread, limit = '50' } = req.query;
+  const lim = Math.min(Math.max(parseInt(limit) || 50, 1), 200);
+  const actorId = req.actor.id;
+
+  let sql = 'SELECT * FROM notifications WHERE target_actor_id = ?';
+  const params = [actorId];
+  if (unread === 'true') {
+    sql += ' AND read = 0';
+  }
+  sql += ' ORDER BY created_at DESC LIMIT ?';
+  params.push(lim);
+
+  const rows = db.prepare(sql).all(...params);
+  res.json({ notifications: rows });
+});
+
+// GET /api/notifications/unread-count
+app.get('/api/notifications/unread-count', authenticateAny, (req, res) => {
+  const row = db.prepare('SELECT COUNT(*) as count FROM notifications WHERE target_actor_id = ? AND read = 0').get(req.actor.id);
+  res.json({ count: row.count });
+});
+
+// PATCH /api/notifications/:id/read — mark single as read
+app.patch('/api/notifications/:id/read', authenticateAny, (req, res) => {
+  const result = db.prepare('UPDATE notifications SET read = 1 WHERE id = ? AND target_actor_id = ?').run(req.params.id, req.actor.id);
+  if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json({ ok: true });
+});
+
+// POST /api/notifications/mark-all-read
+app.post('/api/notifications/mark-all-read', authenticateAny, (req, res) => {
+  const result = db.prepare('UPDATE notifications SET read = 1 WHERE target_actor_id = ? AND read = 0').run(req.actor.id);
+  res.json({ ok: true, updated: result.changes });
+});
+
+// POST /api/notifications — create (admin or agent only)
+app.post('/api/notifications', authenticateAny, (req, res) => {
+  if (req.actor.type !== 'agent' && req.actor.role !== 'admin') {
+    return res.status(403).json({ error: 'FORBIDDEN', message: 'Only agents or admins can create notifications' });
+  }
+  const { target_actor_id, type, title, body, link } = req.body;
+  if (!target_actor_id || !type || !title) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'target_actor_id, type, and title are required' });
+  }
+  const id = genId('notif');
+  const now = Math.floor(Date.now() / 1000);
+  db.prepare('INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, req.actor.id, target_actor_id, type, title, body || null, link || null, now);
+  res.status(201).json({ id, created_at: now });
 });
 
 // ─── Start ───────────────────────────────────────

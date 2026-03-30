@@ -16,6 +16,7 @@ import {
   Settings, Info, GripVertical, ToggleLeft, ToggleRight, ArrowUpNarrowWide,
   CreditCard, Image, MessageSquare, UserCheck, RotateCcw,
 } from 'lucide-react';
+import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { DndContext, closestCenter, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
@@ -391,8 +392,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const [newColRollupCol, setNewColRollupCol] = useState(''); // for rollup: field id in related table
   const [newColRollupFn, setNewColRollupFn] = useState('sum');
   const [newColUserNotify, setNewColUserNotify] = useState(false);
-  const [editingTableTitle, setEditingTableTitle] = useState(false);
-  const [tableTitleValue, setTableTitleValue] = useState('');
+  // Title editing now handled by ContentTopBar
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [showTableComments, setShowTableComments] = useState(false);
   const [selectDropdown, setSelectDropdown] = useState<{ rowId: number; col: string; options: nc.NCSelectOption[]; multi: boolean } | null>(null);
@@ -1285,17 +1285,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   };
 
   // ── Table operations ──
-  const handleRenameTable = async () => {
-    if (!tableTitleValue.trim()) return;
-    try {
-      await nc.renameTable(tableId, tableTitleValue.trim());
-      setEditingTableTitle(false);
-      refreshMeta();
-      queryClient.invalidateQueries({ queryKey: ['content-items'] });
-    } catch (e) {
-      console.error('Rename table failed:', e);
-    }
-  };
+  // handleRenameTable now inlined in ContentTopBar onTitleChange
 
   const handleDeleteTable = async () => {
     if (!confirm(t('dataTable.deleteTableConfirm'))) return;
@@ -1795,115 +1785,87 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {/* Header */}
       <div className="flex items-center border-b border-border bg-card shrink-0">
-        <div className="flex-1 min-w-0 flex items-center px-4 py-2">
-        {onToggleDocList && (
-          <button
-            onClick={onToggleDocList}
-            className="hidden md:flex p-1.5 -ml-1 mr-1 text-muted-foreground hover:text-foreground rounded transition-colors"
-            title={docListVisible ? t('dataTable.collapseSidebar') : t('dataTable.expandSidebar')}
-          >
-            {docListVisible ? <ArrowLeftToLine className="h-4 w-4" /> : <ArrowRightToLine className="h-4 w-4" />}
-          </button>
-        )}
-        <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 text-sm">
-            {breadcrumb && breadcrumb.length > 1 ? (
-              <>
-                {breadcrumb.slice(0, -1).map((crumb, i) => (
-                  <span key={crumb.id} className="flex items-center gap-1 min-w-0">
-                    {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
-                    <span className="text-muted-foreground truncate">{crumb.title}</span>
-                  </span>
-                ))}
-                <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-              </>
-            ) : null}
-            {editingTableTitle ? (
-              <input
-                value={tableTitleValue}
-                onChange={e => setTableTitleValue(e.target.value)}
-                onBlur={handleRenameTable}
-                onKeyDown={e => { if (e.key === 'Enter') handleRenameTable(); if (e.key === 'Escape') setEditingTableTitle(false); }}
-                className="text-sm font-semibold bg-transparent text-foreground outline-none border-b border-sidebar-primary flex-1"
-                autoFocus
-              />
-            ) : (
-              <span
-                className="text-foreground font-medium truncate cursor-pointer hover:text-sidebar-primary"
-                onDoubleClick={() => { setEditingTableTitle(true); setTableTitleValue(meta?.title || ''); }}
-              >
-                {meta?.title || t('common.loading')}
-              </span>
-            )}
-          </div>
-          <div className="text-[11px] text-muted-foreground/50 mt-0.5 flex items-center gap-2">
-            <span>{totalRows} {t('dataTable.rows')}</span>
-            {meta?.updated_at && (
-              <>
-                <span>·</span>
-                <span>{t('dataTable.lastEditedAt')} {new Date(meta.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => setShowTableComments(v => !v)}
-            className={cn('p-1.5 rounded transition-colors', showTableComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
-            title={t('content.comments')}
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
-          <div className="relative">
-            <button onClick={() => setShowTableMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
-              <MoreHorizontal className="h-4 w-4" />
+        <ContentTopBar
+          breadcrumb={breadcrumb}
+          onBack={onBack}
+          docListVisible={docListVisible}
+          onToggleDocList={onToggleDocList}
+          title={meta?.title || t('common.loading')}
+          onTitleChange={async (newTitle) => {
+            try {
+              await nc.renameTable(tableId, newTitle);
+              refreshMeta();
+              queryClient.invalidateQueries({ queryKey: ['content-items'] });
+            } catch (e) {
+              console.error('Rename table failed:', e);
+            }
+          }}
+          metaLine={
+            <div className="text-[11px] text-muted-foreground/50 flex items-center gap-2">
+              <span>{totalRows} {t('dataTable.rows')}</span>
+              {meta?.updated_at && (
+                <>
+                  <span>·</span>
+                  <span>{t('dataTable.lastEditedAt')} {new Date(meta.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                </>
+              )}
+            </div>
+          }
+          actions={<>
+            <button
+              onClick={() => setShowTableComments(v => !v)}
+              className={cn('p-1.5 rounded transition-colors', showTableComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+              title={t('content.comments')}
+            >
+              <MessageSquare className="h-4 w-4" />
             </button>
-            {showTableMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowTableMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
-                  <button
-                    onClick={() => { setShowTableMenu(false); setShowHistory(true); }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent"
-                  >
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" /> {t('content.versionHistory')}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowTableMenu(false);
-                      if (onCopyLink) { onCopyLink(); }
-                      else {
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('id', `table:${tableId}`);
-                        navigator.clipboard.writeText(url.toString());
-                      }
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent"
-                  >
-                    <Link2 className="h-3.5 w-3.5 text-muted-foreground" /> {t('content.copyLink')}
-                  </button>
-                  <button
-                    onClick={handleExportCSV}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent"
-                  >
-                    <Download className="h-3.5 w-3.5 text-muted-foreground" /> {t('content.download')}
-                  </button>
-                  <div className="border-t border-border my-1" />
-                  <button
-                    onClick={() => { setShowTableMenu(false); handleDeleteTable(); }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> {t('content.delete')}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        </div>
+            <div className="relative">
+              <button onClick={() => setShowTableMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {showTableMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowTableMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
+                    <button
+                      onClick={() => { setShowTableMenu(false); setShowHistory(true); }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent"
+                    >
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" /> {t('content.versionHistory')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowTableMenu(false);
+                        if (onCopyLink) { onCopyLink(); }
+                        else {
+                          const url = new URL(window.location.href);
+                          url.searchParams.set('id', `table:${tableId}`);
+                          navigator.clipboard.writeText(url.toString());
+                        }
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent"
+                    >
+                      <Link2 className="h-3.5 w-3.5 text-muted-foreground" /> {t('content.copyLink')}
+                    </button>
+                    <button
+                      onClick={handleExportCSV}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted-foreground" /> {t('content.download')}
+                    </button>
+                    <div className="border-t border-border my-1" />
+                    <button
+                      onClick={() => { setShowTableMenu(false); handleDeleteTable(); }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> {t('content.delete')}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </>}
+        />
         {/* Comment sidebar header — aligned with top bar */}
         {showTableComments && (
           <div className="w-80 shrink-0 flex items-center justify-between px-4 py-2 border-l border-border">

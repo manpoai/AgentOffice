@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as docApi from '@/lib/api/documents';
 import type { Document as DocType, Comment as DocComment, Revision as DocRevision } from '@/lib/api/documents';
 import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2, Presentation, GitBranch, Pin, PinOff } from 'lucide-react';
+import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { ContentSidebar } from '@/components/ContentSidebar';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -21,6 +23,8 @@ const RevisionPreview = dynamic(() => import('@/components/RevisionPreview'), { 
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
 import { getAutoPosition } from '@/lib/hooks/use-auto-position';
+import { useContextMenu } from '@/lib/hooks/use-context-menu';
+import type { ContextMenuItem } from '@/lib/hooks/use-context-menu';
 import { AutoDropdown } from '@/components/ui/auto-dropdown';
 import {
   DndContext,
@@ -159,9 +163,9 @@ export default function ContentPage() {
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<DropIntent>(null);
   const [sidebarView, setSidebarView] = useState<'library' | 'trash'>('library');
-  const [showViewMenu, setShowViewMenu] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ nodeId: string; hasChildren: boolean } | null>(null);
   const [docListVisible, setDocListVisible] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const queryClient = useQueryClient();
 
@@ -179,6 +183,8 @@ export default function ContentPage() {
     }
     setExpandedIds(new Set(loadExpandedState()));
     setTreeState(loadTreeState());
+    const savedCollapsed = localStorage.getItem('asuite-sidebar-collapsed');
+    if (savedCollapsed === 'true') setSidebarCollapsed(true);
     setHydrated(true);
   }, []);
 
@@ -272,7 +278,7 @@ export default function ContentPage() {
   }, [nodeMap, treeState]);
 
   // Build children map and root items
-  const { childrenMap, rootIds } = useMemo(() => {
+  const { childrenMap, rootIds, pinnedIds, unpinnedIds } = useMemo(() => {
     const cMap = new Map<string, string[]>();
     const allIds = new Set(effectiveNodes.keys());
     const hasParent = new Set<string>();
@@ -806,6 +812,12 @@ export default function ContentPage() {
     return path;
   };
 
+  const toggleSidebarCollapse = () => {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    localStorage.setItem('asuite-sidebar-collapsed', String(next));
+  };
+
   const dragActiveNode = dragActiveId ? effectiveNodes.get(dragActiveId) : null;
 
   // Get depth of a node for rendering
@@ -821,190 +833,73 @@ export default function ContentPage() {
 
   return (
     <div className="flex h-full overflow-hidden flex-col md:flex-row">
-      {/* Document Library sidebar */}
-      <div className={cn(
-        'w-full md:w-[260px] border-r border-border bg-sidebar flex flex-col md:shrink-0 min-h-0 overflow-hidden transition-all duration-200',
-        mobileView === 'list' ? 'flex' : 'hidden md:flex',
-        !docListVisible && 'md:w-0 md:border-r-0 md:hidden'
-      )}>
-        {/* Header */}
-        <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-          <div className="relative">
-            <button
-              onClick={() => setShowViewMenu(v => !v)}
-              className="flex items-center gap-1.5 hover:bg-black/[0.04] dark:hover:bg-accent/50 rounded px-1 py-0.5 -mx-1 transition-colors"
-            >
-              {sidebarView === 'library' ? (
-                <FolderOpen className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <Trash2 className="h-4 w-4 text-muted-foreground" />
-              )}
-              <h2 className="text-xs font-medium text-muted-foreground">
-                {sidebarView === 'library' ? 'Document Library' : t('content.trash') || 'Trash'}
-              </h2>
-              <ChevronDown className="h-3 w-3 text-muted-foreground" />
-            </button>
-            {showViewMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowViewMenu(false)} />
-                <div className="absolute left-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-44">
-                  <button
-                    onClick={() => { setShowViewMenu(false); setSidebarView('library'); }}
-                    className={cn(
-                      'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors',
-                      sidebarView === 'library' ? 'text-foreground bg-accent' : 'text-foreground hover:bg-accent'
-                    )}
-                  >
-                    <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                    Document Library
-                  </button>
-                  <button
-                    onClick={() => { setShowViewMenu(false); setSidebarView('trash'); }}
-                    className={cn(
-                      'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors',
-                      sidebarView === 'trash' ? 'text-foreground bg-accent' : 'text-foreground hover:bg-accent'
-                    )}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    {t('content.trash') || 'Trash'}
-                  </button>
-                </div>
-              </>
+      {/* Unified sidebar (desktop only) — includes logo, search, tree, settings */}
+      <ContentSidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapse}
+        visible={docListVisible && mobileView === 'list' || docListVisible}
+        sidebarView={sidebarView}
+        onSidebarViewChange={setSidebarView}
+        showNewMenu={showNewMenu}
+        onShowNewMenuChange={setShowNewMenu}
+        creating={creating}
+        onCreateDoc={() => handleCreateDoc()}
+        onCreateTable={() => handleCreateTable()}
+        onCreatePresentation={() => handleCreatePresentation()}
+        onCreateDiagram={() => handleCreateDiagram()}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      >
+        {sidebarView === 'library' ? (
+          <>
+            {isLoading && (
+              <div className="space-y-1 px-1 py-2">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
+                    <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                    <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
+                  </div>
+                ))}
+              </div>
             )}
-          </div>
-          {sidebarView === 'library' && (
-            <div className="flex items-center gap-1 relative">
-              <button
-                onClick={() => setShowNewMenu(v => !v)}
-                className="p-1 text-muted-foreground hover:text-foreground"
-                title={t('common.new')}
+
+            {/* Search mode */}
+            {displaySearchItems && (
+              displaySearchItems.length === 0 ? (
+                <p className="p-3 text-xs text-muted-foreground">{t('content.noMatch')}</p>
+              ) : (
+                displaySearchItems.map(item => (
+                  <TreeNodeItem
+                    key={item.id}
+                    nodeId={item.id}
+                    node={item}
+                    isSelected={selection?.type === item.type && selection?.id === item.rawId}
+                    onSelect={() => handleSelect(item.id)}
+                    hasChildren={false}
+                    isExpanded={false}
+                    onToggle={() => {}}
+                    depth={0}
+                    onCreateChild={() => {}}
+                  />
+                ))
+              )
+            )}
+
+            {/* Tree mode with DnD */}
+            {!displaySearchItems && !isLoading && (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragOver={updateDropIntent}
+                onDragMove={updateDropIntent}
+                onDragEnd={handleDragEnd}
               >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-              {showNewMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowNewMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-lg py-1 w-36">
-                    <button
-                      onClick={() => { setShowNewMenu(false); handleCreateDoc(); }}
-                      disabled={creating}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                    >
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      {t('content.newDoc')}
-                    </button>
-                    <button
-                      onClick={() => { setShowNewMenu(false); handleCreateTable(); }}
-                      disabled={creating}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                    >
-                      <Table2 className="h-4 w-4 text-muted-foreground" />
-                      {t('content.newTable')}
-                    </button>
-                    <button
-                      onClick={() => { setShowNewMenu(false); handleCreatePresentation(); }}
-                      disabled={creating}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                    >
-                      <Presentation className="h-4 w-4 text-muted-foreground" />
-                      {t('content.newPresentation') || 'New Presentation'}
-                    </button>
-                    <button
-                      onClick={() => { setShowNewMenu(false); handleCreateDiagram(); }}
-                      disabled={creating}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                    >
-                      <GitBranch className="h-4 w-4 text-muted-foreground" />
-                      {t('content.newDiagram') || 'New Diagram'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="px-2 py-1">
-            {sidebarView === 'library' ? (
-              <>
-                {isLoading && (
-                  <div className="space-y-1 px-1 py-2">
-                    {[...Array(6)].map((_, i) => (
-                      <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
-                        <div className="w-4 h-4 rounded bg-muted shrink-0" />
-                        <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Search mode */}
-                {displaySearchItems && (
-                  displaySearchItems.length === 0 ? (
-                    <p className="p-3 text-xs text-muted-foreground">{t('content.noMatch')}</p>
-                  ) : (
-                    displaySearchItems.map(item => (
-                      <TreeNodeItem
-                        key={item.id}
-                        nodeId={item.id}
-                        node={item}
-                        isSelected={selection?.type === item.type && selection?.id === item.rawId}
-                        onSelect={() => handleSelect(item.id)}
-                        hasChildren={false}
-                        isExpanded={false}
-                        onToggle={() => {}}
-                        depth={0}
-                        onCreateChild={() => {}}
-                      />
-                    ))
-                  )
-                )}
-
-                {/* Tree mode with DnD */}
-                {!displaySearchItems && !isLoading && (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragStart={handleDragStart}
-                    onDragOver={updateDropIntent}
-                    onDragMove={updateDropIntent}
-                    onDragEnd={handleDragEnd}
-                  >
-                    {/* Pinned section */}
-                    {pinnedIds.length > 0 && (
-                      <>
-                        <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Pinned</div>
-                        {pinnedIds.map(nodeId => (
-                          <TreeNodeRecursive
-                            key={nodeId}
-                            nodeId={nodeId}
-                            nodes={effectiveNodes}
-                            childrenMap={childrenMap}
-                            selection={selection}
-                            expandedIds={expandedIds}
-                            onSelect={handleSelect}
-                            onToggle={toggleExpand}
-                            onCreateDoc={handleCreateDoc}
-                            onCreateTable={handleCreateTable}
-                            onCreatePresentation={handleCreatePresentation}
-                            onCreateDiagram={handleCreateDiagram}
-                            onRequestDelete={requestDelete}
-                            onTogglePin={handleTogglePin}
-                            depth={0}
-                            creating={creating}
-                            dropIntent={dropIntent}
-                            dragActiveId={dragActiveId}
-                          />
-                        ))}
-                        <div className="border-t border-border/50 my-1 mx-2" />
-                      </>
-                    )}
-                    {/* Library section */}
-                    {pinnedIds.length > 0 && unpinnedIds.length > 0 && (
-                      <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Library</div>
-                    )}
-                    {unpinnedIds.map(nodeId => (
+                {/* Pinned section */}
+                {pinnedIds.length > 0 && (
+                  <>
+                    <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Pinned</div>
+                    {pinnedIds.map(nodeId => (
                       <TreeNodeRecursive
                         key={nodeId}
                         nodeId={nodeId}
@@ -1026,94 +921,186 @@ export default function ContentPage() {
                         dragActiveId={dragActiveId}
                       />
                     ))}
-
-                    <DragOverlay dropAnimation={null}>
-                      {dragActiveNode && (
-                        <div className="flex items-center gap-1.5 py-1.5 px-2 text-sm bg-card border border-border rounded-lg shadow-lg opacity-90">
-                          {dragActiveNode.type === 'table'
-                            ? <Table2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                            : dragActiveNode.type === 'presentation'
-                            ? <Presentation className="h-4 w-4 text-muted-foreground shrink-0" />
-                            : dragActiveNode.type === 'diagram'
-                            ? <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
-                            : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                          }
-                          <span className="truncate">{dragActiveNode.title}</span>
-                        </div>
-                      )}
-                    </DragOverlay>
-                  </DndContext>
+                    <div className="border-t border-border/50 my-1 mx-2" />
+                  </>
                 )}
-              </>
-            ) : (
-              /* Trash view */
-              <>
-                {deletedLoading && (
-                  <div className="space-y-1 px-1 py-2">
-                    {[...Array(4)].map((_, i) => (
-                      <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
-                        <div className="w-4 h-4 rounded bg-muted shrink-0" />
-                        <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
-                      </div>
-                    ))}
-                  </div>
+                {/* Library section */}
+                {pinnedIds.length > 0 && unpinnedIds.length > 0 && (
+                  <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Library</div>
                 )}
-                {(() => {
-                  if (deletedLoading) return null;
-                  const entries = (deletedItems || []).map(item => ({
-                    key: item.id,
-                    type: item.type as 'doc' | 'table',
-                    nodeId: item.id,
-                    title: item.title,
-                    deletedAt: item.deleted_at || '',
-                  }));
-                  entries.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+                {unpinnedIds.map(nodeId => (
+                  <TreeNodeRecursive
+                    key={nodeId}
+                    nodeId={nodeId}
+                    nodes={effectiveNodes}
+                    childrenMap={childrenMap}
+                    selection={selection}
+                    expandedIds={expandedIds}
+                    onSelect={handleSelect}
+                    onToggle={toggleExpand}
+                    onCreateDoc={handleCreateDoc}
+                    onCreateTable={handleCreateTable}
+                    onCreatePresentation={handleCreatePresentation}
+                    onCreateDiagram={handleCreateDiagram}
+                    onRequestDelete={requestDelete}
+                    onTogglePin={handleTogglePin}
+                    depth={0}
+                    creating={creating}
+                    dropIntent={dropIntent}
+                    dragActiveId={dragActiveId}
+                  />
+                ))}
 
-                  if (entries.length === 0) {
-                    return (
-                      <p className="p-3 text-xs text-muted-foreground text-center">
-                        {t('content.trashEmpty') || 'Trash is empty'}
-                      </p>
-                    );
-                  }
-
-                  return entries.map(entry => (
-                    <TrashItem
-                      key={entry.key}
-                      title={entry.title}
-                      icon={entry.type === 'table'
+                <DragOverlay dropAnimation={null}>
+                  {dragActiveNode && (
+                    <div className="flex items-center gap-1.5 py-1.5 px-2 text-sm bg-card border border-border rounded-lg shadow-lg opacity-90">
+                      {dragActiveNode.type === 'table'
                         ? <Table2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                        : dragActiveNode.type === 'presentation'
+                        ? <Presentation className="h-4 w-4 text-muted-foreground shrink-0" />
+                        : dragActiveNode.type === 'diagram'
+                        ? <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
                         : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                       }
-                      deletedAt={entry.deletedAt}
-                      onRestore={async () => {
-                        try {
-                          await gw.restoreContentItem(entry.nodeId);
-                          queryClient.invalidateQueries({ queryKey: ['content-items'] });
-                          queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
-                        } catch (err) { console.error('Restore failed:', err); }
-                      }}
-                      onPermanentDelete={async () => {
-                        const msg = t('content.permanentDeleteConfirm') || 'Permanently delete? This cannot be undone.';
-                        if (!confirm(msg)) return;
-                        try {
-                          await gw.permanentlyDeleteContentItem(entry.nodeId);
-                          queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
-                        } catch (err) { console.error('Permanent delete failed:', err); }
-                      }}
-                    />
-                  ));
-                })()}
-              </>
+                      <span className="truncate">{dragActiveNode.title}</span>
+                    </div>
+                  )}
+                </DragOverlay>
+              </DndContext>
+            )}
+          </>
+        ) : (
+          /* Trash view */
+          <>
+            {deletedLoading && (
+              <div className="space-y-1 px-1 py-2">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
+                    <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                    <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
+                  </div>
+                ))}
+              </div>
+            )}
+            {(() => {
+              if (deletedLoading) return null;
+              const entries = (deletedItems || []).map(item => ({
+                key: item.id,
+                type: item.type as 'doc' | 'table',
+                nodeId: item.id,
+                title: item.title,
+                deletedAt: item.deleted_at || '',
+              }));
+              entries.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+
+              if (entries.length === 0) {
+                return (
+                  <p className="p-3 text-xs text-muted-foreground text-center">
+                    {t('content.trashEmpty') || 'Trash is empty'}
+                  </p>
+                );
+              }
+
+              return entries.map(entry => (
+                <TrashItem
+                  key={entry.key}
+                  title={entry.title}
+                  icon={entry.type === 'table'
+                    ? <Table2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                    : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                  }
+                  deletedAt={entry.deletedAt}
+                  onRestore={async () => {
+                    try {
+                      await gw.restoreContentItem(entry.nodeId);
+                      queryClient.invalidateQueries({ queryKey: ['content-items'] });
+                      queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
+                    } catch (err) { console.error('Restore failed:', err); }
+                  }}
+                  onPermanentDelete={async () => {
+                    const msg = t('content.permanentDeleteConfirm') || 'Permanently delete? This cannot be undone.';
+                    if (!confirm(msg)) return;
+                    try {
+                      await gw.permanentlyDeleteContentItem(entry.nodeId);
+                      queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
+                    } catch (err) { console.error('Permanent delete failed:', err); }
+                  }}
+                />
+              ));
+            })()}
+          </>
+        )}
+      </ContentSidebar>
+
+      {/* Mobile sidebar (only visible on mobile when in list view) */}
+      {mobileView === 'list' && (
+        <div className="md:hidden w-full bg-sidebar flex flex-col min-h-0 overflow-hidden">
+          <div className="px-3 pt-3 pb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              {sidebarView === 'library' ? 'Library' : (t('content.trash') || 'Trash')}
+            </span>
+            {sidebarView === 'library' && (
+              <button onClick={() => setShowNewMenu(v => !v)} className="p-1 text-muted-foreground hover:text-foreground" title={t('common.new')}>
+                <Plus className="h-3.5 w-3.5" />
+              </button>
             )}
           </div>
-        </ScrollArea>
-      </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="px-2 py-1">
+              {/* Reuse same tree content for mobile - simplified without DnD for now */}
+              {isLoading && (
+                <div className="space-y-1 px-1 py-2">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-2 py-1.5 animate-pulse">
+                      <div className="w-4 h-4 rounded bg-muted shrink-0" />
+                      <div className="h-3.5 rounded bg-muted" style={{ width: `${60 + Math.random() * 80}px` }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!isLoading && sidebarView === 'library' && (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={handleDragStart}
+                  onDragOver={updateDropIntent}
+                  onDragMove={updateDropIntent}
+                  onDragEnd={handleDragEnd}
+                >
+                  {pinnedIds.length > 0 && (
+                    <>
+                      <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Pinned</div>
+                      {pinnedIds.map(nodeId => (
+                        <TreeNodeRecursive key={nodeId} nodeId={nodeId} nodes={effectiveNodes} childrenMap={childrenMap} selection={selection} expandedIds={expandedIds} onSelect={handleSelect} onToggle={toggleExpand} onCreateDoc={handleCreateDoc} onCreateTable={handleCreateTable} onCreatePresentation={handleCreatePresentation} onCreateDiagram={handleCreateDiagram} onRequestDelete={requestDelete} onTogglePin={handleTogglePin} depth={0} creating={creating} dropIntent={dropIntent} dragActiveId={dragActiveId} />
+                      ))}
+                      <div className="border-t border-border/50 my-1 mx-2" />
+                    </>
+                  )}
+                  {pinnedIds.length > 0 && unpinnedIds.length > 0 && (
+                    <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Library</div>
+                  )}
+                  {unpinnedIds.map(nodeId => (
+                    <TreeNodeRecursive key={nodeId} nodeId={nodeId} nodes={effectiveNodes} childrenMap={childrenMap} selection={selection} expandedIds={expandedIds} onSelect={handleSelect} onToggle={toggleExpand} onCreateDoc={handleCreateDoc} onCreateTable={handleCreateTable} onCreatePresentation={handleCreatePresentation} onCreateDiagram={handleCreateDiagram} onRequestDelete={requestDelete} onTogglePin={handleTogglePin} depth={0} creating={creating} dropIntent={dropIntent} dragActiveId={dragActiveId} />
+                  ))}
+                  <DragOverlay dropAnimation={null}>
+                    {dragActiveNode && (
+                      <div className="flex items-center gap-1.5 py-1.5 px-2 text-sm bg-card border border-border rounded-lg shadow-lg opacity-90">
+                        {dragActiveNode.type === 'table' ? <Table2 className="h-4 w-4 text-muted-foreground shrink-0" /> : dragActiveNode.type === 'presentation' ? <Presentation className="h-4 w-4 text-muted-foreground shrink-0" /> : dragActiveNode.type === 'diagram' ? <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" /> : <FileText className="h-4 w-4 text-muted-foreground shrink-0" />}
+                        <span className="truncate">{dragActiveNode.title}</span>
+                      </div>
+                    )}
+                  </DragOverlay>
+                </DndContext>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
 
       {/* Detail area */}
       <div className={cn(
         'flex-1 flex flex-col min-w-0 min-h-0 bg-card',
-        mobileView === 'detail' ? 'flex' : 'hidden md:flex'
+        mobileView === 'list' ? 'hidden md:flex' : 'flex'
       )}>
         {selectedDoc && selection?.type === 'doc' ? (
           <DocPanel
@@ -1381,6 +1368,36 @@ function DraggableTreeNode({
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const iconPickerRef = useRef<HTMLDivElement>(null);
 
+  // Right-click context menu
+  const getContextMenuItems = useCallback((): ContextMenuItem[] => [
+    {
+      id: 'pin',
+      label: node.pinned ? 'Unpin' : 'Pin to top',
+      icon: node.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />,
+      onClick: () => onTogglePin(nodeId),
+    },
+    {
+      id: 'copy-link',
+      label: 'Copy link',
+      icon: <Link2 className="h-3.5 w-3.5" />,
+      shortcut: '⌘L',
+      onClick: () => {
+        const link = `${window.location.origin}/content?id=${node.rawId}&type=${node.type}`;
+        navigator.clipboard.writeText(link).catch(() => {});
+      },
+    },
+    {
+      id: 'delete',
+      label: t('content.delete'),
+      icon: <Trash2 className="h-3.5 w-3.5" />,
+      danger: true,
+      separator: true,
+      onClick: () => onRequestDelete(nodeId),
+    },
+  ], [node.pinned, node.rawId, node.type, nodeId, onTogglePin, onRequestDelete, t]);
+
+  const { onContextMenu: handleContextMenu, onTouchStart: handleLongPressStart, onTouchEnd: handleLongPressEnd, onTouchMove: handleLongPressMove } = useContextMenu(getContextMenuItems);
+
   // Close icon picker on outside click
   useEffect(() => {
     if (!showIconPicker) return;
@@ -1450,6 +1467,10 @@ function DraggableTreeNode({
         )}
         style={{ paddingLeft: `${4 + depth * 16}px` }}
         onClick={onSelect}
+        onContextMenu={handleContextMenu}
+        onTouchStart={handleLongPressStart}
+        onTouchEnd={handleLongPressEnd}
+        onTouchMove={handleLongPressMove}
       >
         {/* Expand/collapse toggle */}
         {hasChildren ? (
@@ -2036,91 +2057,69 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     <div className="flex-1 min-w-0 flex flex-col">
       {/* Top bar — breadcrumb + actions, split when comments open */}
       <div className="flex items-center border-b border-border bg-card shrink-0">
-        <div className="flex-1 min-w-0 flex items-center px-4 py-2">
-        {onToggleDocList && (
-          <button
-            onClick={onToggleDocList}
-            className="hidden md:flex p-1.5 -ml-1 mr-1 text-muted-foreground hover:text-foreground rounded transition-colors"
-            title={docListVisible ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            {docListVisible ? <ArrowLeftToLine className="h-4 w-4" /> : <ArrowRightToLine className="h-4 w-4" />}
-          </button>
-        )}
-        <button onClick={onBack} className="md:hidden p-1.5 -ml-1 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 text-sm">
-            {breadcrumb.map((crumb, i) => (
-              <span key={crumb.id} className="flex items-center gap-1 min-w-0">
-                {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
-                {i < breadcrumb.length - 1 ? (
-                  <button onClick={() => onNavigate(crumb.id)} className="text-muted-foreground hover:text-foreground truncate">
-                    {crumb.title}
-                  </button>
-                ) : (
-                  <span className="text-foreground font-medium truncate">{title || crumb.title}</span>
-                )}
-              </span>
-            ))}
-          </div>
-          {/* Timestamp + author on second line — clickable to open history */}
-          <button
-            onClick={() => setShowHistory(true)}
-            className="text-[11px] text-muted-foreground/50 mt-0.5 hover:text-muted-foreground transition-colors cursor-pointer"
-          >
-            {formatRelativeTime(doc.updated_at)}
-            {doc.updated_by && <span> · {doc.updated_by}</span>}
-          </button>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {statusText && (
-            <span className={cn('text-[10px]', saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground')}>{statusText}</span>
-          )}
-          <button
-            onClick={() => { setShowSearch(true); setSearchWithReplace(false); }}
-            className={cn('p-1.5 rounded transition-colors', showSearch ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
-            title={t('content.findReplace') || 'Find & Replace'}
-          >
-            <Search className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setShowComments(v => !v)}
-            className={cn('p-1.5 rounded transition-colors', showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
-            title={t('content.comments')}
-          >
-            <MessageSquareIcon className="h-4 w-4" />
-          </button>
-          <div className="relative">
-            <button onClick={() => setShowDocMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
-              <MoreHorizontal className="h-4 w-4" />
+        <ContentTopBar
+          breadcrumb={breadcrumb}
+          onNavigate={onNavigate}
+          onBack={onBack}
+          docListVisible={docListVisible}
+          onToggleDocList={onToggleDocList}
+          title={title || breadcrumb?.[breadcrumb.length - 1]?.title || ''}
+          metaLine={
+            <button
+              onClick={() => setShowHistory(true)}
+              className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+            >
+              {formatRelativeTime(doc.updated_at)}
+              {doc.updated_by && <span> · {doc.updated_by}</span>}
             </button>
-            {showDocMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
-                  <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => { setShowDocMenu(false); setShowHistory(true); }} />
-                  <DocMenuBtn icon={Link2} label={t('content.copyLink')} onClick={() => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); setShowDocMenu(false); }} />
-                  <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
-                    const blob = new Blob([doc.text], { type: 'text/markdown' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url; a.download = `${title}.md`; a.click();
-                    URL.revokeObjectURL(url);
-                    setShowDocMenu(false);
-                  }} />
-                  <div className="border-t border-border my-1" />
-                  <DocMenuBtn icon={Trash2} label={t('content.delete')} onClick={() => { setShowDocMenu(false); handleDelete(); }} danger />
-                  <div className="border-t border-border my-1" />
-                  <DocMenuToggle icon={Maximize2} label={t('content.fullWidth')} checked={fullWidth} onChange={async (v) => {
-                    setFullWidth(v);
-                    await docApi.updateDocument(doc.id, undefined, undefined, undefined, { fullWidth: v });
-                  }} />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        </div>
+          }
+          statusText={statusText}
+          statusError={saveStatus === 'error'}
+          actions={<>
+            <button
+              onClick={() => { setShowSearch(true); setSearchWithReplace(false); }}
+              className={cn('p-1.5 rounded transition-colors', showSearch ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+              title={t('content.findReplace') || 'Find & Replace'}
+            >
+              <Search className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setShowComments(v => !v)}
+              className={cn('p-1.5 rounded transition-colors', showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+              title={t('content.comments')}
+            >
+              <MessageSquareIcon className="h-4 w-4" />
+            </button>
+            <div className="relative">
+              <button onClick={() => setShowDocMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {showDocMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
+                    <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => { setShowDocMenu(false); setShowHistory(true); }} />
+                    <DocMenuBtn icon={Link2} label={t('content.copyLink')} onClick={() => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); setShowDocMenu(false); }} />
+                    <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
+                      const blob = new Blob([doc.text], { type: 'text/markdown' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url; a.download = `${title}.md`; a.click();
+                      URL.revokeObjectURL(url);
+                      setShowDocMenu(false);
+                    }} />
+                    <div className="border-t border-border my-1" />
+                    <DocMenuBtn icon={Trash2} label={t('content.delete')} onClick={() => { setShowDocMenu(false); handleDelete(); }} danger />
+                    <div className="border-t border-border my-1" />
+                    <DocMenuToggle icon={Maximize2} label={t('content.fullWidth')} checked={fullWidth} onChange={async (v) => {
+                      setFullWidth(v);
+                      await docApi.updateDocument(doc.id, undefined, undefined, undefined, { fullWidth: v });
+                    }} />
+                  </div>
+                </>
+              )}
+            </div>
+          </>}
+        />
         {/* Comment sidebar header — aligned with top bar */}
         {showComments && !showHistory && (
           <div className="w-80 shrink-0 flex items-center justify-between px-4 py-2 border-l border-border">

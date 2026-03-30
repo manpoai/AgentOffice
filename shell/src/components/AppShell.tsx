@@ -1,255 +1,33 @@
 'use client';
+import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Sun, Moon, Globe, ChevronRight } from 'lucide-react';
+import { FileText, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useState, useEffect, useRef } from 'react';
-import { useTheme } from 'next-themes';
 import { CommandPalette } from './CommandPalette';
-import { useT, LOCALE_LABELS, type Locale } from '@/lib/i18n';
+import { ShortcutHelpPanel } from './shared/ShortcutHelpPanel';
+import { ContextMenuProvider } from './shared/ContextMenuProvider';
+import { registerGlobalShortcuts } from '@/lib/keyboard';
 
-const NAV_KEYS = ['content', 'contacts'] as const;
-const NAV_ICONS: Record<typeof NAV_KEYS[number], string> = {
-  content: '/icons/icon-docs.svg',
-  contacts: '/icons/icon-contacts.svg',
-};
-const NAV_LABELS: Record<typeof NAV_KEYS[number], string> = { content: 'Docs', contacts: 'Contacts' };
+const NAV_ITEMS = [
+  { id: 'content', path: '/content', label: 'Docs', Icon: FileText },
+  { id: 'contacts', path: '/contacts', label: 'Contacts', Icon: Users },
+] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [showSettings, setShowSettings] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const { t, locale, setLocale } = useT();
 
-  const NAV_ITEMS = NAV_KEYS.map(id => ({
-    id,
-    path: `/${id}`,
-    label: NAV_LABELS[id],
-    icon: NAV_ICONS[id],
-  }));
-
-  // Load collapsed state from localStorage
+  // Register global keyboard shortcuts once
   useEffect(() => {
-    const saved = localStorage.getItem('asuite-sidebar-collapsed');
-    if (saved === 'true') setCollapsed(true);
+    const unregister = registerGlobalShortcuts();
+    return unregister;
   }, []);
-
-  // Global keyboard shortcut: ? for help
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
-        const el = e.target as HTMLElement;
-        const tag = el?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-        if (el?.isContentEditable || el?.closest('[contenteditable]')) return;
-        e.preventDefault();
-        setShowSettings(v => !v);
-      }
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, []);
-
-  // Close settings menu when clicking outside
-  useEffect(() => {
-    if (!showSettings) return;
-    const handler = (e: MouseEvent) => {
-      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
-        setShowSettings(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showSettings]);
-
-  const { setTheme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   const activeModule = NAV_ITEMS.find(n => pathname.startsWith(n.path))?.id ?? 'content';
 
-  const toggleCollapse = () => {
-    const next = !collapsed;
-    setCollapsed(next);
-    localStorage.setItem('asuite-sidebar-collapsed', String(next));
-  };
-
   return (
     <div className="flex h-screen w-screen flex-col md:flex-row bg-background text-foreground">
-      {/* Desktop sidebar — hidden on mobile */}
-      <nav className={cn(
-        'hidden md:flex flex-col border-r border-border shrink-0 transition-all duration-200 ease-in-out relative overflow-hidden bg-sidebar',
-        collapsed ? 'w-14' : 'w-40'
-      )}>
-        {/* Logo */}
-        <div className="h-[52px] flex items-center px-3 overflow-hidden">
-          <span className={cn('text-xl text-foreground font-[family-name:var(--font-allura)] whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>Asuite</span>
-        </div>
-
-        {/* Search + Add */}
-        <div className="flex items-center gap-1 mb-1 px-2 overflow-hidden">
-          <button
-            className={cn(
-              'flex items-center h-8 rounded-lg text-muted-foreground text-xs transition-all duration-200',
-              collapsed ? 'w-8 justify-center' : 'flex-1 px-2 bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10'
-            )}
-          >
-            <span className={cn(collapsed ? 'w-8' : 'w-auto', 'flex items-center justify-center shrink-0')}>
-              <img src="/icons/icon-search.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
-            </span>
-            <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0 w-0' : 'opacity-100 ml-1.5')}>Search</span>
-          </button>
-          <button className={cn(
-            'flex items-center justify-center h-8 w-8 shrink-0 rounded-lg text-muted-foreground transition-all duration-200',
-            collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10'
-          )}>
-            <img src="/icons/icon-plus.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
-          </button>
-        </div>
-
-        {/* Nav items — icon always at fixed position to avoid jump on collapse */}
-        <div className="flex flex-col gap-0.5 mt-1 px-2">
-          {NAV_ITEMS.map(item => {
-            const isActive = activeModule === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => router.push(item.path)}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  'relative flex items-center h-8 rounded-lg text-sm font-medium transition-colors overflow-hidden',
-                  'text-left px-0',
-                  isActive
-                    ? 'text-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10'
-                )}
-              >
-                {/* Fixed-width icon container — always centered in collapsed width */}
-                <span className="w-8 flex items-center justify-center shrink-0">
-                  <img
-                    src={item.icon}
-                    alt=""
-                    className={cn('h-4 w-4', isActive ? 'opacity-70' : 'opacity-50')}
-                  />
-                </span>
-                <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex-1" />
-
-        {/* Settings + Collapse at bottom */}
-        <div className="mb-3 flex flex-col gap-0.5 px-2">
-          {/* Settings button with dropdown menu */}
-          <div className="relative" ref={settingsRef}>
-            <button
-              onClick={() => setShowSettings(v => !v)}
-              title={collapsed ? 'Settings' : undefined}
-              className="flex items-center h-8 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-colors w-full overflow-hidden px-0"
-            >
-              <span className="w-8 flex items-center justify-center shrink-0">
-                <img src="/icons/icon-settings.svg" alt="" className="h-4 w-4 opacity-50" />
-              </span>
-              <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>Settings</span>
-            </button>
-
-            {/* Settings dropdown menu — uses fixed positioning to escape overflow-hidden sidebar */}
-            {showSettings && (
-              <div
-                className="fixed bg-card border border-border rounded-lg shadow-lg z-50 py-1 min-w-[200px]"
-                style={{
-                  bottom: settingsRef.current ? `${window.innerHeight - settingsRef.current.getBoundingClientRect().top + 4}px` : 'auto',
-                  left: collapsed
-                    ? `${(settingsRef.current?.getBoundingClientRect().right ?? 0) + 4}px`
-                    : `${settingsRef.current?.getBoundingClientRect().left ?? 0}px`,
-                }}
-              >
-                {/* Theme toggle */}
-                <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
-                  {t('settings.theme') || 'Theme'}
-                </div>
-                {mounted && (
-                  <div className="px-2 pb-1 flex gap-1">
-                    <button
-                      onClick={() => setTheme('light')}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2 py-1 rounded text-xs flex-1',
-                        resolvedTheme === 'light' ? 'bg-sidebar-accent text-sidebar-primary font-medium' : 'text-muted-foreground hover:bg-accent/50'
-                      )}
-                    >
-                      <Sun className="h-3.5 w-3.5" />
-                      Light
-                    </button>
-                    <button
-                      onClick={() => setTheme('dark')}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2 py-1 rounded text-xs flex-1',
-                        resolvedTheme === 'dark' ? 'bg-sidebar-accent text-sidebar-primary font-medium' : 'text-muted-foreground hover:bg-accent/50'
-                      )}
-                    >
-                      <Moon className="h-3.5 w-3.5" />
-                      Dark
-                    </button>
-                  </div>
-                )}
-
-                <div className="border-t border-border my-1" />
-
-                {/* Language selector */}
-                <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
-                  {t('settings.language') || 'Language'}
-                </div>
-                <div className="px-2 pb-1">
-                  {(Object.entries(LOCALE_LABELS) as [Locale, string][]).map(([key, label]) => (
-                    <button
-                      key={key}
-                      onClick={() => { setLocale(key); setShowSettings(false); }}
-                      className={cn(
-                        'flex items-center gap-2 w-full px-2 py-1 rounded text-xs',
-                        locale === key ? 'bg-sidebar-accent text-sidebar-primary font-medium' : 'text-muted-foreground hover:bg-accent/50'
-                      )}
-                    >
-                      <Globe className="h-3.5 w-3.5" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="border-t border-border my-1" />
-
-                {/* Keyboard shortcuts */}
-                <div className="px-2 pb-1">
-                  <button
-                    onClick={() => { setShowSettings(false); }}
-                    className="flex items-center gap-2 w-full px-2 py-1 rounded text-xs text-muted-foreground hover:bg-accent/50"
-                  >
-                    <span className="text-[10px]">?</span>
-                    <span>{t('shortcuts.title') || 'Keyboard Shortcuts'}</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Collapse toggle */}
-          <button
-            onClick={toggleCollapse}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="flex items-center h-8 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-colors overflow-hidden px-0"
-          >
-            <span className="w-8 flex items-center justify-center shrink-0">
-              {collapsed
-                ? <ChevronRight className="h-4 w-4" />
-                : <img src="/icons/icon-collapse.svg" alt="" className="h-4 w-4 opacity-50" />
-              }
-            </span>
-            <span className={cn('whitespace-nowrap transition-opacity duration-200', collapsed ? 'opacity-0' : 'opacity-100')}>Collapse</span>
-          </button>
-        </div>
-      </nav>
+      {/* Desktop: no sidebar — the content page provides its own unified sidebar */}
 
       {/* Main content area — fills remaining space */}
       <main className="flex-1 overflow-hidden min-h-0">
@@ -258,6 +36,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Global command palette (Cmd+K) */}
       <CommandPalette />
+
+      {/* Keyboard shortcut help panel */}
+      <ShortcutHelpPanel />
+
+      {/* Global context menu (right-click / long-press) */}
+      <ContextMenuProvider />
 
       {/* Mobile bottom tab bar — visible only on mobile */}
       <nav className="flex md:hidden items-center justify-around border-t border-border px-1 shrink-0 bg-sidebar"
@@ -275,11 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   : 'text-muted-foreground'
               )}
             >
-              <img
-                src={item.icon}
-                alt=""
-                className={cn('h-5 w-5', isActive ? 'opacity-80' : 'opacity-50')}
-              />
+              <item.Icon className={cn('h-5 w-5', isActive ? 'opacity-80' : 'opacity-50')} />
               <span className="text-[10px] mt-0.5">{item.label}</span>
             </button>
           );

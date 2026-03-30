@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
+import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { useX6Graph } from './hooks/useX6Graph';
 import { useAutoSave } from './hooks/useAutoSave';
 import { LeftToolbar, type ActiveTool } from './components/LeftToolbar';
@@ -114,8 +115,7 @@ function X6DiagramEditorInner({
   const [activeTool, setActiveTool] = useState<ActiveTool>('select');
   const [activeConnector, setActiveConnector] = useState<ConnectorType>(DEFAULT_CONNECTOR);
   const [showMenu, setShowMenu] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
+  // Title editing now handled by ContentTopBar
   const [migrationNeeded, setMigrationNeeded] = useState(false);
 
   // Mindmap state
@@ -940,11 +940,7 @@ function X6DiagramEditorInner({
   }, [graph]);
 
   // ─── Title editing ──
-  const handleTitleEdit = useCallback(async () => {
-    if (!editTitle.trim() || !diagram) return;
-    setIsEditingTitle(false);
-    // TODO: update diagram title via gateway API if supported
-  }, [editTitle, diagram]);
+  // handleTitleEdit now inlined in ContentTopBar onTitleChange
 
   // ─── Delete diagram ──
   const handleDelete = useCallback(async () => {
@@ -1008,95 +1004,53 @@ function X6DiagramEditorInner({
   return (
     <div className="flex flex-col h-full bg-muted">
       {/* ── Header ── */}
-      <div className="flex items-center h-12 px-3 bg-card border-b border-border shrink-0">
-        <div className="flex items-center gap-1 min-w-0 flex-1">
-          {onBack && (
-            <button onClick={onBack} className="p-1.5 rounded hover:bg-muted text-muted-foreground">
-              <ArrowLeft size={16} />
-            </button>
-          )}
-
-          {/* Breadcrumb */}
-          {breadcrumb?.map((item, i) => (
-            <span key={item.id} className="flex items-center text-sm text-muted-foreground">
-              {i > 0 && <ChevronRight size={12} className="mx-0.5" />}
-              <span className="truncate max-w-[120px]">{item.title}</span>
-            </span>
-          ))}
-
-          {/* Title */}
-          {isEditingTitle ? (
-            <input
-              className="text-sm font-medium bg-transparent border-b border-sidebar-primary outline-none px-1 min-w-[120px]"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              onBlur={handleTitleEdit}
-              onKeyDown={(e) => e.key === 'Enter' && handleTitleEdit()}
-              autoFocus
-            />
-          ) : (
-            <button
-              className="text-sm font-medium text-foreground truncate max-w-[200px] hover:text-sidebar-primary px-1"
-              onClick={() => {
-                setEditTitle((diagram as any)?.title || '');
-                setIsEditingTitle(true);
-              }}
-            >
-              {(diagram as any)?.title || 'Untitled Diagram'}
-            </button>
-          )}
-
-          {/* Save status */}
-          <span className="text-xs text-muted-foreground ml-2">
-            {saving ? 'Saving...' : lastSaved ? `Saved ${formatRelativeTime(lastSaved)}` : ''}
-          </span>
-        </div>
-
-        {/* Right actions */}
-        <div className="flex items-center gap-1">
-          {/* Undo / Redo */}
-          <button
-            className="p-1.5 rounded hover:bg-muted text-muted-foreground"
-            onClick={() => graph?.undo()}
-            title="撤销 (Cmd+Z)"
-          >
-            <Undo2 size={16} />
-          </button>
-          <button
-            className="p-1.5 rounded hover:bg-muted text-muted-foreground"
-            onClick={() => graph?.redo()}
-            title="重做 (Cmd+Shift+Z)"
-          >
-            <Redo2 size={16} />
-          </button>
-
-          {/* Toggle doc list */}
-          {onToggleDocList && (
-            <button onClick={onToggleDocList} className="p-1.5 rounded hover:bg-muted text-muted-foreground" title="切换文档列表">
-              {docListVisible ? <ArrowLeftToLine size={16} /> : <ArrowRightToLine size={16} />}
-            </button>
-          )}
-
-          {/* Menu */}
-          <div className="relative">
+      <div className="flex items-center h-12 bg-card border-b border-border shrink-0">
+        <ContentTopBar
+          breadcrumb={breadcrumb}
+          onBack={onBack}
+          docListVisible={docListVisible}
+          onToggleDocList={onToggleDocList}
+          title={(diagram as any)?.title || 'Untitled Diagram'}
+          titlePlaceholder="Untitled Diagram"
+          onTitleChange={async (newTitle) => {
+            // TODO: update diagram title via gateway API if supported
+          }}
+          statusText={saving ? 'Saving...' : lastSaved ? `Saved ${formatRelativeTime(lastSaved)}` : ''}
+          actions={<>
             <button
               className="p-1.5 rounded hover:bg-muted text-muted-foreground"
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={() => graph?.undo()}
+              title="撤销 (Cmd+Z)"
             >
-              <MoreHorizontal size={16} />
+              <Undo2 size={16} />
             </button>
-            {showMenu && (
-              <div className="absolute right-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-40 z-50">
-                {onCopyLink && (
-                  <MenuButton icon={<Link2 size={14} />} label="复制链接" onClick={() => { onCopyLink(); setShowMenu(false); }} />
-                )}
-                <MenuButton icon={<Download size={14} />} label="导出 PNG" onClick={() => { handleExport(); setShowMenu(false); }} />
-                <div className="border-t border-border my-1" />
-                <MenuButton icon={<Trash2 size={14} />} label="删除图表" onClick={() => { handleDelete(); setShowMenu(false); }} danger />
-              </div>
-            )}
-          </div>
-        </div>
+            <button
+              className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+              onClick={() => graph?.redo()}
+              title="重做 (Cmd+Shift+Z)"
+            >
+              <Redo2 size={16} />
+            </button>
+            <div className="relative">
+              <button
+                className="p-1.5 rounded hover:bg-muted text-muted-foreground"
+                onClick={() => setShowMenu(!showMenu)}
+              >
+                <MoreHorizontal size={16} />
+              </button>
+              {showMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-40 z-50">
+                  {onCopyLink && (
+                    <MenuButton icon={<Link2 size={14} />} label="复制链接" onClick={() => { onCopyLink(); setShowMenu(false); }} />
+                  )}
+                  <MenuButton icon={<Download size={14} />} label="导出 PNG" onClick={() => { handleExport(); setShowMenu(false); }} />
+                  <div className="border-t border-border my-1" />
+                  <MenuButton icon={<Trash2 size={14} />} label="删除图表" onClick={() => { handleDelete(); setShowMenu(false); }} danger />
+                </div>
+              )}
+            </div>
+          </>}
+        />
       </div>
 
       {/* ── Migration banner ── */}

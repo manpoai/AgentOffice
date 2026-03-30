@@ -139,6 +139,21 @@ CREATE TABLE IF NOT EXISTS content_items (
 CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(type);
 CREATE INDEX IF NOT EXISTS idx_content_items_parent ON content_items(parent_id);
 
+-- Notifications
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  actor_id TEXT,                -- who triggered it (nullable for system notifications)
+  target_actor_id TEXT NOT NULL, -- who receives it
+  type TEXT NOT NULL,            -- 'comment_reply', 'mention', 'agent_action', 'system'
+  title TEXT NOT NULL,
+  body TEXT,
+  link TEXT,                     -- URL to navigate to (e.g., /content?id=doc:xxx)
+  read INTEGER DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_target ON notifications(target_actor_id, read, created_at DESC);
+
 -- View column settings (field visibility/width per NocoDB view)
 CREATE TABLE IF NOT EXISTS view_column_settings (
   view_id     TEXT NOT NULL,

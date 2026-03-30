@@ -341,3 +341,52 @@ export async function saveDiagram(diagramId: string, data: { nodes: any[]; edges
     body: JSON.stringify({ data }),
   });
 }
+
+// ─── Global Search ──────────────────────────────────
+
+export interface SearchResult {
+  id: string;
+  type: string;
+  title: string;
+  snippet?: string;
+  updated_at?: string;
+}
+
+export async function globalSearch(query: string, limit = 20): Promise<{ results: SearchResult[] }> {
+  return gwFetch(`/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+}
+
+// ─── Notifications ──────────────────────────────────
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body?: string;
+  link?: string;
+  actor?: string;
+  read: boolean;
+  created_at: string;
+}
+
+export async function getNotifications(unread?: boolean, limit?: number): Promise<Notification[]> {
+  const params = new URLSearchParams();
+  if (unread !== undefined) params.set('unread', String(unread));
+  if (limit !== undefined) params.set('limit', String(limit));
+  const qs = params.toString();
+  const data = await gwFetch<{ notifications: Notification[] }>(`/notifications${qs ? `?${qs}` : ''}`);
+  return data.notifications;
+}
+
+export async function getUnreadCount(): Promise<number> {
+  const data = await gwFetch<{ count: number }>('/notifications/unread-count');
+  return data.count;
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await gwFetch(`/notifications/${id}/read`, { method: 'POST' });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await gwFetch('/notifications/read-all', { method: 'POST' });
+}

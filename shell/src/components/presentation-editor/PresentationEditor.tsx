@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
+import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { ColorPicker } from '@/components/shared/ColorPicker';
 
 // ─── Types ──────────────────────────────────────────
 interface SlideData {
@@ -152,8 +154,7 @@ export function PresentationEditor({
   // State
   const [ready, setReady] = useState(fabricLoaded);
   const [showMenu, setShowMenu] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
+  // Title editing now handled by ContentTopBar
   const [slides, setSlides] = useState<SlideData[]>([]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [selectedTool, setSelectedTool] = useState<'select' | 'text' | 'rect' | 'circle' | 'triangle'>('select');
@@ -169,7 +170,7 @@ export function PresentationEditor({
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  // titleInputRef removed — title editing handled by ContentTopBar
   const undoStackRef = useRef<string[]>([]);
   const redoStackRef = useRef<string[]>([]);
   const isLoadingSlideRef = useRef(false);
@@ -835,8 +836,7 @@ export function PresentationEditor({
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (isEditingTitle) return;
-      // Bug 3 fix: Don't delete canvas objects when focus is in an input/select/textarea
+      // Don't delete canvas objects when focus is in an input/select/textarea (e.g. title editing)
       const tag = (document.activeElement?.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -851,23 +851,9 @@ export function PresentationEditor({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [deleteSelected, isEditingTitle]);
+  }, [deleteSelected]);
 
-  // ─── Title Editing ────────────────────────────────
-  const startEditTitle = useCallback(() => {
-    setEditTitle(currentTitle || '');
-    setIsEditingTitle(true);
-    setTimeout(() => titleInputRef.current?.select(), 0);
-  }, [currentTitle]);
-
-  const saveTitle = useCallback(async () => {
-    setIsEditingTitle(false);
-    const newTitle = editTitle.trim();
-    if (newTitle !== currentTitle) {
-      await gw.updateContentItem(`presentation:${presentationId}`, { title: newTitle });
-      queryClient.invalidateQueries({ queryKey: ['content-items'] });
-    }
-  }, [editTitle, currentTitle, presentationId, queryClient]);
+  // Title editing now handled by ContentTopBar
 
   // ─── Delete Presentation ──────────────────────────
   const handleDelete = useCallback(async () => {
@@ -959,93 +945,60 @@ export function PresentationEditor({
   return (
     <div ref={containerRef} className="flex-1 flex flex-col min-h-0 bg-card">
       {/* ─── Header Bar ─── */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
-        <button onClick={onBack} className="md:hidden p-1 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-
-        {onToggleDocList && (
-          <button
-            onClick={onToggleDocList}
-            className="hidden md:flex p-1 text-muted-foreground hover:text-foreground"
-            title={docListVisible ? 'Hide sidebar' : 'Show sidebar'}
-          >
-            {docListVisible ? <ArrowLeftToLine className="h-4 w-4" /> : <ArrowRightToLine className="h-4 w-4" />}
-          </button>
-        )}
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1 text-sm">
-            {breadcrumb?.map((crumb, i) => (
-              <span key={crumb.id} className="flex items-center gap-1 min-w-0">
-                {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
-                {i < (breadcrumb.length - 1) ? (
-                  <span className="text-muted-foreground truncate">{crumb.title}</span>
-                ) : isEditingTitle ? (
-                  <input
-                    ref={titleInputRef}
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    onBlur={saveTitle}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveTitle();
-                      if (e.key === 'Escape') setIsEditingTitle(false);
-                    }}
-                    className="text-foreground font-medium bg-transparent border-b border-primary outline-none min-w-[100px] max-w-[300px]"
-                    autoFocus
-                  />
-                ) : (
-                  <button
-                    onClick={startEditTitle}
-                    className="text-foreground font-medium truncate hover:text-primary transition-colors"
-                    title={t('content.rename') || 'Click to rename'}
-                  >
-                    {crumb.title || (t('content.untitledPresentation') || 'Untitled Presentation')}
-                  </button>
-                )}
-              </span>
-            ))}
-          </div>
-          <div className="text-[11px] text-muted-foreground/50 mt-0.5">
-            {formatRelativeTime(presentation.updated_at)}
-            {presentation.updated_by && <span> &middot; {presentation.updated_by}</span>}
-          </div>
-        </div>
-
-        {/* Right actions */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={startPresentation}
-            className="flex items-center gap-1 px-2 py-1 rounded text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            title="Present"
-          >
-            <Play className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Present</span>
-          </button>
-          <div className="relative">
+      <div className="flex items-center border-b border-border shrink-0">
+        <ContentTopBar
+          breadcrumb={breadcrumb}
+          onBack={onBack}
+          docListVisible={docListVisible}
+          onToggleDocList={onToggleDocList}
+          title={currentTitle || t('content.untitledPresentation') || 'Untitled Presentation'}
+          titlePlaceholder={t('content.untitledPresentation') || 'Untitled Presentation'}
+          onTitleChange={async (newTitle) => {
+            if (newTitle !== currentTitle) {
+              await gw.updateContentItem(`presentation:${presentationId}`, { title: newTitle });
+              queryClient.invalidateQueries({ queryKey: ['content-items'] });
+            }
+          }}
+          metaLine={
+            <div className="text-[11px] text-muted-foreground/50">
+              {formatRelativeTime(presentation.updated_at)}
+              {presentation.updated_by && <span> &middot; {presentation.updated_by}</span>}
+            </div>
+          }
+          actions={<>
             <button
-              onClick={() => setShowMenu(v => !v)}
-              className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"
-              title={t('content.moreActions') || 'More'}
+              onClick={startPresentation}
+              className="flex items-center gap-1 px-2 py-1 rounded text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              title="Present"
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <Play className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Present</span>
             </button>
-            {showMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-52">
-                  <MenuBtn icon={Link2} label={t('content.copyLink') || 'Copy Link'} onClick={() => {
-                    setShowMenu(false);
-                    onCopyLink?.();
-                  }} />
-                  <MenuBtn icon={Download} label={t('content.download') || 'Download PNG'} onClick={handleDownload} />
-                  <div className="border-t border-border my-1" />
-                  <MenuBtn icon={Trash2} label={t('content.delete') || 'Delete'} onClick={handleDelete} danger />
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+            <div className="relative">
+              <button
+                onClick={() => setShowMenu(v => !v)}
+                className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"
+                title={t('content.moreActions') || 'More'}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {showMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-52">
+                    <MenuBtn icon={Link2} label={t('content.copyLink') || 'Copy Link'} onClick={() => {
+                      setShowMenu(false);
+                      onCopyLink?.();
+                    }} />
+                    <MenuBtn icon={Download} label={t('content.download') || 'Download PNG'} onClick={handleDownload} />
+                    <div className="border-t border-border my-1" />
+                    <MenuBtn icon={Trash2} label={t('content.delete') || 'Delete'} onClick={handleDelete} danger />
+                  </div>
+                </>
+              )}
+            </div>
+          </>}
+        />
       </div>
 
       {/* ─── Toolbar (simplified) ──────────────────────── */}
@@ -1319,13 +1272,10 @@ function SlidePropertiesSection({
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <label className="text-muted-foreground w-14 shrink-0">Color</label>
-          <input
-            type="color"
-            value={currentSlide.background || '#ffffff'}
-            onChange={(e) => onBackgroundChange(e.target.value)}
-            className="w-8 h-7 rounded border border-border cursor-pointer"
+          <ColorPicker
+            color={currentSlide.background || '#ffffff'}
+            onChange={(c) => onBackgroundChange(c)}
           />
-          <span className="text-muted-foreground">{currentSlide.background || '#ffffff'}</span>
         </div>
 
         {/* Background Image */}
@@ -1579,13 +1529,10 @@ function TextPropertiesSection({
         {/* Fill color */}
         <div className="flex items-center gap-2">
           <label className="text-muted-foreground w-10 shrink-0">Color</label>
-          <input
-            type="color"
-            value={obj.fill || '#333333'}
-            onChange={(e) => updateAndSave('fill', e.target.value)}
-            className="w-8 h-7 rounded border border-border cursor-pointer"
+          <ColorPicker
+            color={obj.fill || '#333333'}
+            onChange={(c) => updateAndSave('fill', c)}
           />
-          <span className="text-muted-foreground">{obj.fill || '#333333'}</span>
         </div>
 
         {/* Padding */}
@@ -1617,28 +1564,22 @@ function ShapePropertiesSection({
         {/* Fill color */}
         <div className="flex items-center gap-2">
           <label className="text-muted-foreground w-14 shrink-0">Fill</label>
-          <input
-            type="color"
-            value={obj.fill || '#e2e8f0'}
-            onChange={(e) => updateAndSave('fill', e.target.value)}
-            className="w-8 h-7 rounded border border-border cursor-pointer"
+          <ColorPicker
+            color={obj.fill || '#e2e8f0'}
+            onChange={(c) => updateAndSave('fill', c)}
           />
-          <span className="text-muted-foreground">{obj.fill || '#e2e8f0'}</span>
         </div>
 
         {/* Stroke color */}
         <div className="flex items-center gap-2">
           <label className="text-muted-foreground w-14 shrink-0">Stroke</label>
-          <input
-            type="color"
-            value={obj.stroke || '#94a3b8'}
-            onChange={(e) => {
-              updateAndSave('stroke', e.target.value);
+          <ColorPicker
+            color={obj.stroke || '#94a3b8'}
+            onChange={(c) => {
+              updateAndSave('stroke', c);
               if (!obj.strokeWidth) updateAndSave('strokeWidth', 1);
             }}
-            className="w-8 h-7 rounded border border-border cursor-pointer"
           />
-          <span className="text-muted-foreground">{obj.stroke || '#94a3b8'}</span>
         </div>
 
         {/* Stroke width */}
@@ -1706,16 +1647,14 @@ function ShapePropertiesSection({
           <div className="space-y-2 pl-4">
             <div className="flex items-center gap-2">
               <label className="text-muted-foreground w-10 shrink-0">Color</label>
-              <input
-                type="color"
-                value={obj.shadow.color?.startsWith('rgba') ? '#000000' : (obj.shadow.color || '#000000')}
-                onChange={(e) => {
+              <ColorPicker
+                color={obj.shadow.color?.startsWith('rgba') ? '#000000' : (obj.shadow.color || '#000000')}
+                onChange={(c) => {
                   const { Shadow } = fabricModule;
-                  obj.set('shadow', new Shadow({ ...obj.shadow, color: e.target.value }));
+                  obj.set('shadow', new Shadow({ ...obj.shadow, color: c }));
                   canvas?.renderAll();
                   canvas?.fire('object:modified', { target: obj });
                 }}
-                className="w-8 h-7 rounded border border-border cursor-pointer"
               />
             </div>
             <PropInput label="Blur" value={obj.shadow.blur || 0} onChange={(v) => {
@@ -1848,14 +1787,12 @@ function ImagePropertiesSection({
         {/* Border/stroke */}
         <div className="flex items-center gap-2">
           <label className="text-muted-foreground w-14 shrink-0">Border</label>
-          <input
-            type="color"
-            value={obj.stroke || '#000000'}
-            onChange={(e) => {
-              updateAndSave('stroke', e.target.value);
+          <ColorPicker
+            color={obj.stroke || '#000000'}
+            onChange={(c) => {
+              updateAndSave('stroke', c);
               if (!obj.strokeWidth) updateAndSave('strokeWidth', 1);
             }}
-            className="w-8 h-7 rounded border border-border cursor-pointer"
           />
         </div>
         <PropInput label="Border W" value={obj.strokeWidth || 0} onChange={(v) => updateAndSave('strokeWidth', v)} min={0} max={20} />
@@ -2123,12 +2060,9 @@ function FloatingTextToolbar({ obj, canvas, containerRef, propVersion }: {
         <AlignRight className="h-3.5 w-3.5" />
       </button>
       <div className="w-px h-4 bg-border mx-0.5" />
-      <input
-        type="color"
-        value={typeof obj.fill === 'string' ? obj.fill : '#1a1a1a'}
-        onChange={(e) => update('fill', e.target.value)}
-        className="w-6 h-6 rounded border border-border cursor-pointer"
-        title="Text color"
+      <ColorPicker
+        color={typeof obj.fill === 'string' ? obj.fill : '#1a1a1a'}
+        onChange={(c) => update('fill', c)}
       />
     </div>
   );
