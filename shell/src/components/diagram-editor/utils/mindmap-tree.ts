@@ -193,12 +193,25 @@ export function renderMindmapToGraph(
   rootY: number,
   mindmapGroupId: string,
 ) {
-  // Remove existing mindmap cells
+  // Remove existing mindmap cells — collect ALL cells with this groupId
+  // Also remove any cells whose ID matches a tree node ID (handles stale data edge case)
+  const treeIds = new Set<string>();
+  const collectIds = (node: MindmapTreeNode) => {
+    treeIds.add(node.id);
+    node.children.forEach(collectIds);
+  };
+  collectIds(tree);
+
   const existingCells = graph.getCells().filter(c => {
     const data = c.getData();
-    return data?.mindmapGroupId === mindmapGroupId;
+    if (data?.mindmapGroupId === mindmapGroupId) return true;
+    // Also catch orphaned nodes that match tree IDs but lost their groupId
+    if (treeIds.has(c.id)) return true;
+    return false;
   });
-  graph.removeCells(existingCells);
+  if (existingCells.length > 0) {
+    graph.removeCells(existingCells);
+  }
 
   // Layout
   const layout = layoutSubtree(tree, rootX, rootY, 0);
@@ -248,6 +261,12 @@ export function renderMindmapToGraph(
       },
       data: { mindmapGroupId },
     });
+  }
+
+  // Store tree on root node so it survives save/reload
+  const rootNode = graph.getCellById(tree.id);
+  if (rootNode) {
+    rootNode.setData({ ...rootNode.getData(), mindmapTree: tree });
   }
 
   graph.stopBatch('mindmap-render');

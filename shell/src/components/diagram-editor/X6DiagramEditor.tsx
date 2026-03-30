@@ -660,32 +660,61 @@ function X6DiagramEditorInner({
   }, [graph]);
 
   // ─── Quick-create: click port → new node + edge ──
+  // Preview uses pure DOM overlay (not X6 cells) to avoid ghost node bugs.
   useEffect(() => {
     if (!graph) return;
-
-    // Fixed IDs to guarantee only one preview at a time
-    const PREVIEW_NODE_ID = '__port_preview_node__';
-    const PREVIEW_EDGE_ID = '__port_preview_edge__';
 
     const portOffsets: Record<string, { dx: number; dy: number }> = {
       top: { dx: 0, dy: -1 }, bottom: { dx: 0, dy: 1 },
       left: { dx: -1, dy: 0 }, right: { dx: 1, dy: 0 },
     };
 
-    const clearPreview = () => {
-      // Aggressively remove by fixed ID AND scan for any _isPreview cells
-      try {
-        if (graph.hasCell(PREVIEW_EDGE_ID)) graph.removeCell(PREVIEW_EDGE_ID);
-      } catch (e) { console.warn('[preview] removeEdge error:', e); }
-      try {
-        if (graph.hasCell(PREVIEW_NODE_ID)) graph.removeCell(PREVIEW_NODE_ID);
-      } catch (e) { console.warn('[preview] removeNode error:', e); }
-      // Fallback: remove ANY cell marked as preview (handles orphans from re-renders)
-      const orphans = graph.getCells().filter(c => c.getData()?._isPreview);
-      if (orphans.length > 0) {
-        console.warn('[preview] Found orphaned preview cells:', orphans.length);
-        graph.removeCells(orphans);
-      }
+    // ── DOM-based preview overlay ──
+    const container = graph.container.parentElement!;
+    const previewEl = document.createElement('div');
+    previewEl.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:5;display:none;';
+    container.appendChild(previewEl);
+
+    // SVG for the connecting line
+    const svgNs = 'http://www.w3.org/2000/svg';
+    const lineSvg = document.createElementNS(svgNs, 'svg');
+    lineSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4;display:none;';
+    lineSvg.setAttribute('overflow', 'visible');
+    const lineEl = document.createElementNS(svgNs, 'line');
+    lineEl.setAttribute('stroke-dasharray', '6 4');
+    lineEl.setAttribute('stroke-width', '1.5');
+    lineEl.setAttribute('opacity', '0.5');
+    lineSvg.appendChild(lineEl);
+    container.appendChild(lineSvg);
+
+    const showPreview = (
+      nodeScreenX: number, nodeScreenY: number,
+      nodeW: number, nodeH: number,
+      borderColor: string, bgColor: string,
+      portScreenX: number, portScreenY: number,
+      targetEdgeX: number, targetEdgeY: number,
+    ) => {
+      previewEl.style.display = 'block';
+      previewEl.style.left = `${nodeScreenX}px`;
+      previewEl.style.top = `${nodeScreenY}px`;
+      previewEl.style.width = `${nodeW}px`;
+      previewEl.style.height = `${nodeH}px`;
+      previewEl.style.border = `1px dashed ${borderColor}`;
+      previewEl.style.borderRadius = '8px';
+      previewEl.style.backgroundColor = bgColor;
+      previewEl.style.opacity = '0.5';
+
+      lineSvg.style.display = 'block';
+      lineEl.setAttribute('x1', String(portScreenX));
+      lineEl.setAttribute('y1', String(portScreenY));
+      lineEl.setAttribute('x2', String(targetEdgeX));
+      lineEl.setAttribute('y2', String(targetEdgeY));
+      lineEl.setAttribute('stroke', borderColor);
+    };
+
+    const hidePreview = () => {
+      previewEl.style.display = 'none';
+      lineSvg.style.display = 'none';
     };
 
     // Track which port is currently hovered for style restoration
@@ -702,32 +731,21 @@ function X6DiagramEditorInner({
       hoveredPortInfo = null;
     };
 
-    // After a port click creates a node, block preview until mouse truly re-enters a port
-    let createdViaPortClick = false;
-
     const handlePortClick = ({ e, node, port }: { e: MouseEvent; node: Node; port: string }) => {
       if (activeTool !== 'select') return;
       if (node.getData()?.mindmapGroupId) return;
-      createdViaPortClick = true;
-      clearPreview();
+      hidePreview();
       restorePortStyle();
       const newNode = quickCreateNode(graph, node, port);
       if (newNode) {
         graph.select(newNode);
       }
-      // Clear again after creation — events during addNode may have recreated preview
-      clearPreview();
     };
 
     const handlePortEnter = ({ node, port }: { e: MouseEvent; node: Node; port: string }) => {
       if (activeTool !== 'select') return;
       if (node.getData()?.mindmapGroupId) return;
-      // Don't show preview on preview nodes
-      if (node.getData()?._isPreview) return;
-      // After port click, ignore enter events until a mouseleave resets the flag
-      if (createdViaPortClick) return;
 
-      // Restore previous port style if different
       restorePortStyle();
 
       // Highlight hovered port
@@ -736,7 +754,7 @@ function X6DiagramEditorInner({
       node.portProp(port, 'attrs/circle/r', 8);
       hoveredPortInfo = { nodeId: node.id, portId: port };
 
-      // Calculate preview node position (matching source node size)
+      // Calculate preview position in local coords
       const dir = portOffsets[port];
       if (!dir) return;
       const pos = node.position();
@@ -746,54 +764,47 @@ function X6DiagramEditorInner({
       const nx = pos.x + dir.dx * (size.width + gap) + (dir.dx === 0 ? (size.width - pw) / 2 : 0);
       const ny = pos.y + dir.dy * (size.height + gap) + (dir.dy === 0 ? (size.height - ph) / 2 : 0);
 
-      // Read source node colors for preview
       const srcData = node.getData() || {};
-      const previewBg = srcData.bgColor || '#ffffff';
       const previewBorder = srcData.borderColor || '#374151';
+      const previewBg = srcData.bgColor || '#ffffff';
 
-      clearPreview();
-      graph.addNode({
-        id: PREVIEW_NODE_ID,
-        shape: 'rect',
-        x: nx, y: ny,
-        width: pw, height: ph,
-        attrs: {
-          body: { fill: previewBg, stroke: previewBorder, strokeWidth: 1, strokeDasharray: '4 3', rx: 8, ry: 8, opacity: 0.5 },
-        },
-        zIndex: -1,
-        data: { _isPreview: true },
-      });
+      // Convert local coords to screen (graph container) coords
+      const { sx, sy } = graph.scale();
+      const { tx, ty } = graph.translate();
+      const screenX = nx * sx + tx;
+      const screenY = ny * sy + ty;
+      const screenW = pw * sx;
+      const screenH = ph * sy;
 
-      // Edge target = nearest edge center of preview node (not center)
-      let tx: number, ty: number;
-      if (dir.dx === 1)  { tx = nx;          ty = ny + ph / 2; } // right port → target left edge center
-      else if (dir.dx === -1) { tx = nx + pw; ty = ny + ph / 2; } // left port → target right edge center
-      else if (dir.dy === 1)  { tx = nx + pw / 2; ty = ny;      } // bottom port → target top edge center
-      else                    { tx = nx + pw / 2; ty = ny + ph;  } // top port → target bottom edge center
+      // Port position in local coords (center of the port side)
+      let portLocalX: number, portLocalY: number;
+      if (dir.dx === 1) { portLocalX = pos.x + size.width; portLocalY = pos.y + size.height / 2; }
+      else if (dir.dx === -1) { portLocalX = pos.x; portLocalY = pos.y + size.height / 2; }
+      else if (dir.dy === 1) { portLocalX = pos.x + size.width / 2; portLocalY = pos.y + size.height; }
+      else { portLocalX = pos.x + size.width / 2; portLocalY = pos.y; }
+      const portSX = portLocalX * sx + tx;
+      const portSY = portLocalY * sy + ty;
 
-      graph.addEdge({
-        id: PREVIEW_EDGE_ID,
-        source: { cell: node.id, port },
-        target: { x: tx, y: ty },
-        attrs: { line: { stroke: previewBorder, strokeWidth: 1.5, strokeDasharray: '6 4', targetMarker: null, opacity: 0.5 } },
-        router: { name: 'normal' },
-        connector: { name: 'normal' },
-        zIndex: -1,
-        data: { _isPreview: true },
-      });
+      // Target edge center (nearest side of preview node)
+      let tLocalX: number, tLocalY: number;
+      if (dir.dx === 1) { tLocalX = nx; tLocalY = ny + ph / 2; }
+      else if (dir.dx === -1) { tLocalX = nx + pw; tLocalY = ny + ph / 2; }
+      else if (dir.dy === 1) { tLocalX = nx + pw / 2; tLocalY = ny; }
+      else { tLocalX = nx + pw / 2; tLocalY = ny + ph; }
+      const tSX = tLocalX * sx + tx;
+      const tSY = tLocalY * sy + ty;
+
+      showPreview(screenX, screenY, screenW, screenH, previewBorder, previewBg, portSX, portSY, tSX, tSY);
     };
 
     const handlePortLeave = () => {
-      createdViaPortClick = false;
       restorePortStyle();
-      clearPreview();
+      hidePreview();
     };
 
-    // Also clean up on blank click, selection change, and node click
     const handleCleanup = () => {
-      createdViaPortClick = false;
       restorePortStyle();
-      clearPreview();
+      hidePreview();
     };
 
     graph.on('node:port:click', handlePortClick);
@@ -801,13 +812,19 @@ function X6DiagramEditorInner({
     graph.on('node:port:mouseleave', handlePortLeave);
     graph.on('blank:click', handleCleanup);
     graph.on('blank:mousedown', handleCleanup);
+
+    // Also clean up any leftover _isPreview cells from old code
+    const oldOrphans = graph.getCells().filter(c => c.getData()?._isPreview);
+    if (oldOrphans.length > 0) graph.removeCells(oldOrphans);
+
     return () => {
       graph.off('node:port:click', handlePortClick);
       graph.off('node:port:mouseenter', handlePortEnter);
       graph.off('node:port:mouseleave', handlePortLeave);
       graph.off('blank:click', handleCleanup);
       graph.off('blank:mousedown', handleCleanup);
-      clearPreview();
+      previewEl.remove();
+      lineSvg.remove();
     };
   }, [graph, activeTool]);
 
