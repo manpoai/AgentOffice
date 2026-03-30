@@ -957,7 +957,7 @@ export function PresentationEditor({
   }
 
   return (
-    <div ref={containerRef} className="flex-1 flex flex-col min-h-0 bg-white dark:bg-card">
+    <div ref={containerRef} className="flex-1 flex flex-col min-h-0 bg-card">
       {/* ─── Header Bar ─── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <button onClick={onBack} className="md:hidden p-1 text-muted-foreground hover:text-foreground">
@@ -1337,13 +1337,13 @@ function SlidePropertiesSection({
               <div className="absolute inset-0 bg-black/0 hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 hover:opacity-100">
                 <button
                   onClick={handleUploadBgImage}
-                  className="px-2 py-1 rounded bg-white/90 text-xs text-gray-700 hover:bg-white"
+                  className="px-2 py-1 rounded bg-card/90 text-xs text-foreground hover:bg-card"
                 >
                   Replace
                 </button>
                 <button
                   onClick={() => onBackgroundImageChange(undefined)}
-                  className="px-2 py-1 rounded bg-white/90 text-xs text-red-600 hover:bg-white"
+                  className="px-2 py-1 rounded bg-card/90 text-xs text-destructive hover:bg-card"
                 >
                   Remove
                 </button>
@@ -2238,7 +2238,7 @@ function TableOverlay({ obj, canvas, containerRef, propVersion }: {
               {row.map((cell, ci) => (
                 <td
                   key={ci}
-                  className="border border-gray-300"
+                  className="border border-border"
                   style={{ width: cellW, height: cellH, padding: 0 }}
                 >
                   <input
@@ -2382,7 +2382,7 @@ function SlideThumb({ slide }: { slide: SlideData }) {
         if (el.type === 'table') {
           return (
             <div key={i} style={{ ...style, backgroundColor: '#f9fafb', border: '1px solid #d1d5db' }}>
-              <Table2 className="w-full h-full text-gray-300 p-0.5" />
+              <Table2 className="w-full h-full text-muted-foreground/30 p-0.5" />
             </div>
           );
         }

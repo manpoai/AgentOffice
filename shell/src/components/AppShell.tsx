@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen w-screen flex-col md:flex-row bg-background text-foreground">
       {/* Desktop sidebar — hidden on mobile */}
       <nav className={cn(
-        'hidden md:flex flex-col border-r border-border shrink-0 transition-all duration-200 ease-in-out relative overflow-hidden bg-[#ECECEC] dark:bg-sidebar',
+        'hidden md:flex flex-col border-r border-border shrink-0 transition-all duration-200 ease-in-out relative overflow-hidden bg-sidebar',
         collapsed ? 'w-14' : 'w-40'
       )}>
         {/* Logo */}
@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             className={cn(
               'flex items-center h-8 rounded-lg text-muted-foreground text-xs transition-all duration-200',
-              collapsed ? 'w-8 justify-center' : 'flex-1 px-2 bg-[#E1E2E3] dark:bg-white/10 border border-[#D7D9DA] dark:border-white/10'
+              collapsed ? 'w-8 justify-center' : 'flex-1 px-2 bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10'
             )}
           >
             <span className={cn(collapsed ? 'w-8' : 'w-auto', 'flex items-center justify-center shrink-0')}>
@@ -102,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
           <button className={cn(
             'flex items-center justify-center h-8 w-8 shrink-0 rounded-lg text-muted-foreground transition-all duration-200',
-            collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 bg-[#E1E2E3] dark:bg-white/10 border border-[#D7D9DA] dark:border-white/10'
+            collapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100 bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10'
           )}>
             <img src="/icons/icon-plus.svg" alt="" className="h-3.5 w-3.5 opacity-50" />
           </button>
@@ -260,7 +260,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <CommandPalette />
 
       {/* Mobile bottom tab bar — visible only on mobile */}
-      <nav className="flex md:hidden items-center justify-around border-t border-border px-1 shrink-0 bg-[#ECECEC] dark:bg-sidebar"
+      <nav className="flex md:hidden items-center justify-around border-t border-border px-1 shrink-0 bg-sidebar"
            style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         {NAV_ITEMS.map(item => {
           const isActive = activeModule === item.id;

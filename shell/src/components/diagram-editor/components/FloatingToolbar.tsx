@@ -120,7 +120,7 @@ export function FloatingToolbar({ graph }: FloatingToolbarProps) {
   return (
     <div
       ref={toolbarRef}
-      className="absolute z-30 flex items-center gap-0.5 bg-white rounded-lg shadow-lg border border-gray-200 px-1 py-0.5"
+      className="absolute z-30 flex items-center gap-0.5 bg-card rounded-lg shadow-lg border border-border px-1 py-0.5"
       style={{
         left: position.x,
         top: position.y,
@@ -228,7 +228,7 @@ export function FloatingToolbar({ graph }: FloatingToolbarProps) {
       <div className="relative">
         <FontButton icon={<MoreHorizontal size={14} />} active={showMore} onClick={() => setShowMore(!showMore)} title="更多" />
         {showMore && (
-          <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-32">
+          <div className="absolute right-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-32">
             <MoreMenuItem label="置顶" onClick={() => { selectedCell.toFront(); setShowMore(false); }} />
             <MoreMenuItem label="置底" onClick={() => { selectedCell.toBack(); setShowMore(false); }} />
           </div>
@@ -241,7 +241,7 @@ export function FloatingToolbar({ graph }: FloatingToolbarProps) {
 // ── Sub-components ──
 
 function Divider() {
-  return <div className="w-px h-5 bg-gray-200 mx-0.5" />;
+  return <div className="w-px h-5 bg-border mx-0.5" />;
 }
 
 function FontButton({ icon, active, onClick, title }: { icon: React.ReactNode; active: boolean; onClick: () => void; title?: string }) {
@@ -249,7 +249,7 @@ function FontButton({ icon, active, onClick, title }: { icon: React.ReactNode; a
     <button
       className={cn(
         'w-7 h-7 flex items-center justify-center rounded transition-colors',
-        active ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100',
+        active ? 'bg-sidebar-accent text-sidebar-primary' : 'text-muted-foreground hover:bg-muted',
       )}
       onClick={onClick}
       title={title}
@@ -284,20 +284,20 @@ function ShapeSelector({ current, onChange }: { current: FlowchartShape; onChang
   return (
     <div className="relative">
       <button
-        className="h-7 px-1.5 flex items-center gap-1 rounded hover:bg-gray-100 text-sm text-gray-700"
+        className="h-7 px-1.5 flex items-center gap-1 rounded hover:bg-muted text-sm text-foreground"
         onClick={() => setOpen(!open)}
       >
         <ShapeIconSvg shape={current} size={16} />
         <span className="text-xs">▾</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 grid grid-cols-6 gap-0.5 z-40" style={{ width: 210 }}>
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border p-1.5 grid grid-cols-6 gap-0.5 z-40" style={{ width: 210 }}>
           {(Object.keys(SHAPE_META) as FlowchartShape[]).map((key) => (
             <button
               key={key}
               className={cn(
-                'w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100',
-                current === key && 'bg-blue-50 text-blue-600',
+                'w-7 h-7 flex items-center justify-center rounded hover:bg-muted',
+                current === key && 'bg-sidebar-accent text-sidebar-primary',
               )}
               onClick={() => { onChange(key); setOpen(false); }}
             >
@@ -316,18 +316,18 @@ function ColorButton({ color, onChange }: { color: string; onChange: (c: typeof 
   return (
     <div className="relative">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted"
         onClick={() => setOpen(!open)}
         title="填充色"
       >
-        <div className="w-4 h-4 rounded border border-gray-300" style={{ backgroundColor: color }} />
+        <div className="w-4 h-4 rounded border border-border" style={{ backgroundColor: color }} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 flex flex-wrap gap-1 w-[140px] z-40">
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border p-2 flex flex-wrap gap-1 w-[140px] z-40">
           {NODE_COLORS.map((c, i) => (
             <button
               key={i}
-              className={cn('w-6 h-6 rounded border transition-transform hover:scale-110', color === c.bg && 'ring-2 ring-blue-500')}
+              className={cn('w-6 h-6 rounded border transition-transform hover:scale-110', color === c.bg && 'ring-2 ring-sidebar-primary')}
               style={{ backgroundColor: c.bg, borderColor: c.border }}
               onClick={() => { onChange(c); setOpen(false); }}
               title={c.name}
@@ -345,12 +345,12 @@ function FillColorPicker({ color, onChange }: { color: string; onChange: (c: str
   return (
     <div className="relative">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted"
         onClick={() => setOpen(!open)}
         title="填充色"
       >
         <div
-          className="w-4 h-4 rounded border border-gray-300"
+          className="w-4 h-4 rounded border border-border"
           style={{
             backgroundColor: color === 'transparent' ? '#fff' : color,
             backgroundImage: color === 'transparent'
@@ -361,11 +361,11 @@ function FillColorPicker({ color, onChange }: { color: string; onChange: (c: str
         />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 flex flex-wrap gap-1 w-[160px] z-40">
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border p-2 flex flex-wrap gap-1 w-[160px] z-40">
           {FILL_COLORS.map((c, i) => (
             <button
               key={i}
-              className={cn('w-6 h-6 rounded border transition-transform hover:scale-110', color === c && 'ring-2 ring-blue-500')}
+              className={cn('w-6 h-6 rounded border transition-transform hover:scale-110', color === c && 'ring-2 ring-sidebar-primary')}
               style={{
                 backgroundColor: c === 'transparent' ? '#fff' : c,
                 borderColor: c === 'transparent' ? '#ef4444' : '#d1d5db',
@@ -388,7 +388,7 @@ function BorderColorPicker({ color, onChange }: { color: string; onChange: (c: s
   return (
     <div className="relative">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted"
         onClick={() => setOpen(!open)}
         title="边框色"
       >
@@ -400,11 +400,11 @@ function BorderColorPicker({ color, onChange }: { color: string; onChange: (c: s
         />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 flex flex-wrap gap-1 w-[160px] z-40">
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border p-2 flex flex-wrap gap-1 w-[160px] z-40">
           {BORDER_COLORS.map((c, i) => (
             <button
               key={i}
-              className={cn('w-6 h-6 rounded transition-transform hover:scale-110', color === c && 'ring-2 ring-blue-500')}
+              className={cn('w-6 h-6 rounded transition-transform hover:scale-110', color === c && 'ring-2 ring-sidebar-primary')}
               style={{
                 border: c === 'transparent' ? '2px dashed #d1d5db' : `3px solid ${c}`,
                 backgroundColor: '#fff',
@@ -412,7 +412,7 @@ function BorderColorPicker({ color, onChange }: { color: string; onChange: (c: s
               onClick={() => { onChange(c); setOpen(false); }}
               title={c === 'transparent' ? '无边框' : c}
             >
-              {c === 'transparent' && <span className="text-gray-400 text-xs leading-none">∅</span>}
+              {c === 'transparent' && <span className="text-muted-foreground text-xs leading-none">∅</span>}
             </button>
           ))}
         </div>
@@ -427,20 +427,20 @@ function FontSizePicker({ size, onChange }: { size: number; onChange: (s: number
   return (
     <div className="relative">
       <button
-        className="h-7 px-1.5 flex items-center gap-0.5 rounded hover:bg-gray-100 text-xs text-gray-600 min-w-[32px] justify-center"
+        className="h-7 px-1.5 flex items-center gap-0.5 rounded hover:bg-muted text-xs text-muted-foreground min-w-[32px] justify-center"
         onClick={() => setOpen(!open)}
         title="字号"
       >
         {size}
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-16 z-40">
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-16 z-40">
           {FONT_SIZES.map((s) => (
             <button
               key={s}
               className={cn(
-                'w-full px-2 py-1 text-xs text-center hover:bg-gray-100',
-                size === s && 'bg-blue-50 text-blue-600',
+                'w-full px-2 py-1 text-xs text-center hover:bg-muted',
+                size === s && 'bg-sidebar-accent text-sidebar-primary',
               )}
               onClick={() => { onChange(s); setOpen(false); }}
             >
@@ -461,27 +461,27 @@ function EdgeWidthPicker({ edge }: { edge: Edge }) {
   return (
     <div className="relative">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted"
         onClick={() => setOpen(!open)}
         title="线宽"
       >
         <div className="w-4 flex flex-col items-center justify-center gap-0.5">
-          <div className="w-full bg-gray-500 rounded" style={{ height: Math.max(1, currentWidth) }} />
+          <div className="w-full bg-muted-foreground rounded" style={{ height: Math.max(1, currentWidth) }} />
         </div>
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-20 z-40">
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-20 z-40">
           {EDGE_WIDTHS.map((w) => (
             <button
               key={w}
               className={cn(
-                'w-full px-2 py-1.5 flex items-center gap-2 hover:bg-gray-100',
-                currentWidth === w && 'bg-blue-50',
+                'w-full px-2 py-1.5 flex items-center gap-2 hover:bg-muted',
+                currentWidth === w && 'bg-sidebar-accent',
               )}
               onClick={() => { edge.attr('line/strokeWidth', w); setOpen(false); }}
             >
-              <div className="flex-1 bg-gray-600 rounded" style={{ height: Math.max(1, w) }} />
-              <span className="text-xs text-gray-500">{w}</span>
+              <div className="flex-1 bg-foreground rounded" style={{ height: Math.max(1, w) }} />
+              <span className="text-xs text-muted-foreground">{w}</span>
             </button>
           ))}
         </div>
@@ -500,18 +500,18 @@ function EdgeColorButton({ edge, graph }: { edge: Edge; graph: Graph }) {
   return (
     <div className="relative">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted"
         onClick={() => setOpen(!open)}
         title="线条颜色"
       >
         <div className="w-4 h-1 rounded" style={{ backgroundColor: currentColor }} />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-2 flex flex-wrap gap-1 w-[140px] z-40">
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border p-2 flex flex-wrap gap-1 w-[140px] z-40">
           {colors.map((c) => (
             <button
               key={c}
-              className={cn('w-6 h-6 rounded border border-gray-200 transition-transform hover:scale-110', currentColor === c && 'ring-2 ring-blue-500')}
+              className={cn('w-6 h-6 rounded border border-border transition-transform hover:scale-110', currentColor === c && 'ring-2 ring-sidebar-primary')}
               style={{ backgroundColor: c }}
               onClick={() => { edge.attr('line/stroke', c); setOpen(false); }}
             />
@@ -530,17 +530,17 @@ function LineStyleButton({ edge, graph }: { edge: Edge; graph: Graph }) {
   return (
     <div className="relative">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-xs text-gray-600"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted text-xs text-muted-foreground"
         onClick={() => setOpen(!open)}
         title="线型"
       >
         {isDashed ? '┄' : '━'}
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-24 z-40">
-          <button className="w-full px-2 py-1 text-xs text-left hover:bg-gray-100" onClick={() => { edge.attr('line/strokeDasharray', ''); setOpen(false); }}>实线 ━</button>
-          <button className="w-full px-2 py-1 text-xs text-left hover:bg-gray-100" onClick={() => { edge.attr('line/strokeDasharray', '8 4'); setOpen(false); }}>虚线 ┄</button>
-          <button className="w-full px-2 py-1 text-xs text-left hover:bg-gray-100" onClick={() => { edge.attr('line/strokeDasharray', '2 4'); setOpen(false); }}>点线 ┈</button>
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-24 z-40">
+          <button className="w-full px-2 py-1 text-xs text-left hover:bg-muted" onClick={() => { edge.attr('line/strokeDasharray', ''); setOpen(false); }}>实线 ━</button>
+          <button className="w-full px-2 py-1 text-xs text-left hover:bg-muted" onClick={() => { edge.attr('line/strokeDasharray', '8 4'); setOpen(false); }}>虚线 ┄</button>
+          <button className="w-full px-2 py-1 text-xs text-left hover:bg-muted" onClick={() => { edge.attr('line/strokeDasharray', '2 4'); setOpen(false); }}>点线 ┈</button>
         </div>
       )}
     </div>
@@ -582,20 +582,20 @@ function ConnectorTypeButton({ edge, graph }: { edge: Edge; graph: Graph }) {
   return (
     <div className="relative">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-xs text-gray-600"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted text-xs text-muted-foreground"
         onClick={() => setOpen(!open)}
         title="连线类型"
       >
         {labels[currentType]}
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-28 z-40">
+        <div className="absolute left-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-28 z-40">
           {(Object.entries(CONNECTOR_META) as [ConnectorType, typeof CONNECTOR_META[ConnectorType]][]).map(([key, meta]) => (
             <button
               key={key}
               className={cn(
-                'w-full px-2 py-1 text-xs text-left hover:bg-gray-100 flex items-center gap-2',
-                currentType === key && 'bg-blue-50 text-blue-600',
+                'w-full px-2 py-1 text-xs text-left hover:bg-muted flex items-center gap-2',
+                currentType === key && 'bg-sidebar-accent text-sidebar-primary',
               )}
               onClick={() => setConnectorType(key)}
             >
@@ -684,7 +684,7 @@ function EdgeLabelButton({ edge, graph }: { edge: Edge; graph: Graph }) {
     <button
       className={cn(
         'w-7 h-7 flex items-center justify-center rounded transition-colors',
-        hasLabel ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100',
+        hasLabel ? 'bg-sidebar-accent text-sidebar-primary' : 'text-muted-foreground hover:bg-muted',
       )}
       onClick={startEdit}
       title="文字标签"
@@ -696,7 +696,7 @@ function EdgeLabelButton({ edge, graph }: { edge: Edge; graph: Graph }) {
 
 function MoreMenuItem({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button className="w-full px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-100" onClick={onClick}>
+    <button className="w-full px-3 py-1.5 text-sm text-left text-foreground hover:bg-muted" onClick={onClick}>
       {label}
     </button>
   );

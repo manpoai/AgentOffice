@@ -408,7 +408,7 @@ function DiagramEditorInner({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-card">
+    <div className="flex-1 flex flex-col min-h-0 bg-card">
       {/* ─── Header Bar ─── */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
         <button onClick={onBack} className="md:hidden p-1 text-muted-foreground hover:text-foreground">
@@ -509,13 +509,13 @@ function DiagramEditorInner({
             markerEnd: { type: MarkerType.ArrowClosed },
             style: { strokeWidth: 2 },
           }}
-          className="bg-gray-50 dark:bg-zinc-900"
+          className="bg-muted"
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
           <Controls />
           <MiniMap
             nodeStrokeWidth={3}
-            className="!bg-white dark:!bg-zinc-800 !border-border"
+            className="!bg-card !border-border"
           />
 
           {/* ─── Toolbar Panel ─── */}
@@ -577,7 +577,7 @@ function DiagramEditorInner({
                   title="Node Color"
                 >
                   <div
-                    className="w-4 h-4 rounded border border-gray-300"
+                    className="w-4 h-4 rounded border border-border"
                     style={{ backgroundColor: selectedColor.bg }}
                   />
                 </button>
@@ -591,7 +591,7 @@ function DiagramEditorInner({
                           onClick={() => { setSelectedColor(c); setShowColorPicker(false); }}
                           className={cn(
                             'w-7 h-7 rounded border-2 transition-colors',
-                            selectedColor === c ? 'border-blue-500' : 'border-transparent hover:border-gray-300'
+                            selectedColor === c ? 'border-sidebar-primary' : 'border-transparent hover:border-border'
                           )}
                           style={{ backgroundColor: c.bg }}
                           title={c.name}
@@ -637,7 +637,7 @@ function ToolBtn({ icon: Icon, title, active, onClick }: {
       onClick={onClick}
       className={cn(
         'p-1.5 rounded transition-colors',
-        active ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'hover:bg-accent text-foreground'
+        active ? 'bg-sidebar-accent text-sidebar-primary' : 'hover:bg-accent text-foreground'
       )}
       title={title}
     >

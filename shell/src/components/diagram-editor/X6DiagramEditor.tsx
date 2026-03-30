@@ -71,12 +71,12 @@ class DiagramErrorBoundary extends Component<
   render() {
     if (this.state.error) {
       return (
-        <div className="flex items-center justify-center h-full bg-gray-50">
+        <div className="flex items-center justify-center h-full bg-muted">
           <div className="text-center p-8 max-w-md">
-            <p className="text-gray-600 text-sm mb-2">图表编辑器加载失败</p>
-            <p className="text-xs text-gray-400 font-mono break-all">{this.state.error.message}</p>
+            <p className="text-muted-foreground text-sm mb-2">图表编辑器加载失败</p>
+            <p className="text-xs text-muted-foreground font-mono break-all">{this.state.error.message}</p>
             <button
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              className="mt-4 px-4 py-2 bg-sidebar-primary text-sidebar-primary-foreground rounded text-sm hover:bg-sidebar-primary/90"
               onClick={() => this.setState({ error: null })}
             >
               重试
@@ -1006,19 +1006,19 @@ function X6DiagramEditorInner({
   }, [graph, activeTool]);
 
   return (
-    <div className="flex flex-col h-full bg-gray-50">
+    <div className="flex flex-col h-full bg-muted">
       {/* ── Header ── */}
-      <div className="flex items-center h-12 px-3 bg-white border-b border-gray-200 shrink-0">
+      <div className="flex items-center h-12 px-3 bg-card border-b border-border shrink-0">
         <div className="flex items-center gap-1 min-w-0 flex-1">
           {onBack && (
-            <button onClick={onBack} className="p-1.5 rounded hover:bg-gray-100 text-gray-500">
+            <button onClick={onBack} className="p-1.5 rounded hover:bg-muted text-muted-foreground">
               <ArrowLeft size={16} />
             </button>
           )}
 
           {/* Breadcrumb */}
           {breadcrumb?.map((item, i) => (
-            <span key={item.id} className="flex items-center text-sm text-gray-400">
+            <span key={item.id} className="flex items-center text-sm text-muted-foreground">
               {i > 0 && <ChevronRight size={12} className="mx-0.5" />}
               <span className="truncate max-w-[120px]">{item.title}</span>
             </span>
@@ -1027,7 +1027,7 @@ function X6DiagramEditorInner({
           {/* Title */}
           {isEditingTitle ? (
             <input
-              className="text-sm font-medium bg-transparent border-b border-blue-400 outline-none px-1 min-w-[120px]"
+              className="text-sm font-medium bg-transparent border-b border-sidebar-primary outline-none px-1 min-w-[120px]"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               onBlur={handleTitleEdit}
@@ -1036,7 +1036,7 @@ function X6DiagramEditorInner({
             />
           ) : (
             <button
-              className="text-sm font-medium text-gray-800 truncate max-w-[200px] hover:text-blue-600 px-1"
+              className="text-sm font-medium text-foreground truncate max-w-[200px] hover:text-sidebar-primary px-1"
               onClick={() => {
                 setEditTitle((diagram as any)?.title || '');
                 setIsEditingTitle(true);
@@ -1047,7 +1047,7 @@ function X6DiagramEditorInner({
           )}
 
           {/* Save status */}
-          <span className="text-xs text-gray-400 ml-2">
+          <span className="text-xs text-muted-foreground ml-2">
             {saving ? 'Saving...' : lastSaved ? `Saved ${formatRelativeTime(lastSaved)}` : ''}
           </span>
         </div>
@@ -1056,14 +1056,14 @@ function X6DiagramEditorInner({
         <div className="flex items-center gap-1">
           {/* Undo / Redo */}
           <button
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+            className="p-1.5 rounded hover:bg-muted text-muted-foreground"
             onClick={() => graph?.undo()}
             title="撤销 (Cmd+Z)"
           >
             <Undo2 size={16} />
           </button>
           <button
-            className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+            className="p-1.5 rounded hover:bg-muted text-muted-foreground"
             onClick={() => graph?.redo()}
             title="重做 (Cmd+Shift+Z)"
           >
@@ -1072,7 +1072,7 @@ function X6DiagramEditorInner({
 
           {/* Toggle doc list */}
           {onToggleDocList && (
-            <button onClick={onToggleDocList} className="p-1.5 rounded hover:bg-gray-100 text-gray-500" title="切换文档列表">
+            <button onClick={onToggleDocList} className="p-1.5 rounded hover:bg-muted text-muted-foreground" title="切换文档列表">
               {docListVisible ? <ArrowLeftToLine size={16} /> : <ArrowRightToLine size={16} />}
             </button>
           )}
@@ -1080,18 +1080,18 @@ function X6DiagramEditorInner({
           {/* Menu */}
           <div className="relative">
             <button
-              className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+              className="p-1.5 rounded hover:bg-muted text-muted-foreground"
               onClick={() => setShowMenu(!showMenu)}
             >
               <MoreHorizontal size={16} />
             </button>
             {showMenu && (
-              <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-40 z-50">
+              <div className="absolute right-0 top-full mt-1 bg-card rounded-lg shadow-lg border border-border py-1 w-40 z-50">
                 {onCopyLink && (
                   <MenuButton icon={<Link2 size={14} />} label="复制链接" onClick={() => { onCopyLink(); setShowMenu(false); }} />
                 )}
                 <MenuButton icon={<Download size={14} />} label="导出 PNG" onClick={() => { handleExport(); setShowMenu(false); }} />
-                <div className="border-t border-gray-100 my-1" />
+                <div className="border-t border-border my-1" />
                 <MenuButton icon={<Trash2 size={14} />} label="删除图表" onClick={() => { handleDelete(); setShowMenu(false); }} danger />
               </div>
             )}
@@ -1101,10 +1101,10 @@ function X6DiagramEditorInner({
 
       {/* ── Migration banner ── */}
       {migrationNeeded && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center gap-3 text-sm">
-          <span className="text-blue-700">此图表使用旧格式，已自动迁移到新引擎。</span>
+        <div className="bg-sidebar-accent border-b border-sidebar-primary/30 px-4 py-2 flex items-center gap-3 text-sm">
+          <span className="text-sidebar-primary">此图表使用旧格式，已自动迁移到新引擎。</span>
           <button
-            className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+            className="px-3 py-1 bg-sidebar-primary text-sidebar-primary-foreground rounded text-xs hover:bg-sidebar-primary/90"
             onClick={handleMigrate}
           >
             保存新格式
@@ -1122,10 +1122,10 @@ function X6DiagramEditorInner({
 
         {/* Error fallback */}
         {graphError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-50">
+          <div className="absolute inset-0 flex items-center justify-center bg-muted z-50">
             <div className="text-center p-8">
-              <p className="text-gray-500 text-sm mb-2">图表编辑器加载失败</p>
-              <p className="text-xs text-gray-400 font-mono">{graphError}</p>
+              <p className="text-muted-foreground text-sm mb-2">图表编辑器加载失败</p>
+              <p className="text-xs text-muted-foreground font-mono">{graphError}</p>
             </div>
           </div>
         )}
@@ -1151,7 +1151,7 @@ function X6DiagramEditorInner({
         {/* Minimap */}
         <div
           ref={minimapRef}
-          className="absolute right-3 bottom-12 bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+          className="absolute right-3 bottom-12 bg-card rounded-lg shadow-md border border-border overflow-hidden"
           style={{ width: 180, height: 120 }}
         />
       </div>
@@ -1164,8 +1164,8 @@ function MenuButton({ icon, label, onClick, danger }: { icon: React.ReactNode; l
   return (
     <button
       className={cn(
-        'w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-100',
-        danger ? 'text-red-600' : 'text-gray-700',
+        'w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted',
+        danger ? 'text-destructive' : 'text-foreground',
       )}
       onClick={onClick}
     >

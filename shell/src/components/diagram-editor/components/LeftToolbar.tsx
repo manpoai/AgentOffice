@@ -76,7 +76,7 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
   };
 
   return (
-    <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-white rounded-xl shadow-lg border border-gray-200 p-1.5">
+    <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-1 bg-card rounded-xl shadow-lg border border-border p-1.5">
       {/* Text */}
       <ToolButton
         active={activeTool === 'text'}
@@ -102,7 +102,7 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
 
         {showShapes && (
           <div
-            className="absolute left-full top-0 ml-2 bg-white rounded-lg shadow-lg border border-gray-200 p-2 grid grid-cols-6 gap-0.5"
+            className="absolute left-full top-0 ml-2 bg-card rounded-lg shadow-lg border border-border p-2 grid grid-cols-6 gap-0.5"
             style={{ width: 220 }}
             onMouseEnter={showShapeList}
             onMouseLeave={scheduleHideShapeList}
@@ -111,8 +111,8 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
               <button
                 key={key}
                 className={cn(
-                  'w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors',
-                  activeTool === key && 'bg-blue-50 text-blue-600',
+                  'w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors',
+                  activeTool === key && 'bg-sidebar-accent text-sidebar-primary',
                 )}
                 onClick={() => { onToolChange(key); setShowShapes(false); }}
                 draggable
@@ -191,7 +191,7 @@ function ToolButton({
     <button
       className={cn(
         'w-9 h-9 flex items-center justify-center rounded-lg transition-colors',
-        active ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100',
+        active ? 'bg-sidebar-accent text-sidebar-primary' : 'text-muted-foreground hover:bg-muted',
         disabled && 'opacity-40 cursor-not-allowed',
       )}
       onClick={disabled ? undefined : onClick}

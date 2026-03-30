@@ -31,29 +31,29 @@ export function ZoomBar({ graph }: ZoomBarProps) {
   };
 
   return (
-    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white rounded-lg shadow-md border border-gray-200 px-2 py-1">
+    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-card rounded-lg shadow-md border border-border px-2 py-1">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted text-muted-foreground"
         onClick={handleZoomOut}
         title="缩小"
       >
         <Minus size={14} />
       </button>
 
-      <span className="text-xs text-gray-500 w-10 text-center tabular-nums">{zoom}%</span>
+      <span className="text-xs text-muted-foreground w-10 text-center tabular-nums">{zoom}%</span>
 
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted text-muted-foreground"
         onClick={handleZoomIn}
         title="放大"
       >
         <Plus size={14} />
       </button>
 
-      <div className="w-px h-4 bg-gray-200 mx-0.5" />
+      <div className="w-px h-4 bg-border mx-0.5" />
 
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100 text-gray-600"
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-muted text-muted-foreground"
         onClick={handleFitView}
         title="适应屏幕"
       >
