@@ -2904,7 +2904,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                           "relative px-2 py-1.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap group",
                           'sticky z-[6] bg-card',
                           isLastFrozen
-                            ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-gray-300 dark:after:bg-gray-600'
+                            ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-border'
                             : 'border-r border-border'
                         )}
                         style={{
@@ -2975,7 +2975,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                       overSide={colDragOver?.overId === col.column_id ? colDragOver.side : undefined}
                       className={cn(
                         "relative px-2 py-1.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap group",
-                        isFrozen ? cn('sticky z-[6] bg-card', isLastFrozen ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-gray-300 dark:after:bg-gray-600' : 'border-r border-border') : 'border-r border-border'
+                        isFrozen ? cn('sticky z-[6] bg-card', isLastFrozen ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-border' : 'border-r border-border') : 'border-r border-border'
                       )}
                       style={{
                         width: `${width || 180}px`, minWidth: `${width || 180}px`, maxWidth: `${width || 180}px`,
@@ -3161,7 +3161,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                           key={col.column_id}
                           className={cn(
                             'px-2 relative',
-                            isLastFrozen ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-gray-300 dark:after:bg-gray-600' : 'border-r border-border',
+                            isLastFrozen ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-border' : 'border-r border-border',
                             (selectDropdown?.rowId === rowId && selectDropdown?.col === col.title) || (userPicker?.rowId === rowId && userPicker?.col === col.title) || (datePicker?.rowId === rowId && datePicker?.col === col.title) || (attachmentDropdown?.rowId === rowId && attachmentDropdown?.col === col.title) ? 'overflow-visible' : 'overflow-hidden',
                             isEditing && 'ring-2 ring-sidebar-primary ring-inset bg-card',
                             (!isReadonly || col.type === 'Links' || col.type === 'Attachment' || col.type === 'User' || col.type === 'Collaborator') && !isEditing && 'cursor-pointer',

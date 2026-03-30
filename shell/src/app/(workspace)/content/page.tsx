@@ -1437,16 +1437,16 @@ function DraggableTreeNode({
     <div ref={setNodeRef} className="relative" data-tree-id={nodeId}>
       {/* Drop indicator: before */}
       {dropPosition === 'before' && (
-        <div className="absolute top-0 left-2 right-2 h-0.5 bg-blue-500 rounded-full z-10" />
+        <div className="absolute top-0 left-2 right-2 h-0.5 bg-sidebar-primary rounded-full z-10" />
       )}
       <div
         className={cn(
           'group relative flex items-center gap-1 py-1.5 px-1 text-sm transition-colors rounded-lg cursor-pointer',
           isDragActive && 'opacity-40',
           isSelected && !isDragActive
-            ? 'bg-[#D6F6DF] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
+            ? 'bg-sidebar-accent text-sidebar-primary'
             : !isDragActive && 'text-foreground hover:bg-black/[0.03] dark:hover:bg-accent/50',
-          dropPosition === 'inside' && 'ring-2 ring-blue-500 ring-inset bg-blue-50 dark:bg-blue-950/30'
+          dropPosition === 'inside' && 'ring-2 ring-sidebar-primary ring-inset bg-sidebar-accent'
         )}
         style={{ paddingLeft: `${4 + depth * 16}px` }}
         onClick={onSelect}
@@ -1600,7 +1600,7 @@ function DraggableTreeNode({
       </div>
       {/* Drop indicator: after */}
       {dropPosition === 'after' && (
-        <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-blue-500 rounded-full z-10" />
+        <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-sidebar-primary rounded-full z-10" />
       )}
     </div>
   );
@@ -1626,7 +1626,7 @@ function TreeNodeItem({
       className={cn(
         'w-full flex items-center gap-1.5 py-1.5 px-2 text-left text-sm transition-colors rounded-lg',
         isSelected
-          ? 'bg-[#D6DFF6] dark:bg-sidebar-accent text-sidebar-primary dark:text-sidebar-primary-foreground'
+          ? 'bg-sidebar-accent text-sidebar-primary'
           : 'text-foreground hover:bg-black/[0.03] dark:hover:bg-accent/50'
       )}
       style={{ paddingLeft: `${8 + depth * 16}px` }}

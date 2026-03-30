@@ -87,7 +87,7 @@ export function CommandPalette() {
           id: `doc-${d.id}`,
           label: d.title,
           sublabel: d.updated_at ? new Date(d.updated_at).toLocaleDateString('zh-CN') : '',
-          icon: <FileText className="h-4 w-4 text-blue-400" />,
+          icon: <FileText className="h-4 w-4 text-muted-foreground" />,
           action: () => navigate('/content'),
           category: t('command.catDocs'),
         });
