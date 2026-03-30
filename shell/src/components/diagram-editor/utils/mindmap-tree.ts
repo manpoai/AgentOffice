@@ -193,8 +193,7 @@ export function renderMindmapToGraph(
   rootY: number,
   mindmapGroupId: string,
 ) {
-  // Remove existing mindmap cells — collect ALL cells with this groupId
-  // Also remove any cells whose ID matches a tree node ID (handles stale data edge case)
+  // Collect all IDs that belong to this mindmap tree
   const treeIds = new Set<string>();
   const collectIds = (node: MindmapTreeNode) => {
     treeIds.add(node.id);
@@ -202,23 +201,41 @@ export function renderMindmapToGraph(
   };
   collectIds(tree);
 
+  // Layout first (before touching graph) so we have all data ready
+  const layout = layoutSubtree(tree, rootX, rootY, 0);
+
+  // Wrap entire remove+add in a single batch to prevent intermediate states
+  // from triggering auto-save or other side effects
+  graph.startBatch('mindmap-render');
+
+  // Remove existing mindmap cells — collect ALL cells with this groupId
+  // or matching tree IDs. Remove edges first, then nodes, to avoid
+  // X6 internal errors from dangling edge references.
   const existingCells = graph.getCells().filter(c => {
     const data = c.getData();
     if (data?.mindmapGroupId === mindmapGroupId) return true;
-    // Also catch orphaned nodes that match tree IDs but lost their groupId
     if (treeIds.has(c.id)) return true;
     return false;
   });
+
   if (existingCells.length > 0) {
-    graph.removeCells(existingCells);
+    // Sort: edges first, then nodes
+    const edges = existingCells.filter(c => c.isEdge());
+    const nodes = existingCells.filter(c => c.isNode());
+    if (edges.length > 0) graph.removeCells(edges);
+    if (nodes.length > 0) graph.removeCells(nodes);
   }
 
-  // Layout
-  const layout = layoutSubtree(tree, rootX, rootY, 0);
+  // Double-check: if any cells with matching IDs still exist, force-remove them.
+  // This handles edge cases where X6 cell removal didn't fully clean up.
+  for (const n of layout.nodes) {
+    const stale = graph.getCellById(n.id);
+    if (stale) {
+      graph.removeCells([stale]);
+    }
+  }
 
-  // Batch add
-  graph.startBatch('mindmap-render');
-
+  // Add nodes
   for (const n of layout.nodes) {
     graph.addNode({
       id: n.id,
@@ -244,6 +261,7 @@ export function renderMindmapToGraph(
     });
   }
 
+  // Add edges
   for (const e of layout.edges) {
     graph.addEdge({
       source: { cell: e.source, port: 'right' },
@@ -266,7 +284,7 @@ export function renderMindmapToGraph(
   // Store tree on root node so it survives save/reload
   const rootNode = graph.getCellById(tree.id);
   if (rootNode) {
-    rootNode.setData({ ...rootNode.getData(), mindmapTree: tree });
+    rootNode.setData({ ...rootNode.getData(), mindmapTree: tree }, { silent: true });
   }
 
   graph.stopBatch('mindmap-render');
