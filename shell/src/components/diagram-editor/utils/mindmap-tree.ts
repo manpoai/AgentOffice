@@ -263,12 +263,14 @@ export function renderMindmapToGraph(
 
     const existing = existingNodes.get(n.id);
     if (existing) {
-      // Update in place — no destroy/recreate
-      existing.position(n.x, n.y, { silent: true });
-      existing.resize(n.width, n.height, { silent: true });
-      existing.setData(nodeData, { silent: true });
-      // Single trigger to update the view
-      existing.trigger('change:position');
+      // Update in place — no destroy/recreate.
+      // Use silent for position/resize to avoid X6's notifyCellEvent crash
+      // (it triggers events with missing args.cell).
+      // The setData call (non-silent) forces React to re-render the component,
+      // which picks up the new position/size from node.getSize()/node.position().
+      existing.prop('position', { x: n.x, y: n.y }, { silent: true });
+      existing.prop('size', { width: n.width, height: n.height }, { silent: true });
+      existing.setData(nodeData);
     } else {
       // New node — add it
       graph.addNode({
