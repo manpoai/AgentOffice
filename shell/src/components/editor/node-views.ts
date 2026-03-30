@@ -6,6 +6,7 @@
 import type { Node as PMNode } from 'prosemirror-model';
 import { NodeSelection, Selection } from 'prosemirror-state';
 import type { EditorView, NodeView } from 'prosemirror-view';
+import { ContentLinkView } from './content-link-node';
 
 /** Lazy-load mermaid via CDN <script> tag (avoids webpack bundling issues). */
 let mermaidPromise: Promise<any> | null = null;
@@ -751,6 +752,8 @@ export function createNodeViews() {
       new ImageNodeView(node, view, getPos),
     checkbox_item: (node: PMNode, view: EditorView, getPos: () => number | undefined) =>
       new CheckboxItemView(node, view, getPos),
+    content_link: (node: PMNode, view: EditorView, getPos: () => number | undefined) =>
+      new ContentLinkView(node, view, getPos),
     code_block: (node: PMNode, view: EditorView, getPos: () => number | undefined) => {
       // Only use MermaidBlockView for mermaid code blocks
       if (node.attrs.language === 'mermaid') {

@@ -2842,6 +2842,13 @@ app.get('/api/content-items', authenticateAgent, (req, res) => {
   res.json({ items: rows });
 });
 
+// API: get single content item by id
+app.get('/api/content-items/:id', authenticateAgent, (req, res) => {
+  const row = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'NOT_FOUND', message: 'Content item not found' });
+  res.json({ item: row });
+});
+
 // API: create content item (doc or table) — Gateway is source of truth
 app.post('/api/content-items', authenticateAgent, async (req, res) => {
   const { type, title = '', parent_id = null, collection_id, columns } = req.body;

@@ -154,6 +154,11 @@ export interface ContentItem {
   synced_at: number;
 }
 
+export async function getContentItem(id: string): Promise<ContentItem> {
+  const data = await gwFetch<{ item: ContentItem }>(`/content-items/${encodeURIComponent(id)}`);
+  return data.item;
+}
+
 export async function listContentItems(): Promise<ContentItem[]> {
   const data = await gwFetch<{ items: ContentItem[] }>('/content-items');
   return data.items;

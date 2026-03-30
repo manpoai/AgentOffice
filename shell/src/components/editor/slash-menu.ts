@@ -162,6 +162,22 @@ function buildSlashItems(getDocId?: () => string | undefined): SlashMenuItem[] {
       label: t('editor.paragraph'), description: t('editor.paragraphDesc'), icon: '¶', keywords: 'paragraph text plain normal',
       command: (view) => { setBlockType(schema.nodes.paragraph)(view.state, view.dispatch); view.focus(); },
     },
+    // --- Content Link ---
+    {
+      label: 'Content Link', description: 'Insert a link to a doc, table, or diagram', icon: '🔗', keywords: 'link content doc table embed reference',
+      command: (view) => {
+        // Insert a placeholder content_link node — user can paste or type the ID
+        const contentId = prompt('Enter content ID (e.g. doc:abc123):');
+        if (!contentId) return;
+        const node = schema.nodes.content_link.create({
+          contentId,
+          title: contentId,
+        });
+        const { from, to } = view.state.selection;
+        view.dispatch(view.state.tr.replaceWith(from, to, node).scrollIntoView());
+        view.focus();
+      },
+    },
   ];
 }
 

@@ -807,6 +807,10 @@ export const markdownSerializer = new MarkdownSerializer(
       state.write('$$');
       state.closeBlock(node);
     },
+    content_link(state, node) {
+      const title = node.attrs.title || node.attrs.contentId;
+      state.write(`[${title}](/content?id=${encodeURIComponent(node.attrs.contentId)})`);
+    },
   },
   {
     em: { open: '*', close: '*', mixable: true, expelEnclosingWhitespace: true },

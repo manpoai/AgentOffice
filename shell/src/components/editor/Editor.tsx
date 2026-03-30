@@ -59,6 +59,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           { tableMenuPlugin },
           { searchPlugin },
           { listNumberingPlugin },
+          { contentLinkPastePlugin },
         ] = await Promise.all([
           import('prosemirror-state'),
           import('prosemirror-view'),
@@ -79,6 +80,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           import('./table-menu-plugin'),
           import('./search-plugin'),
           import('./list-numbering-plugin'),
+          import('./content-link-node'),
         ]);
 
         if (destroyed) return;
@@ -100,6 +102,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           tableEditing(),
           searchPlugin(),
           listNumberingPlugin(),
+          contentLinkPastePlugin(),
         ];
 
         // Add interactive plugins only when not read-only
