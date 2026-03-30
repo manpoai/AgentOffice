@@ -164,7 +164,6 @@ function X6DiagramEditorInner({
     // Restore mindmap tree if present
     const mmRoot = graph.getNodes().find(n => n.getData()?.mindmapGroupId && n.getData()?.isRoot);
     if (mmRoot) {
-      // Re-build tree from stored data if exists
       const storedTree = mmRoot.getData()?.mindmapTree;
       if (storedTree) {
         mindmapTreeRef.current = storedTree;
@@ -188,8 +187,11 @@ function X6DiagramEditorInner({
       const rootNode = graph.getNodes().find(n => n.getData()?.isRoot && n.getData()?.mindmapGroupId === data.mindmapGroupId);
       renderMindmapToGraph(graph, mindmapTreeRef.current, rootNode?.position().x || 0, rootNode?.position().y || 0, data.mindmapGroupId);
 
-      const newNode = graph.getCellById(newId);
-      if (newNode) graph.select(newNode);
+      // Defer selection to next frame so React components for new nodes finish mounting
+      requestAnimationFrame(() => {
+        const newNode = graph.getCellById(newId);
+        if (newNode) graph.select(newNode);
+      });
     }
   }, [graph]);
 
@@ -209,8 +211,10 @@ function X6DiagramEditorInner({
       const rootNode = graph.getNodes().find(n => n.getData()?.isRoot && n.getData()?.mindmapGroupId === data.mindmapGroupId);
       renderMindmapToGraph(graph, mindmapTreeRef.current, rootNode?.position().x || 0, rootNode?.position().y || 0, data.mindmapGroupId);
 
-      const newNode = graph.getCellById(newId);
-      if (newNode) graph.select(newNode);
+      requestAnimationFrame(() => {
+        const newNode = graph.getCellById(newId);
+        if (newNode) graph.select(newNode);
+      });
     }
   }, [graph]);
 
@@ -229,8 +233,10 @@ function X6DiagramEditorInner({
       renderMindmapToGraph(graph, mindmapTreeRef.current, rootNode.position().x, rootNode.position().y, data.mindmapGroupId);
     }
 
-    const nodeCell = graph.getCellById(node.id);
-    if (nodeCell) graph.select(nodeCell);
+    requestAnimationFrame(() => {
+      const nodeCell = graph.getCellById(node.id);
+      if (nodeCell) graph.select(nodeCell);
+    });
   }, [graph]);
 
   // ─── Keyboard shortcuts (DOM-level, not graph.bindKey) ──

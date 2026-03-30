@@ -184,7 +184,10 @@ function layoutSubtree(
 
 /**
  * Render a mindmap tree onto an X6 graph.
- * Clears existing mindmap nodes/edges and re-creates them.
+ * Uses incremental update: existing nodes are moved/updated in place,
+ * new nodes are added, removed nodes are deleted. This avoids the
+ * destroy-and-recreate cycle that causes React component unmount race
+ * conditions with X6's event system.
  */
 export function renderMindmapToGraph(
   graph: Graph,
@@ -203,73 +206,103 @@ export function renderMindmapToGraph(
 
   // Layout first (before touching graph) so we have all data ready
   const layout = layoutSubtree(tree, rootX, rootY, 0);
+  const layoutNodeMap = new Map(layout.nodes.map(n => [n.id, n]));
 
-  // Wrap entire remove+add in a single batch to prevent intermediate states
-  // from triggering auto-save or other side effects
+  // Build a set of desired edge keys for diffing
+  const desiredEdgeKeys = new Set(layout.edges.map(e => `${e.source}->${e.target}`));
+
   graph.startBatch('mindmap-render');
 
-  // Remove existing mindmap cells — collect ALL cells with this groupId
-  // or matching tree IDs. Remove edges first, then nodes, to avoid
-  // X6 internal errors from dangling edge references.
-  const existingCells = graph.getCells().filter(c => {
+  // ── Step 1: Collect existing mindmap cells ──
+  const existingNodes = new Map<string, Node>();
+  const existingEdges: import('@antv/x6').Edge[] = [];
+  for (const c of graph.getCells()) {
     const data = c.getData();
-    if (data?.mindmapGroupId === mindmapGroupId) return true;
-    if (treeIds.has(c.id)) return true;
-    return false;
-  });
-
-  if (existingCells.length > 0) {
-    // Sort: edges first, then nodes
-    const edges = existingCells.filter(c => c.isEdge());
-    const nodes = existingCells.filter(c => c.isNode());
-    if (edges.length > 0) graph.removeCells(edges);
-    if (nodes.length > 0) graph.removeCells(nodes);
-  }
-
-  // Double-check: if any cells with matching IDs still exist, force-remove them.
-  // This handles edge cases where X6 cell removal didn't fully clean up.
-  for (const n of layout.nodes) {
-    const stale = graph.getCellById(n.id);
-    if (stale) {
-      graph.removeCells([stale]);
+    if (data?.mindmapGroupId !== mindmapGroupId && !treeIds.has(c.id)) continue;
+    if (c.isNode()) {
+      existingNodes.set(c.id, c as Node);
+    } else if (c.isEdge()) {
+      existingEdges.push(c as import('@antv/x6').Edge);
     }
   }
 
-  // Add nodes
-  for (const n of layout.nodes) {
-    graph.addNode({
-      id: n.id,
-      shape: n.isRoot ? 'mindmap-root' : 'mindmap-node',
-      x: n.x,
-      y: n.y,
-      width: n.width,
-      height: n.height,
-      data: {
-        label: n.label,
-        isRoot: n.isRoot,
-        bgColor: n.bgColor,
-        borderColor: n.borderColor,
-        textColor: n.textColor,
-        fontSize: n.isRoot ? 16 : 14,
-        fontWeight: n.isRoot ? 'bold' : 'normal',
-        collapsed: n.collapsed,
-        childCount: n.childCount,
-        mindmapGroupId,
-        treeNodeId: n.id,
-        depth: n.depth,
-      },
-    });
+  // ── Step 2: Remove edges that no longer exist ──
+  for (const edge of existingEdges) {
+    const src = typeof edge.getSourceCellId === 'function' ? edge.getSourceCellId() : (edge.getSource() as any)?.cell;
+    const tgt = typeof edge.getTargetCellId === 'function' ? edge.getTargetCellId() : (edge.getTarget() as any)?.cell;
+    const key = `${src}->${tgt}`;
+    if (!desiredEdgeKeys.has(key)) {
+      graph.removeCells([edge]);
+    }
   }
 
-  // Add edges
+  // ── Step 3: Remove nodes that are no longer in the tree ──
+  for (const [id, node] of existingNodes) {
+    if (!layoutNodeMap.has(id)) {
+      graph.removeCells([node]);
+      existingNodes.delete(id);
+    }
+  }
+
+  // ── Step 4: Update existing nodes or add new ones ──
+  for (const n of layout.nodes) {
+    const nodeData = {
+      label: n.label,
+      isRoot: n.isRoot,
+      bgColor: n.bgColor,
+      borderColor: n.borderColor,
+      textColor: n.textColor,
+      fontSize: n.isRoot ? 16 : 14,
+      fontWeight: n.isRoot ? 'bold' : 'normal',
+      collapsed: n.collapsed,
+      childCount: n.childCount,
+      mindmapGroupId,
+      treeNodeId: n.id,
+      depth: n.depth,
+    };
+
+    const existing = existingNodes.get(n.id);
+    if (existing) {
+      // Update in place — no destroy/recreate
+      existing.position(n.x, n.y, { silent: true });
+      existing.resize(n.width, n.height, { silent: true });
+      existing.setData(nodeData, { silent: true });
+      // Single trigger to update the view
+      existing.trigger('change:position');
+    } else {
+      // New node — add it
+      graph.addNode({
+        id: n.id,
+        shape: n.isRoot ? 'mindmap-root' : 'mindmap-node',
+        x: n.x,
+        y: n.y,
+        width: n.width,
+        height: n.height,
+        data: nodeData,
+      });
+    }
+  }
+
+  // ── Step 5: Add missing edges ──
+  // Build set of existing edge keys (after removal)
+  const currentEdgeKeys = new Set<string>();
+  for (const c of graph.getCells()) {
+    if (!c.isEdge()) continue;
+    const data = c.getData();
+    if (data?.mindmapGroupId !== mindmapGroupId) continue;
+    const src = typeof (c as any).getSourceCellId === 'function' ? (c as any).getSourceCellId() : ((c as any).getSource() as any)?.cell;
+    const tgt = typeof (c as any).getTargetCellId === 'function' ? (c as any).getTargetCellId() : ((c as any).getTarget() as any)?.cell;
+    currentEdgeKeys.add(`${src}->${tgt}`);
+  }
+
   for (const e of layout.edges) {
+    const key = `${e.source}->${e.target}`;
+    if (currentEdgeKeys.has(key)) continue;
     graph.addEdge({
       source: { cell: e.source, port: 'right' },
       target: { cell: e.target, port: 'left' },
       router: { name: 'normal' },
-      connector: {
-        name: 'smooth',
-      },
+      connector: { name: 'smooth' },
       attrs: {
         line: {
           stroke: '#94a3b8',
