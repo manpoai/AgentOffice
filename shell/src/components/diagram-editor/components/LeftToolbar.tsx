@@ -3,13 +3,12 @@
 import { useState, useCallback, useRef } from 'react';
 import type { Graph } from '@antv/x6';
 import {
-  Type, Square, Brain, ImageIcon,
+  Type, Brain, ImageIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  SHAPE_META, DEFAULT_NODE_COLOR,
+  SHAPE_META, SHAPE_ICON_PATHS, DEFAULT_NODE_COLOR,
   type FlowchartShape, type ConnectorType,
-  CONNECTOR_META,
 } from '../constants';
 
 export type ActiveTool = 'select' | 'text' | FlowchartShape | 'connector' | 'mindmap';
@@ -20,6 +19,25 @@ interface LeftToolbarProps {
   activeConnector: ConnectorType;
   onConnectorChange: (c: ConnectorType) => void;
   graph: Graph | null;
+}
+
+function ShapeIcon({ shape, size = 20 }: { shape: FlowchartShape; size?: number }) {
+  const path = SHAPE_ICON_PATHS[shape];
+  const isBrace = shape === 'brace-left' || shape === 'brace-right';
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      {isBrace ? (
+        <path d={path} fill="none" />
+      ) : shape === 'cylinder' ? (
+        <>
+          <ellipse cx="12" cy="7" rx="8" ry="3" fill="none" />
+          <path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7" fill="none" />
+        </>
+      ) : (
+        <path d={path} fill="none" />
+      )}
+    </svg>
+  );
 }
 
 export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConnectorChange, graph }: LeftToolbarProps) {
@@ -79,28 +97,28 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
           onClick={() => { onToolChange('rounded-rect'); setShowShapes(false); }}
           title="图形 (R)"
         >
-          <Square size={18} />
+          <ShapeIcon shape="rect" size={18} />
         </ToolButton>
 
         {showShapes && (
           <div
-            className="absolute left-full top-0 ml-2 bg-white rounded-lg shadow-lg border border-gray-200 p-2 w-[200px] grid grid-cols-2 gap-1"
+            className="absolute left-full top-0 ml-2 bg-white rounded-lg shadow-lg border border-gray-200 p-2 grid grid-cols-6 gap-0.5"
+            style={{ width: 220 }}
             onMouseEnter={showShapeList}
             onMouseLeave={scheduleHideShapeList}
           >
-            {(Object.entries(SHAPE_META) as [FlowchartShape, typeof SHAPE_META[FlowchartShape]][]).map(([key, meta]) => (
+            {(Object.keys(SHAPE_META) as FlowchartShape[]).map((key) => (
               <button
                 key={key}
                 className={cn(
-                  'flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-100 transition-colors text-left',
+                  'w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 transition-colors',
                   activeTool === key && 'bg-blue-50 text-blue-600',
                 )}
                 onClick={() => { onToolChange(key); setShowShapes(false); }}
                 draggable
                 onDragStart={handleDragStart(key)}
               >
-                <span className="text-base w-5 text-center">{meta.icon}</span>
-                <span>{meta.label}</span>
+                <ShapeIcon shape={key} size={20} />
               </button>
             ))}
           </div>
@@ -120,7 +138,6 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
       <ToolButton
         active={activeTool === 'image' as any}
         onClick={() => {
-          // Trigger file picker for image insertion
           if (!graph) return;
           const input = document.createElement('input');
           input.type = 'file';
@@ -131,7 +148,6 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
             const reader = new FileReader();
             reader.onload = () => {
               const dataUrl = reader.result as string;
-              // Create image node at center of viewport
               const { tx, ty } = graph.translate();
               const { sx } = graph.scale();
               const container = graph.container;

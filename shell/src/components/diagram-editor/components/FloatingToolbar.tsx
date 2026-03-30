@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  NODE_COLORS, SHAPE_META, CONNECTOR_META,
+  NODE_COLORS, SHAPE_META, SHAPE_ICON_PATHS, CONNECTOR_META,
   FILL_COLORS, BORDER_COLORS, FONT_SIZES, EDGE_WIDTHS,
   type FlowchartShape, type ConnectorType,
 } from '../constants';
@@ -259,9 +259,27 @@ function FontButton({ icon, active, onClick, title }: { icon: React.ReactNode; a
   );
 }
 
+function ShapeIconSvg({ shape, size = 16 }: { shape: FlowchartShape; size?: number }) {
+  const path = SHAPE_ICON_PATHS[shape];
+  const isBrace = shape === 'brace-left' || shape === 'brace-right';
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      {isBrace ? (
+        <path d={path} fill="none" />
+      ) : shape === 'cylinder' ? (
+        <>
+          <ellipse cx="12" cy="7" rx="8" ry="3" fill="none" />
+          <path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7" fill="none" />
+        </>
+      ) : (
+        <path d={path} fill="none" />
+      )}
+    </svg>
+  );
+}
+
 function ShapeSelector({ current, onChange }: { current: FlowchartShape; onChange: (s: FlowchartShape) => void }) {
   const [open, setOpen] = useState(false);
-  const meta = SHAPE_META[current] || SHAPE_META['rounded-rect'];
 
   return (
     <div className="relative">
@@ -269,21 +287,21 @@ function ShapeSelector({ current, onChange }: { current: FlowchartShape; onChang
         className="h-7 px-1.5 flex items-center gap-1 rounded hover:bg-gray-100 text-sm text-gray-700"
         onClick={() => setOpen(!open)}
       >
-        <span>{meta.icon}</span>
+        <ShapeIconSvg shape={current} size={16} />
         <span className="text-xs">▾</span>
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 grid grid-cols-2 gap-0.5 w-[180px] z-40">
-          {(Object.entries(SHAPE_META) as [FlowchartShape, typeof SHAPE_META[FlowchartShape]][]).map(([key, m]) => (
+        <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1.5 grid grid-cols-6 gap-0.5 z-40" style={{ width: 210 }}>
+          {(Object.keys(SHAPE_META) as FlowchartShape[]).map((key) => (
             <button
               key={key}
               className={cn(
-                'flex items-center gap-1.5 px-2 py-1 rounded text-xs hover:bg-gray-100',
+                'w-7 h-7 flex items-center justify-center rounded hover:bg-gray-100',
                 current === key && 'bg-blue-50 text-blue-600',
               )}
               onClick={() => { onChange(key); setOpen(false); }}
             >
-              <span>{m.icon}</span> {m.label}
+              <ShapeIconSvg shape={key} size={18} />
             </button>
           ))}
         </div>
