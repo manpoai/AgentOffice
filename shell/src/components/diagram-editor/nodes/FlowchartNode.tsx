@@ -31,7 +31,9 @@ export function FlowchartNode({ node }: { node: Node }) {
   const d: FlowchartNodeData = { ...defaultData, ...raw };
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(d.label);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
+  const editingRef = useRef(false);
+  const isMinimapRef = useRef<boolean | null>(null);
 
   // Sync external data changes
   useEffect(() => {
@@ -44,15 +46,90 @@ export function FlowchartNode({ node }: { node: Node }) {
   }, [node]);
 
   const commitEdit = useCallback(() => {
+    if (!editingRef.current) return;
+    editingRef.current = false;
+    const newText = inputRef.current?.textContent ?? text;
+    setText(newText);
     setEditing(false);
-    node.setData({ ...node.getData(), label: text }, { silent: false });
+    node.setData({ ...node.getData(), label: newText }, { silent: false });
+    node.trigger('edit:end');
   }, [node, text]);
 
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
+  const cancelEdit = useCallback(() => {
+    if (!editingRef.current) return;
+    editingRef.current = false;
+    setText(d.label);
+    if (inputRef.current) inputRef.current.textContent = d.label;
+    setEditing(false);
+    node.trigger('edit:end');
+  }, [d.label, node]);
+
+  // Focus the contentEditable and select all text (or place cursor if empty).
+  // X6 steals focus at unpredictable times during dblclick/selection processing.
+  // We poll with rAF until our element has focus, then select text. Gives up
+  // after 500ms to avoid infinite loops.
+  // If initialKey is provided (from keyboard-initiated edit), insert it after
+  // focus — this replaces the selected text naturally.
+  const focusAndSelect = useCallback((args?: { initialKey?: string }) => {
+    const initialKey = args?.initialKey;
+    editingRef.current = true;
     setEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
+
+    const deadline = Date.now() + 500;
+    const tryFocus = () => {
+      const el = inputRef.current;
+      if (!el || !editingRef.current) return;
+
+      // On first attempt, detect if we're in the minimap. If so, abort.
+      if (isMinimapRef.current === null) {
+        isMinimapRef.current = !!el.closest('.x6-widget-minimap');
+      }
+      if (isMinimapRef.current) {
+        editingRef.current = false;
+        setEditing(false);
+        return;
+      }
+
+      el.focus();
+      // Check if we actually got focus
+      if (document.activeElement === el) {
+        // Focus succeeded — select all text or place cursor
+        if (el.textContent) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const sel = window.getSelection();
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+        }
+        // If a key was provided (keyboard-initiated edit), insert it.
+        // This replaces any selected text or starts typing in empty node.
+        if (initialKey) {
+          document.execCommand('insertText', false, initialKey);
+        }
+        return; // Done!
+      }
+
+      // Focus was stolen — retry if within deadline
+      if (Date.now() < deadline) {
+        requestAnimationFrame(tryFocus);
+      }
+    };
+    // Start trying after a small delay to let React render the contentEditable
+    setTimeout(tryFocus, 16);
   }, []);
+
+  useEffect(() => {
+    node.on('edit:start', focusAndSelect);
+    node.on('edit:commit', commitEdit);
+    return () => {
+      node.off('edit:start', focusAndSelect);
+      node.off('edit:commit', commitEdit);
+    };
+  }, [node, focusAndSelect, commitEdit]);
+
+  // Double-click is handled by X6DiagramEditor at the DOM level.
+  // The node component should NOT start editing on its own — that causes
+  // state desync with editingNode tracking in the parent.
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     // Stop propagation so X6 keyboard handler doesn't intercept
@@ -62,10 +139,9 @@ export function FlowchartNode({ node }: { node: Node }) {
       commitEdit();
     }
     if (e.key === 'Escape') {
-      setText(d.label);
-      setEditing(false);
+      cancelEdit();
     }
-  }, [commitEdit, d.label]);
+  }, [commitEdit, cancelEdit]);
 
   const size = node.getSize();
   const w = size.width;
@@ -86,21 +162,34 @@ export function FlowchartNode({ node }: { node: Node }) {
     userSelect: 'none',
   };
 
+  // Shared text style so editing and preview render at the exact same position
+  const textStyle: React.CSSProperties = {
+    fontSize: d.fontSize,
+    fontWeight: d.fontWeight,
+    fontStyle: d.fontStyle,
+    color: d.textColor,
+    lineHeight: 1.25,
+    wordBreak: 'break-word',
+    textAlign: 'center' as const,
+    padding: '4px 8px',
+    maxWidth: w - 4,
+    cursor: editing ? 'text' : 'default',
+  };
+
   const textEl = editing ? (
-    <textarea
+    <div
       ref={inputRef}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commitEdit}
+      contentEditable
+      suppressContentEditableWarning
       onKeyDown={handleKeyDown}
       onMouseDown={(e) => e.stopPropagation()}
-      className="bg-transparent border-none outline-none resize-none text-center w-full h-full"
-      style={{ fontSize: d.fontSize, fontWeight: d.fontWeight, fontStyle: d.fontStyle, color: d.textColor }}
-    />
+      style={{ ...textStyle, outline: 'none', userSelect: 'text' }}
+    >
+      {text}
+    </div>
   ) : (
-    <span className="px-2 py-1 break-words text-center leading-tight pointer-events-none select-none"
-      style={{ maxWidth: w - 8, wordBreak: 'break-word' }}>
-      {d.label || ' '}
+    <span className="pointer-events-none select-none" style={textStyle}>
+      {d.label || '\u00A0'}
     </span>
   );
 
@@ -108,12 +197,12 @@ export function FlowchartNode({ node }: { node: Node }) {
   switch (d.flowchartShape) {
     case 'diamond':
       return (
-        <div style={{ ...baseStyle, position: 'relative' }} onDoubleClick={handleDoubleClick}>
+        <div style={{ ...baseStyle, position: 'relative' }}>
           <svg width={w} height={h} style={{ position: 'absolute', top: 0, left: 0 }}>
             <polygon
               points={`${w / 2},2 ${w - 2},${h / 2} ${w / 2},${h - 2} 2,${h / 2}`}
               fill={d.bgColor}
-              stroke={d.borderColor}
+              stroke={d.borderColor === 'transparent' ? 'none' : d.borderColor}
               strokeWidth={2}
             />
           </svg>
@@ -128,9 +217,8 @@ export function FlowchartNode({ node }: { node: Node }) {
             ...baseStyle,
             borderRadius: '50%',
             backgroundColor: d.bgColor,
-            border: `2px solid ${d.borderColor}`,
+            border: d.borderColor === 'transparent' ? 'none' : `2px solid ${d.borderColor}`,
           }}
-          onDoubleClick={handleDoubleClick}
         >
           {textEl}
         </div>
@@ -143,9 +231,8 @@ export function FlowchartNode({ node }: { node: Node }) {
             ...baseStyle,
             borderRadius: '50%',
             backgroundColor: d.bgColor,
-            border: `2px solid ${d.borderColor}`,
+            border: d.borderColor === 'transparent' ? 'none' : `2px solid ${d.borderColor}`,
           }}
-          onDoubleClick={handleDoubleClick}
         >
           {textEl}
         </div>
@@ -153,12 +240,12 @@ export function FlowchartNode({ node }: { node: Node }) {
 
     case 'parallelogram':
       return (
-        <div style={{ ...baseStyle, position: 'relative' }} onDoubleClick={handleDoubleClick}>
+        <div style={{ ...baseStyle, position: 'relative' }}>
           <svg width={w} height={h} style={{ position: 'absolute', top: 0, left: 0 }}>
             <polygon
               points={`${w * 0.15},${h - 2} 2,2 ${w * 0.85},2 ${w - 2},${h - 2}`}
               fill={d.bgColor}
-              stroke={d.borderColor}
+              stroke={d.borderColor === 'transparent' ? 'none' : d.borderColor}
               strokeWidth={2}
             />
           </svg>
@@ -168,12 +255,12 @@ export function FlowchartNode({ node }: { node: Node }) {
 
     case 'triangle':
       return (
-        <div style={{ ...baseStyle, position: 'relative' }} onDoubleClick={handleDoubleClick}>
+        <div style={{ ...baseStyle, position: 'relative' }}>
           <svg width={w} height={h} style={{ position: 'absolute', top: 0, left: 0 }}>
             <polygon
               points={`${w / 2},2 ${w - 2},${h - 2} 2,${h - 2}`}
               fill={d.bgColor}
-              stroke={d.borderColor}
+              stroke={d.borderColor === 'transparent' ? 'none' : d.borderColor}
               strokeWidth={2}
             />
           </svg>
@@ -188,9 +275,8 @@ export function FlowchartNode({ node }: { node: Node }) {
             ...baseStyle,
             borderRadius: h / 2,
             backgroundColor: d.bgColor,
-            border: `2px solid ${d.borderColor}`,
+            border: d.borderColor === 'transparent' ? 'none' : `2px solid ${d.borderColor}`,
           }}
-          onDoubleClick={handleDoubleClick}
         >
           {textEl}
         </div>
@@ -203,9 +289,8 @@ export function FlowchartNode({ node }: { node: Node }) {
             ...baseStyle,
             borderRadius: 0,
             backgroundColor: d.bgColor,
-            border: `2px solid ${d.borderColor}`,
+            border: d.borderColor === 'transparent' ? 'none' : `2px solid ${d.borderColor}`,
           }}
-          onDoubleClick={handleDoubleClick}
         >
           {textEl}
         </div>
@@ -219,9 +304,8 @@ export function FlowchartNode({ node }: { node: Node }) {
             ...baseStyle,
             borderRadius: 8,
             backgroundColor: d.bgColor,
-            border: `2px solid ${d.borderColor}`,
+            border: d.borderColor === 'transparent' ? 'none' : `2px solid ${d.borderColor}`,
           }}
-          onDoubleClick={handleDoubleClick}
         >
           {textEl}
         </div>

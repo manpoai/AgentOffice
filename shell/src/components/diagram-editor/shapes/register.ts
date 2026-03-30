@@ -6,6 +6,7 @@ import { Graph } from '@antv/x6';
 import { register } from '@antv/x6-react-shape';
 import { FlowchartNode } from '../nodes/FlowchartNode';
 import { MindmapNode } from '../nodes/MindmapNode';
+import { ImageNode } from '../nodes/ImageNode';
 import { PORT_R } from '../constants';
 
 let registered = false;
@@ -113,6 +114,15 @@ export function registerShapes() {
         { id: 'bottom', group: 'bottom' },
       ],
     },
+  });
+
+  // ── Image node (React component) ──
+  register({
+    shape: 'image-node',
+    width: 200,
+    height: 150,
+    component: ImageNode,
+    ports: flowchartPorts,
   });
 
   // ── Custom edge with label support ──

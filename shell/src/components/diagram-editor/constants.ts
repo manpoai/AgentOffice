@@ -54,6 +54,23 @@ export const CONNECTOR_META: Record<ConnectorType, { label: string; router: stri
   'smooth':     { label: '曲线',     router: 'normal',     connector: 'smooth' },
 };
 
+// ─── Standalone color palettes (for independent fill / border pickers) ────
+export const FILL_COLORS = [
+  '#ffffff', '#dbeafe', '#dcfce7', '#fef9c3', '#fee2e2',
+  '#f3e8ff', '#ffedd5', '#e0e7ff', '#f1f5f9', '#fce7f3',
+  'transparent', // no fill
+];
+
+export const BORDER_COLORS = [
+  '#374151', '#3b82f6', '#22c55e', '#eab308', '#ef4444',
+  '#a855f7', '#f97316', '#6366f1', '#94a3b8',
+  'transparent', // no border
+];
+
+export const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32];
+
+export const EDGE_WIDTHS = [1, 1.5, 2, 3, 4, 6];
+
 // ─── Defaults ──────────────────────────────────────
 
 export const DEFAULT_SHAPE: FlowchartShape = 'rounded-rect';
