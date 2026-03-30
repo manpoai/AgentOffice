@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * ASuite API Gateway
- * Implements Agent接入协议v1: registration, messages, docs, tasks, events
- * Routes operations to Mattermost / Plane, with local SQLite for docs
+ * Implements Agent接入协议v1: registration, docs, data, events
+ * Routes operations to NocoDB, with local SQLite for docs
  */
 
 import express from 'express';
@@ -17,13 +17,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.GATEWAY_PORT || 4000;
 
 // Upstream service URLs and tokens
-const MM_URL = process.env.MM_URL || 'http://localhost:8065';
-const MM_ADMIN_TOKEN = process.env.MM_ADMIN_TOKEN;
-// Outline removed — documents now stored in local SQLite (see migration script in scripts/)
-const PLANE_URL = process.env.PLANE_URL || 'http://localhost:8000';
-const PLANE_TOKEN = process.env.PLANE_TOKEN;
-const PLANE_WORKSPACE = process.env.PLANE_WORKSPACE || 'asuite';
-const PLANE_PROJECT_ID = process.env.PLANE_PROJECT_ID;
 const NC_URL = process.env.NOCODB_URL || 'http://localhost:8080';
 const NC_EMAIL = process.env.NOCODB_EMAIL;
 const NC_PASSWORD = process.env.NOCODB_PASSWORD;
@@ -293,9 +286,6 @@ app.post('/api/auth/register', (req, res) => {
   // Mark ticket used
   db.prepare('UPDATE tickets SET used = 1 WHERE id = ?').run(ticket);
 
-  // Create a Mattermost bot account for this agent
-  createMMBot(name, display_name).catch(e => console.warn(`[gateway] MM bot creation failed: ${e.message}`));
-
   // Create a NocoDB user for this agent
   createNcUser(name, display_name).then(ncPassword => {
     if (ncPassword) {
@@ -314,112 +304,6 @@ app.get('/api/me', authenticateAgent, (req, res) => {
     capabilities: JSON.parse(a.capabilities || '[]'),
     webhook_url: a.webhook_url, online: !!a.online, last_seen_at: a.last_seen_at,
   });
-});
-
-// ─── Messages (Mattermost) ──────────────────────
-app.post('/api/messages', authenticateAgent, async (req, res) => {
-  const { channel_id, text, thread_id } = req.body;
-  if (!channel_id || !text) {
-    return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'channel_id and text required' });
-  }
-  // Get bot token for this agent
-  const botToken = await getMMBotToken(req.agent.name);
-  if (!botToken) {
-    return res.status(500).json({ error: 'BOT_NOT_CONFIGURED', message: 'No Mattermost bot for this agent' });
-  }
-
-  const post = { channel_id, message: text };
-  if (thread_id) post.root_id = thread_id;
-
-  const result = await upstream(MM_URL, 'POST', '/api/v4/posts', post, botToken);
-  if (result.status >= 400) {
-    return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  res.json({ message_id: result.data.id, channel_id: result.data.channel_id, created_at: result.data.create_at });
-});
-
-// List channels visible to this agent's bot
-app.get('/api/channels', authenticateAgent, async (req, res) => {
-  const botToken = await getMMBotToken(req.agent.name);
-  if (!botToken) {
-    return res.status(500).json({ error: 'BOT_NOT_CONFIGURED', message: 'No Mattermost bot for this agent' });
-  }
-  const botInfo = mmBotTokens.get(req.agent.name);
-  if (!botInfo) return res.status(500).json({ error: 'BOT_NOT_CONFIGURED' });
-
-  // Get bot's teams first
-  const teamsRes = await upstream(MM_URL, 'GET', `/api/v4/users/${botInfo.userId}/teams`, null, botToken);
-  if (!Array.isArray(teamsRes.data) || teamsRes.data.length === 0) {
-    return res.json({ channels: [] });
-  }
-  const teamId = teamsRes.data[0].id;
-
-  const limit = Math.min(parseInt(req.query.limit || '50'), 200);
-  const channelsRes = await upstream(MM_URL, 'GET',
-    `/api/v4/users/${botInfo.userId}/teams/${teamId}/channels?per_page=${limit}`, null, botToken);
-  if (channelsRes.status >= 400) {
-    return res.status(channelsRes.status).json({ error: 'UPSTREAM_ERROR', detail: channelsRes.data });
-  }
-  const channels = (channelsRes.data || []).map(ch => ({
-    channel_id: ch.id, name: ch.name, display_name: ch.display_name,
-    type: ch.type, // O=public, P=private, D=direct, G=group
-    team_id: ch.team_id,
-  }));
-  res.json({ channels });
-});
-
-// Find channel by name
-app.get('/api/channels/find', authenticateAgent, async (req, res) => {
-  const { name } = req.query;
-  if (!name) return res.status(400).json({ error: 'MISSING_NAME', message: 'name query param required' });
-
-  const botToken = await getMMBotToken(req.agent.name);
-  if (!botToken) return res.status(500).json({ error: 'BOT_NOT_CONFIGURED' });
-  const botInfo = mmBotTokens.get(req.agent.name);
-  if (!botInfo) return res.status(500).json({ error: 'BOT_NOT_CONFIGURED' });
-
-  const teamsRes = await upstream(MM_URL, 'GET', `/api/v4/users/${botInfo.userId}/teams`, null, botToken);
-  if (!Array.isArray(teamsRes.data) || teamsRes.data.length === 0) {
-    return res.status(404).json({ error: 'NOT_FOUND', message: 'No teams found' });
-  }
-  const teamId = teamsRes.data[0].id;
-
-  const chRes = await upstream(MM_URL, 'GET', `/api/v4/teams/${teamId}/channels/name/${encodeURIComponent(name)}`, null, botToken);
-  if (chRes.status >= 400) {
-    return res.status(404).json({ error: 'NOT_FOUND', message: `Channel "${name}" not found` });
-  }
-  res.json({
-    channel_id: chRes.data.id, name: chRes.data.name, display_name: chRes.data.display_name,
-    type: chRes.data.type, team_id: chRes.data.team_id,
-  });
-});
-
-// Read messages from a channel
-app.get('/api/channels/:channel_id/messages', authenticateAgent, async (req, res) => {
-  const botToken = await getMMBotToken(req.agent.name);
-  if (!botToken) return res.status(500).json({ error: 'BOT_NOT_CONFIGURED' });
-
-  const limit = Math.min(parseInt(req.query.limit || '30'), 100);
-  const before = req.query.before || '';
-  let apiPath = `/api/v4/channels/${req.params.channel_id}/posts?per_page=${limit}`;
-  if (before) apiPath += `&before=${before}`;
-
-  const result = await upstream(MM_URL, 'GET', apiPath, null, botToken);
-  if (result.status >= 400) {
-    return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  // MM returns { order: [id...], posts: { id: post } } — flatten to array
-  const order = result.data.order || [];
-  const posts = result.data.posts || {};
-  const messages = order.map(id => {
-    const p = posts[id];
-    return {
-      message_id: p.id, channel_id: p.channel_id, text: p.message,
-      sender_id: p.user_id, thread_id: p.root_id || null,
-      created_at: p.create_at, updated_at: p.update_at,
-    };
-  });
-  res.json({ messages });
 });
 
 // ─── Docs (local SQLite) ────────────────────────
@@ -964,219 +848,6 @@ app.post('/api/documents/comments/:commentId/unresolve', authenticateAgent, (req
   if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
   const updated = db.prepare('SELECT * FROM document_comments WHERE id = ?').get(req.params.commentId);
   res.json(formatDocComment(updated));
-});
-
-// ─── Tasks (Plane) ──────────────────────────────
-app.post('/api/tasks', authenticateAgent, async (req, res) => {
-  const { title, description, context, assignee_name, parent_task_id, priority, start_date, target_date } = req.body;
-  if (!title) {
-    return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'title required' });
-  }
-  const agentPlaneToken = req.agent.plane_token || PLANE_TOKEN;
-  const body = { name: title };
-  // Combine description and context into description_html
-  // context is used for agent-to-agent delegation: provides background the assignee needs
-  const fullDescription = [description, context ? `---\nContext from ${req.agent.name}:\n${context}` : '']
-    .filter(Boolean).join('\n\n');
-  if (fullDescription) body.description_html = `<p>${fullDescription.replace(/\n/g, '</p><p>')}</p>`;
-  if (priority) body.priority = priority;
-  if (parent_task_id) body.parent = parent_task_id;
-  if (start_date) body.start_date = start_date;
-  if (target_date) body.target_date = target_date;
-
-  // Resolve assignee: if assignee_name given, find their Plane user ID
-  if (assignee_name) {
-    const assigneeAgent = db.prepare('SELECT * FROM agent_accounts WHERE name = ?').get(assignee_name);
-    if (assigneeAgent?.plane_token) {
-      // Look up assignee's Plane user ID via their token
-      const meRes = await upstream(PLANE_URL, 'GET',
-        `/api/v1/users/me/`, null, null, { 'X-API-Key': assigneeAgent.plane_token });
-      if (meRes.data?.id) body.assignees = [meRes.data.id];
-    }
-  }
-
-  const apiPath = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/`;
-  const result = await upstream(PLANE_URL, 'POST', apiPath, body, null, { 'X-API-Key': agentPlaneToken });
-
-  if (!result.data?.id) {
-    return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  res.status(201).json({
-    task_id: result.data.id,
-    title: result.data.name,
-    url: `${PLANE_URL}/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${result.data.id}`,
-    start_date: result.data.start_date || null,
-    target_date: result.data.target_date || null,
-    created_at: new Date(result.data.created_at).getTime(),
-  });
-});
-
-app.patch('/api/tasks/:task_id/status', authenticateAgent, async (req, res) => {
-  const { status } = req.body;
-  // Map friendly status names to Plane state group names, then look up UUID
-  const groupMap = { todo: 'unstarted', in_progress: 'started', done: 'completed', cancelled: 'cancelled' };
-  const groupName = groupMap[status];
-  if (!groupName) {
-    return res.status(422).json({ error: 'INVALID_STATUS', message: `Valid: ${Object.keys(groupMap).join(', ')}` });
-  }
-
-  // Fetch project states to get the UUID for the requested group
-  const statesRes = await upstream(PLANE_URL, 'GET',
-    `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/states/`,
-    null, null, { 'X-API-Key': PLANE_TOKEN });
-  const states = statesRes.data?.results || statesRes.data || [];
-  const state = states.find(s => s.group === groupName);
-  if (!state) {
-    return res.status(500).json({ error: 'STATE_NOT_FOUND', message: `No state with group "${groupName}"` });
-  }
-
-  const agentPlaneToken = req.agent.plane_token || PLANE_TOKEN;
-  const apiPath = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${req.params.task_id}/`;
-  const result = await upstream(PLANE_URL, 'PATCH', apiPath, { state: state.id }, null, { 'X-API-Key': agentPlaneToken });
-
-  if (!result.data?.id) {
-    return res.status(result.status || 500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  res.json({ task_id: result.data.id, status, updated_at: Date.now() });
-});
-
-// General task update (title, description, priority, assignees, dates)
-app.patch('/api/tasks/:task_id', authenticateAgent, async (req, res) => {
-  const { title, description, priority, assignee_name, start_date, target_date } = req.body;
-  const agentPlaneToken = req.agent.plane_token || PLANE_TOKEN;
-  const body = {};
-
-  if (title !== undefined) body.name = title;
-  if (description !== undefined) body.description_html = `<p>${description.replace(/\n/g, '</p><p>')}</p>`;
-  if (priority !== undefined) body.priority = priority;
-  if (start_date !== undefined) body.start_date = start_date || null; // "YYYY-MM-DD" or null
-  if (target_date !== undefined) body.target_date = target_date || null;
-
-  // Resolve assignee by name → Plane user ID
-  if (assignee_name !== undefined) {
-    if (!assignee_name) {
-      body.assignees = [];
-    } else {
-      const assigneeAgent = db.prepare('SELECT * FROM agent_accounts WHERE name = ?').get(assignee_name);
-      if (assigneeAgent?.plane_token) {
-        const meRes = await upstream(PLANE_URL, 'GET',
-          `/api/v1/users/me/`, null, null, { 'X-API-Key': assigneeAgent.plane_token });
-        if (meRes.data?.id) body.assignees = [meRes.data.id];
-      }
-    }
-  }
-
-  if (Object.keys(body).length === 0) {
-    return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'No fields to update' });
-  }
-
-  const apiPath = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${req.params.task_id}/`;
-  const result = await upstream(PLANE_URL, 'PATCH', apiPath, body, null, { 'X-API-Key': agentPlaneToken });
-
-  if (!result.data?.id) {
-    return res.status(result.status || 500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  const i = result.data;
-  res.json({
-    task_id: i.id, title: i.name, status: i.state_detail?.group || null,
-    priority: i.priority, start_date: i.start_date, target_date: i.target_date,
-    assignees: i.assignee_details?.map(a => a.display_name) || [],
-    updated_at: Date.now(),
-  });
-});
-
-app.post('/api/tasks/:task_id/comments', authenticateAgent, async (req, res) => {
-  const { text } = req.body;
-  if (!text) {
-    return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'text required' });
-  }
-  const agentPlaneToken = req.agent.plane_token || PLANE_TOKEN;
-  const apiPath = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${req.params.task_id}/comments/`;
-  const result = await upstream(PLANE_URL, 'POST', apiPath,
-    { comment_html: `<p>${text}</p>` }, null, { 'X-API-Key': agentPlaneToken });
-
-  if (!result.data?.id) {
-    return res.status(500).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  res.status(201).json({ comment_id: result.data.id, task_id: req.params.task_id, created_at: Date.now() });
-});
-
-// List task comments
-app.get('/api/tasks/:task_id/comments', authenticateAgent, async (req, res) => {
-  const agentPlaneToken = req.agent.plane_token || PLANE_TOKEN;
-  const apiPath = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${req.params.task_id}/comments/`;
-  const result = await upstream(PLANE_URL, 'GET', apiPath, null, null, { 'X-API-Key': agentPlaneToken });
-  const comments = (result.data?.results || result.data || []).map(c => ({
-    id: c.id,
-    text: (c.comment_stripped || c.comment_html || '').replace(/<[^>]+>/g, '').trim(),
-    html: c.comment_html || '',
-    actor: c.actor_detail?.display_name || c.actor_detail?.email || 'Unknown',
-    created_at: c.created_at,
-    updated_at: c.updated_at,
-  }));
-  res.json({ comments });
-});
-
-// List tasks
-app.get('/api/tasks', authenticateAgent, async (req, res) => {
-  const agentPlaneToken = req.agent.plane_token || PLANE_TOKEN;
-  const { status, assignee_name, limit = '25' } = req.query;
-
-  let apiPath = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/?per_page=${Math.min(parseInt(limit), 100)}`;
-
-  // Plane API supports filters via query params
-  if (status) {
-    // Map friendly status to Plane state group
-    const groupMap = { todo: 'unstarted', in_progress: 'started', done: 'completed', cancelled: 'cancelled' };
-    const groupName = groupMap[status];
-    if (groupName) apiPath += `&state__group__in=${groupName}`;
-  }
-
-  const result = await upstream(PLANE_URL, 'GET', apiPath, null, null, { 'X-API-Key': agentPlaneToken });
-  if (result.status >= 400) {
-    return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-
-  // Plane v1 returns { results: [...] } or an array
-  const issues = result.data?.results || result.data || [];
-  let tasks = issues.map(i => ({
-    task_id: i.id, title: i.name, status: i.state_detail?.group || null,
-    priority: i.priority, assignees: i.assignee_details?.map(a => a.display_name) || [],
-    start_date: i.start_date || null, target_date: i.target_date || null,
-    url: `${PLANE_URL}/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${i.id}`,
-    created_at: new Date(i.created_at).getTime(),
-    updated_at: new Date(i.updated_at).getTime(),
-  }));
-
-  // Client-side filter by assignee_name if specified
-  if (assignee_name) {
-    const assigneeAgent = db.prepare('SELECT display_name FROM agent_accounts WHERE name = ?').get(assignee_name);
-    const displayName = assigneeAgent?.display_name || assignee_name;
-    tasks = tasks.filter(t => t.assignees.some(a =>
-      a.toLowerCase() === displayName.toLowerCase() || a.toLowerCase() === assignee_name.toLowerCase()));
-  }
-
-  res.json({ tasks });
-});
-
-// Read a single task
-app.get('/api/tasks/:task_id', authenticateAgent, async (req, res) => {
-  const agentPlaneToken = req.agent.plane_token || PLANE_TOKEN;
-  const apiPath = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${req.params.task_id}/`;
-  const result = await upstream(PLANE_URL, 'GET', apiPath, null, null, { 'X-API-Key': agentPlaneToken });
-  if (result.status >= 400 || !result.data?.id) {
-    return res.status(result.status || 404).json({ error: 'UPSTREAM_ERROR', detail: result.data });
-  }
-  const i = result.data;
-  res.json({
-    task_id: i.id, title: i.name, description: i.description_stripped || i.description || '',
-    status: i.state_detail?.group || null, priority: i.priority,
-    assignees: i.assignee_details?.map(a => a.display_name) || [],
-    start_date: i.start_date || null, target_date: i.target_date || null,
-    url: `${PLANE_URL}/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${i.id}`,
-    created_at: new Date(i.created_at).getTime(),
-    updated_at: new Date(i.updated_at).getTime(),
-  });
 });
 
 // ─── Data (NocoDB) ───────────────────────────────
@@ -2344,202 +2015,6 @@ function pushEvent(agentId, event) {
   }
 }
 
-// ─── Mattermost WebSocket Listener ──────────────
-// Listens for @mentions in MM and generates events for registered agents
-import WebSocket from 'ws';
-
-const mmBotTokens = new Map(); // agent_name → { userId, token }
-
-async function getMMBotToken(agentName) {
-  if (mmBotTokens.has(agentName)) return mmBotTokens.get(agentName).token;
-  return null;
-}
-
-async function createMMBot(agentName, displayName) {
-  if (!MM_ADMIN_TOKEN) return;
-  // Create bot
-  const botRes = await upstream(MM_URL, 'POST', '/api/v4/bots',
-    { username: agentName, display_name: displayName }, MM_ADMIN_TOKEN);
-  if (botRes.status >= 400 && botRes.data?.id !== 'store.sql_bot.save.username_exists.app_error') {
-    // Bot might already exist, try to get it
-    const usersRes = await upstream(MM_URL, 'GET', `/api/v4/users/username/${agentName}`, null, MM_ADMIN_TOKEN);
-    if (usersRes.data?.id) {
-      // Generate token for existing bot
-      const tokenRes = await upstream(MM_URL, 'POST', `/api/v4/users/${usersRes.data.id}/tokens`,
-        { description: 'gateway-managed' }, MM_ADMIN_TOKEN);
-      if (tokenRes.data?.token) {
-        mmBotTokens.set(agentName, { userId: usersRes.data.id, token: tokenRes.data.token });
-      }
-    }
-    return;
-  }
-  // Generate access token
-  const userId = botRes.data?.user_id;
-  if (!userId) return;
-  const tokenRes = await upstream(MM_URL, 'POST', `/api/v4/users/${userId}/tokens`,
-    { description: 'gateway-managed' }, MM_ADMIN_TOKEN);
-  if (tokenRes.data?.token) {
-    mmBotTokens.set(agentName, { userId, token: tokenRes.data.token });
-    // Add bot to team
-    const teams = await upstream(MM_URL, 'GET', '/api/v4/teams', null, MM_ADMIN_TOKEN);
-    if (Array.isArray(teams.data) && teams.data.length > 0) {
-      await upstream(MM_URL, 'POST', `/api/v4/teams/${teams.data[0].id}/members`,
-        { team_id: teams.data[0].id, user_id: userId }, MM_ADMIN_TOKEN);
-    }
-  }
-}
-
-// Load existing bot tokens on startup
-async function loadExistingBots() {
-  const agents = db.prepare('SELECT name, display_name FROM agent_accounts').all();
-  for (const agent of agents) {
-    try {
-      const userRes = await upstream(MM_URL, 'GET', `/api/v4/users/username/${agent.name}`, null, MM_ADMIN_TOKEN);
-      if (userRes.data?.id) {
-        // Check for existing tokens
-        const tokensRes = await upstream(MM_URL, 'GET', `/api/v4/users/${userRes.data.id}/tokens`, null, MM_ADMIN_TOKEN);
-        if (Array.isArray(tokensRes.data) && tokensRes.data.length > 0) {
-          // Need to generate a new token since we can't retrieve existing ones
-          const tokenRes = await upstream(MM_URL, 'POST', `/api/v4/users/${userRes.data.id}/tokens`,
-            { description: 'gateway-managed' }, MM_ADMIN_TOKEN);
-          if (tokenRes.data?.token) {
-            mmBotTokens.set(agent.name, { userId: userRes.data.id, token: tokenRes.data.token });
-            console.log(`[gateway] Loaded MM bot: ${agent.name}`);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn(`[gateway] Failed to load bot ${agent.name}: ${e.message}`);
-    }
-  }
-}
-
-function startMMListener() {
-  if (!MM_ADMIN_TOKEN) {
-    console.warn('[gateway] MM_ADMIN_TOKEN not set, Mattermost listener disabled');
-    return;
-  }
-
-  const wsUrl = MM_URL.replace(/^http/, 'ws') + '/api/v4/websocket';
-  const ws = new WebSocket(wsUrl);
-
-  ws.on('open', () => {
-    ws.send(JSON.stringify({
-      seq: 1,
-      action: 'authentication_challenge',
-      data: { token: MM_ADMIN_TOKEN },
-    }));
-    console.log('[gateway] Connected to Mattermost WebSocket');
-  });
-
-  ws.on('message', async (raw) => {
-    try {
-      const msg = JSON.parse(raw.toString());
-      if (msg.event !== 'posted') return;
-
-      const post = JSON.parse(msg.data.post);
-      const channelName = msg.data.channel_display_name || '';
-      const channelType = msg.data.channel_type || '';
-
-      const agents = db.prepare('SELECT * FROM agent_accounts').all();
-
-      // Get sender info once (shared across events)
-      const senderRes = await upstream(MM_URL, 'GET', `/api/v4/users/${post.user_id}`, null, MM_ADMIN_TOKEN);
-      const senderName = senderRes.data?.username || post.user_id;
-
-      if (channelType === 'D') {
-        // Direct message: route to the agent whose bot is in this DM channel
-        // DM channel name is "<userId1>__<userId2>" — find agent whose bot userId appears in it
-        const dmChannelRes = await upstream(MM_URL, 'GET', `/api/v4/channels/${post.channel_id}`, null, MM_ADMIN_TOKEN);
-        const dmChannelName = dmChannelRes.data?.name || '';
-
-        for (const agent of agents) {
-          const botInfo = mmBotTokens.get(agent.name);
-          if (!botInfo) continue;
-          if (!dmChannelName.includes(botInfo.userId)) continue;
-          // Skip if the post was made by this agent's own bot
-          if (post.user_id === botInfo.userId) continue;
-
-          const event = {
-            event: 'message.direct',
-            source: 'mattermost',
-            event_id: genId('evt'),
-            timestamp: post.create_at,
-            data: {
-              channel_id: post.channel_id,
-              message_id: post.id,
-              text: post.message,
-              sender: { id: post.user_id, name: senderName, type: 'human' },
-            },
-          };
-
-          db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`)
-            .run(event.event_id, agent.id, event.event, event.source, event.timestamp, JSON.stringify(event), Date.now());
-
-          pushEvent(agent.id, event);
-
-          if (agent.webhook_url) {
-            deliverWebhook(agent, event).catch(e =>
-              console.warn(`[gateway] Webhook delivery failed for ${agent.name}: ${e.message}`));
-          }
-
-          console.log(`[gateway] Event ${event.event} → ${agent.name}`);
-        }
-      } else {
-        // Channel/thread message: find agents mentioned with exact word boundary
-        for (const agent of agents) {
-          // Use word boundary: @agentname must not be followed by alphanumeric or hyphen
-          const mentionRegex = new RegExp(`@${agent.name}(?![\\w-])`);
-          if (!mentionRegex.test(post.message)) continue;
-
-          // Skip if the post was made by this agent's own bot
-          const botInfo = mmBotTokens.get(agent.name);
-          if (botInfo && post.user_id === botInfo.userId) continue;
-
-          const event = {
-            event: 'message.mentioned',
-            source: 'mattermost',
-            event_id: genId('evt'),
-            timestamp: post.create_at,
-            data: {
-              channel_id: post.channel_id,
-              channel_name: channelName,
-              message_id: post.id,
-              thread_id: post.root_id || null,
-              text: post.message,
-              text_without_mention: post.message.replace(new RegExp(`@${agent.name}(?![\\w-])\\s*`, 'g'), '').trim(),
-              sender: { id: post.user_id, name: senderName, type: 'human' },
-            },
-          };
-
-          db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`)
-            .run(event.event_id, agent.id, event.event, event.source, event.timestamp, JSON.stringify(event), Date.now());
-
-          pushEvent(agent.id, event);
-
-          if (agent.webhook_url) {
-            deliverWebhook(agent, event).catch(e =>
-              console.warn(`[gateway] Webhook delivery failed for ${agent.name}: ${e.message}`));
-          }
-
-          console.log(`[gateway] Event ${event.event} → ${agent.name}`);
-        }
-      }
-    } catch (e) {
-      console.error(`[gateway] MM listener error: ${e.message}`);
-    }
-  });
-
-  ws.on('close', () => {
-    console.log('[gateway] MM WebSocket closed, reconnecting in 5s...');
-    setTimeout(startMMListener, 5000);
-  });
-
-  ws.on('error', (e) => console.error(`[gateway] MM WebSocket error: ${e.message}`));
-}
-
 async function deliverWebhook(agent, event) {
   const timestamp = String(Date.now());
   const body = JSON.stringify(event);
@@ -2560,156 +2035,6 @@ async function deliverWebhook(agent, event) {
 
 // NOTE: Outline webhook handler removed — doc mention detection will be added
 // inline in the local document write path (Task 3).
-
-// ─── Plane Polling ───────────────────────────────
-// Plane community edition has no webhooks — poll for new assignments and comments
-const PLANE_STATE_FILE = path.join(__dirname, '.plane-poll-state.json');
-function loadPlanePollState() {
-  try {
-    const s = JSON.parse(fs.readFileSync(PLANE_STATE_FILE, 'utf8'));
-    return { lastPollAt: s.lastPollAt || (Date.now() - 30000) };
-  } catch {
-    return { lastPollAt: Date.now() - 30000 };
-  }
-}
-function savePlanePollState(state) {
-  fs.writeFileSync(PLANE_STATE_FILE, JSON.stringify({ lastPollAt: state.lastPollAt }));
-}
-const planePollState = loadPlanePollState();
-
-async function pollPlane() {
-  try {
-    const since = planePollState.lastPollAt;
-    planePollState.lastPollAt = Date.now();
-    savePlanePollState(planePollState);
-
-    const agents = db.prepare('SELECT * FROM agent_accounts').all();
-    const apiBase = `/api/v1/workspaces/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}`;
-
-    // Fetch recently updated issues
-    const issuesRes = await upstream(PLANE_URL, 'GET',
-      `${apiBase}/issues/?per_page=50&order_by=-updated_at`, null, null, { 'X-API-Key': PLANE_TOKEN });
-
-    if (!Array.isArray(issuesRes.data?.results)) return;
-
-    for (const issue of issuesRes.data.results) {
-      const updatedAt = new Date(issue.updated_at).getTime();
-      if (updatedAt <= since) continue; // Only process recently changed
-
-      // Check for new assignments: issue has assignees matching an agent's Plane user ID
-      for (const agent of agents) {
-        if (!agent.plane_token) continue;
-
-        // Look up agent's Plane user ID (cache it)
-        if (!planePollState.agentPlaneIds) planePollState.agentPlaneIds = new Map();
-        if (!planePollState.agentPlaneIds.has(agent.name)) {
-          const meRes = await upstream(PLANE_URL, 'GET',
-            `/api/v1/users/me/`, null, null, { 'X-API-Key': agent.plane_token });
-          if (meRes.data?.id) planePollState.agentPlaneIds.set(agent.name, meRes.data.id);
-        }
-        const planeUserId = planePollState.agentPlaneIds.get(agent.name);
-        if (!planeUserId) continue;
-
-        const assigneeIds = issue.assignees || [];
-        if (!assigneeIds.includes(planeUserId)) continue;
-
-        // Deduplicate: check if we already emitted this assignment event
-        const existing = db.prepare(
-          `SELECT id FROM events WHERE agent_id=? AND event_type='task.assigned' AND payload LIKE ?`
-        ).get(agent.id, `%"task_id":"${issue.id}"%`);
-        if (existing) continue;
-
-        // Parse description: split off "Context from <agent>:" section if present
-        const rawDesc = issue.description_stripped || '';
-        const ctxMatch = rawDesc.match(/^([\s\S]*?)---\s*Context from ([^:]+):\s*([\s\S]*)$/);
-        const taskDescription = ctxMatch ? ctxMatch[1].trim() : rawDesc;
-        const delegationContext = ctxMatch ? { from: ctxMatch[2].trim(), text: ctxMatch[3].trim() } : null;
-
-        const evt = {
-          event: 'task.assigned',
-          source: 'plane',
-          event_id: genId('evt'),
-          timestamp: updatedAt,
-          data: {
-            task_id: issue.id,
-            task_title: issue.name,
-            task_description: taskDescription,
-            delegation_context: delegationContext,
-            priority: issue.priority,
-            start_date: issue.start_date || null,
-            due_date: issue.target_date || null,
-            task_url: `${PLANE_URL}/${PLANE_WORKSPACE}/projects/${PLANE_PROJECT_ID}/issues/${issue.id}`,
-            assigned_by: { name: 'system' },
-          },
-        };
-
-        db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(evt.event_id, agent.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), Date.now());
-
-        pushEvent(agent.id, evt);
-        console.log(`[gateway] Event ${evt.event} → ${agent.name} (task: ${issue.id})`);
-      }
-
-      // Check for new comments on this issue
-      const commentsRes = await upstream(PLANE_URL, 'GET',
-        `${apiBase}/issues/${issue.id}/comments/`, null, null, { 'X-API-Key': PLANE_TOKEN });
-
-      if (!Array.isArray(commentsRes.data?.results)) continue;
-
-      for (const comment of commentsRes.data.results) {
-        const commentAt = new Date(comment.created_at).getTime();
-        if (commentAt <= since) continue;
-
-        const html = comment.comment_html || '';
-
-        // Extract mentioned Plane user IDs from <mention-component entity_identifier="...">
-        const mentionedUserIds = [];
-        const mentionRe = /entity_identifier="([^"]+)"/g;
-        let m;
-        while ((m = mentionRe.exec(html)) !== null) mentionedUserIds.push(m[1]);
-
-        // Extract plain text (strip all HTML tags including custom components)
-        const commentText = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-
-        for (const agent of agents) {
-          // Match by Plane user ID in mention-component OR plain @name in text
-          const planeUserId = planePollState.agentPlaneIds?.get(agent.name);
-          const hasMentionNode = planeUserId && mentionedUserIds.includes(planeUserId);
-          const hasTextMention = new RegExp(`@${agent.name}(?![\\w-])`).test(commentText);
-          if (!hasMentionNode && !hasTextMention) continue;
-
-          // Skip if posted by this agent's own bot
-          const botInfo = mmBotTokens.get(agent.name);
-          if (botInfo && comment.actor === botInfo.userId) continue;
-
-          const evt = {
-            event: 'task.commented',
-            source: 'plane',
-            event_id: genId('evt'),
-            timestamp: commentAt,
-            data: {
-              task_id: issue.id,
-              task_title: issue.name,
-              comment_id: comment.id,
-              text: commentText,
-              sender: { id: comment.actor, name: comment.actor_detail?.display_name || comment.actor, type: 'human' },
-            },
-          };
-
-          db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`)
-            .run(evt.event_id, agent.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), Date.now());
-
-          pushEvent(agent.id, evt);
-          console.log(`[gateway] Event ${evt.event} → ${agent.name} (task: ${issue.id})`);
-        }
-      }
-    }
-  } catch (e) {
-    console.error(`[gateway] Plane poll error: ${e.message}`);
-  }
-}
 
 // ─── NocoDB Comment Polling ──────────────────────
 // NocoDB has no webhook for row comments — poll the audit log every 15s
@@ -2826,23 +2151,7 @@ app.post('/api/agents/self-register', async (req, res) => {
     .run(agentId, name, display_name, hashToken(token), JSON.stringify(capabilities || []),
       webhook_url || null, webhook_secret || null, now, now);
 
-  // Notify admin via Mattermost Town Square
-  try {
-    const townSquare = await findTownSquareChannel();
-    if (townSquare && MM_ADMIN_TOKEN) {
-      const msg = `🤖 **New agent registration request**\n` +
-        `Name: \`${name}\` | Display: ${display_name}\n` +
-        `Capabilities: ${(capabilities || []).join(', ') || 'none'}\n` +
-        `To approve: \`curl -X POST http://localhost:${PORT}/api/admin/agents/${agentId}/approve -H "Authorization: Bearer ${ADMIN_TOKEN}"\``;
-      await upstream(MM_URL, 'POST', '/api/v4/posts',
-        { channel_id: townSquare, message: msg }, MM_ADMIN_TOKEN);
-    }
-  } catch (e) {
-    console.warn(`[gateway] Failed to notify admin about registration: ${e.message}`);
-  }
-
-  // Create MM bot + NC user in advance (will only activate after approval)
-  createMMBot(name, display_name).catch(e => console.warn(`[gateway] MM bot creation failed: ${e.message}`));
+  // Create NC user in advance (will only activate after approval)
   createNcUser(name, display_name).then(ncPassword => {
     if (ncPassword) {
       db.prepare('UPDATE agent_accounts SET nc_password = ? WHERE id = ?').run(ncPassword, agentId);
@@ -3000,18 +2309,6 @@ app.get('/api/uploads/files/:filename', (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
-// Helper: find Town Square channel ID
-let townSquareId = null;
-async function findTownSquareChannel() {
-  if (townSquareId) return townSquareId;
-  if (!MM_ADMIN_TOKEN) return null;
-  const teamsRes = await upstream(MM_URL, 'GET', '/api/v4/teams', null, MM_ADMIN_TOKEN);
-  if (!Array.isArray(teamsRes.data) || teamsRes.data.length === 0) return null;
-  const chRes = await upstream(MM_URL, 'GET', `/api/v4/teams/${teamsRes.data[0].id}/channels/name/town-square`, null, MM_ADMIN_TOKEN);
-  if (chRes.data?.id) townSquareId = chRes.data.id;
-  return townSquareId;
-}
-
 // ─── Thread Context ─────────────────────────────
 // Link a doc/task/data_row to a thread for cross-system context
 app.post('/api/threads/:thread_id/links', authenticateAgent, (req, res) => {
@@ -3028,39 +2325,20 @@ app.post('/api/threads/:thread_id/links', authenticateAgent, (req, res) => {
   res.status(201).json({ id, thread_id: req.params.thread_id, link_type, link_id });
 });
 
-// Get thread context: messages + linked resources
+// Get thread context: linked resources
 app.get('/api/threads/:thread_id/context', authenticateAgent, async (req, res) => {
   const threadId = req.params.thread_id;
-  const botToken = await getMMBotToken(req.agent.name);
 
-  // 1. Get thread messages from MM
-  let messages = [];
-  if (botToken) {
-    const threadRes = await upstream(MM_URL, 'GET', `/api/v4/posts/${threadId}/thread?perPage=50`, null, botToken);
-    if (threadRes.data?.order) {
-      const order = threadRes.data.order;
-      const posts = threadRes.data.posts || {};
-      messages = order.map(id => {
-        const p = posts[id];
-        return {
-          message_id: p.id, text: p.message, sender_id: p.user_id,
-          created_at: p.create_at,
-        };
-      });
-    }
-  }
-
-  // 2. Get linked resources
+  // Get linked resources
   const links = db.prepare('SELECT * FROM thread_links WHERE thread_id = ? ORDER BY created_at ASC').all(threadId);
 
-  // 3. Optionally fetch linked resource summaries
   const linkedResources = [];
   for (const link of links) {
     const entry = { link_id: link.id, type: link.link_type, id: link.link_id, title: link.link_title };
     linkedResources.push(entry);
   }
 
-  res.json({ thread_id: threadId, messages, linked_resources: linkedResources });
+  res.json({ thread_id: threadId, messages: [], linked_resources: linkedResources });
 });
 
 // Delete a thread link
@@ -3197,68 +2475,6 @@ async function syncContentItems() {
 
   console.log(`[gateway] Content sync done: ${docCount} docs, ${tableCount} tables`);
 }
-
-// ─── Boards (Excalidraw) ─────────────────────────
-// API: create a board
-app.post('/api/boards', authenticateAgent, (req, res) => {
-  const { title = '' } = req.body;
-  const id = crypto.randomUUID();
-  const now = Date.now();
-  const agentName = req.agent?.name || null;
-  const defaultData = JSON.stringify({
-    type: 'excalidraw',
-    version: 2,
-    source: 'asuite',
-    elements: [],
-    appState: {},
-    files: {},
-  });
-
-  db.prepare(`INSERT INTO boards (id, data_json, created_by, updated_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(id, defaultData, agentName, agentName, now, now);
-
-  // Create content_item entry
-  const nodeId = `board:${id}`;
-  const isoNow = new Date().toISOString();
-  contentItemsUpsert.run(
-    nodeId, id, 'board', title || '',
-    null, req.body.parent_id || null, null,
-    agentName, agentName, isoNow, isoNow, null, Date.now()
-  );
-
-  const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
-  res.status(201).json({ board_id: id, item });
-});
-
-// API: get board data
-app.get('/api/boards/:id', authenticateAgent, (req, res) => {
-  const board = db.prepare('SELECT * FROM boards WHERE id = ?').get(req.params.id);
-  if (!board) return res.status(404).json({ error: 'NOT_FOUND' });
-  res.json({
-    id: board.id,
-    data: JSON.parse(board.data_json),
-    created_by: board.created_by,
-    updated_by: board.updated_by,
-    created_at: board.created_at,
-    updated_at: board.updated_at,
-  });
-});
-
-// API: save board data (auto-save from frontend)
-app.patch('/api/boards/:id', authenticateAgent, (req, res) => {
-  const board = db.prepare('SELECT * FROM boards WHERE id = ?').get(req.params.id);
-  if (!board) return res.status(404).json({ error: 'NOT_FOUND' });
-
-  const { data } = req.body;
-  if (!data) return res.status(400).json({ error: 'MISSING_DATA' });
-
-  const now = Date.now();
-  const agentName = req.agent?.name || null;
-  db.prepare('UPDATE boards SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
-    .run(JSON.stringify(data), agentName, now, req.params.id);
-
-  res.json({ saved: true, updated_at: now });
-});
 
 // ─── Presentations (Fabric.js PPT) ─────────────────
 // API: create a presentation
@@ -3426,37 +2642,6 @@ app.delete('/api/presentations/:id/slides/:index', authenticateAgent, (req, res)
     .run(JSON.stringify(data), agentName, now, req.params.id);
 
   res.json({ deleted: true, remaining: data.slides.length, updated_at: now });
-});
-
-// ─── Spreadsheet CRUD ────────────────────────────
-app.post('/api/spreadsheets', authenticateAgent, (req, res) => {
-  const agentName = req.agentConfig?.name || 'unknown';
-  const now = Date.now();
-  const id = crypto.randomUUID();
-  const defaultData = {};
-  db.prepare(`INSERT INTO spreadsheets (id, data_json, created_by, updated_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(id, JSON.stringify(defaultData), agentName, agentName, now, now);
-  res.json({ id, data: defaultData, created_by: agentName, created_at: now, updated_at: now });
-});
-
-app.get('/api/spreadsheets/:id', authenticateAgent, (req, res) => {
-  const row = db.prepare('SELECT * FROM spreadsheets WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Spreadsheet not found' });
-  let data;
-  try { data = JSON.parse(row.data_json); } catch { data = {}; }
-  res.json({ id: row.id, data, created_by: row.created_by, updated_by: row.updated_by, created_at: row.created_at, updated_at: row.updated_at });
-});
-
-app.patch('/api/spreadsheets/:id', authenticateAgent, (req, res) => {
-  const row = db.prepare('SELECT * FROM spreadsheets WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Spreadsheet not found' });
-  const agentName = req.agentConfig?.name || 'unknown';
-  const now = Date.now();
-  const { data } = req.body;
-  if (!data) return res.status(400).json({ error: 'data is required' });
-  db.prepare('UPDATE spreadsheets SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
-    .run(JSON.stringify(data), agentName, now, req.params.id);
-  res.json({ saved: true, updated_at: now });
 });
 
 // ─── Diagram CRUD ────────────────────────────────
@@ -4291,11 +3476,6 @@ app.post('/api/data/:table_id/snapshots/:snapshot_id/restore', authenticateAgent
 app.listen(PORT, async () => {
   console.log(`[gateway] ASuite API Gateway listening on :${PORT}`);
   console.log(`[gateway] Admin token: ${ADMIN_TOKEN}`);
-  await loadExistingBots();
-  startMMListener();
-  // Start Plane polling every 15s
-  setInterval(pollPlane, 15000);
-  console.log('[gateway] Plane polling started (15s interval)');
   // Start NocoDB comment polling every 15s
   setInterval(pollNcComments, 15000);
   console.log('[gateway] NocoDB comment polling started (15s interval)');
