@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } fr
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as docApi from '@/lib/api/documents';
 import type { Document as DocType, Comment as DocComment, Revision as DocRevision } from '@/lib/api/documents';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2, Presentation, GitBranch } from 'lucide-react';
+import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2, Presentation, GitBranch, Pin, PinOff } from 'lucide-react';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -54,6 +54,7 @@ type ContentNode = {
   createdAt: number;
   updatedAt?: string;
   parentId: string | null;
+  pinned?: boolean;
 };
 
 type Selection = { type: 'doc'; id: string } | { type: 'table'; id: string } | { type: 'presentation'; id: string } | { type: 'diagram'; id: string } | null;
@@ -247,6 +248,7 @@ export default function ContentPage() {
         createdAt: new Date(item.created_at || 0).getTime(),
         updatedAt: item.updated_at || undefined,
         parentId: item.parent_id,
+        pinned: !!item.pinned,
       });
     }
     return map;
@@ -323,7 +325,15 @@ export default function ContentPage() {
       roots.sort((a, b) => (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0));
     }
 
-    return { childrenMap: cMap, rootIds: roots };
+    // Split roots into pinned and unpinned
+    const pinned: string[] = [];
+    const unpinned: string[] = [];
+    for (const id of roots) {
+      if (effectiveNodes.get(id)?.pinned) pinned.push(id);
+      else unpinned.push(id);
+    }
+
+    return { childrenMap: cMap, rootIds: roots, pinnedIds: pinned, unpinnedIds: unpinned };
   }, [effectiveNodes, treeState]);
 
   const toggleExpand = (id: string) => {
@@ -492,6 +502,17 @@ export default function ContentPage() {
 
   const refreshTables = () => {
     queryClient.invalidateQueries({ queryKey: ['content-items'] });
+  };
+
+  const handleTogglePin = async (nodeId: string) => {
+    const node = effectiveNodes.get(nodeId);
+    if (!node) return;
+    try {
+      await gw.updateContentItem(nodeId, { pinned: !node.pinned });
+      queryClient.invalidateQueries({ queryKey: ['content-items'] });
+    } catch (e) {
+      console.error('Failed to toggle pin:', e);
+    }
   };
 
   const handleCreateDoc = async (parentNodeId?: string) => {
@@ -802,7 +823,7 @@ export default function ContentPage() {
     <div className="flex h-full overflow-hidden flex-col md:flex-row">
       {/* Document Library sidebar */}
       <div className={cn(
-        'w-full md:w-[260px] border-r border-border bg-[#F5F5F5] dark:bg-sidebar flex flex-col md:shrink-0 min-h-0 overflow-hidden transition-all duration-200',
+        'w-full md:w-[260px] border-r border-border bg-sidebar flex flex-col md:shrink-0 min-h-0 overflow-hidden transition-all duration-200',
         mobileView === 'list' ? 'flex' : 'hidden md:flex',
         !docListVisible && 'md:w-0 md:border-r-0 md:hidden'
       )}>
@@ -950,7 +971,40 @@ export default function ContentPage() {
                     onDragMove={updateDropIntent}
                     onDragEnd={handleDragEnd}
                   >
-                    {rootIds.map(nodeId => (
+                    {/* Pinned section */}
+                    {pinnedIds.length > 0 && (
+                      <>
+                        <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Pinned</div>
+                        {pinnedIds.map(nodeId => (
+                          <TreeNodeRecursive
+                            key={nodeId}
+                            nodeId={nodeId}
+                            nodes={effectiveNodes}
+                            childrenMap={childrenMap}
+                            selection={selection}
+                            expandedIds={expandedIds}
+                            onSelect={handleSelect}
+                            onToggle={toggleExpand}
+                            onCreateDoc={handleCreateDoc}
+                            onCreateTable={handleCreateTable}
+                            onCreatePresentation={handleCreatePresentation}
+                            onCreateDiagram={handleCreateDiagram}
+                            onRequestDelete={requestDelete}
+                            onTogglePin={handleTogglePin}
+                            depth={0}
+                            creating={creating}
+                            dropIntent={dropIntent}
+                            dragActiveId={dragActiveId}
+                          />
+                        ))}
+                        <div className="border-t border-border/50 my-1 mx-2" />
+                      </>
+                    )}
+                    {/* Library section */}
+                    {pinnedIds.length > 0 && unpinnedIds.length > 0 && (
+                      <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Library</div>
+                    )}
+                    {unpinnedIds.map(nodeId => (
                       <TreeNodeRecursive
                         key={nodeId}
                         nodeId={nodeId}
@@ -965,6 +1019,7 @@ export default function ContentPage() {
                         onCreatePresentation={handleCreatePresentation}
                         onCreateDiagram={handleCreateDiagram}
                         onRequestDelete={requestDelete}
+                        onTogglePin={handleTogglePin}
                         depth={0}
                         creating={creating}
                         dropIntent={dropIntent}
@@ -1207,7 +1262,7 @@ export default function ContentPage() {
 
 function TreeNodeRecursive({
   nodeId, nodes, childrenMap, selection, expandedIds, onSelect, onToggle,
-  onCreateDoc, onCreateTable, onCreatePresentation, onCreateDiagram, onRequestDelete, depth, creating, dropIntent, dragActiveId,
+  onCreateDoc, onCreateTable, onCreatePresentation, onCreateDiagram, onRequestDelete, onTogglePin, depth, creating, dropIntent, dragActiveId,
 }: {
   nodeId: string;
   nodes: Map<string, ContentNode>;
@@ -1221,6 +1276,7 @@ function TreeNodeRecursive({
   onCreatePresentation: (parentId?: string) => void;
   onCreateDiagram: (parentId?: string) => void;
   onRequestDelete: (nodeId: string) => void;
+  onTogglePin: (nodeId: string) => void;
   depth: number;
   creating: boolean;
   dropIntent: DropIntent;
@@ -1256,6 +1312,7 @@ function TreeNodeRecursive({
           else onCreateDiagram(nodeId);
         }}
         onRequestDelete={onRequestDelete}
+        onTogglePin={onTogglePin}
         creating={creating}
         dropPosition={dropPosition}
         isDragActive={dragActiveId === nodeId}
@@ -1277,6 +1334,7 @@ function TreeNodeRecursive({
               onCreatePresentation={onCreatePresentation}
               onCreateDiagram={onCreateDiagram}
               onRequestDelete={onRequestDelete}
+              onTogglePin={onTogglePin}
               depth={depth + 1}
               creating={creating}
               dropIntent={dropIntent}
@@ -1294,7 +1352,7 @@ function TreeNodeRecursive({
 // ═══════════════════════════════════════════════════
 
 function DraggableTreeNode({
-  nodeId, node, isSelected, onSelect, hasChildren, isExpanded, onToggle, depth, onCreateChild, onRequestDelete, creating, dropPosition, isDragActive,
+  nodeId, node, isSelected, onSelect, hasChildren, isExpanded, onToggle, depth, onCreateChild, onRequestDelete, onTogglePin, creating, dropPosition, isDragActive,
 }: {
   nodeId: string;
   node: ContentNode;
@@ -1306,6 +1364,7 @@ function DraggableTreeNode({
   depth: number;
   onCreateChild: (type: 'doc' | 'table' | 'presentation' | 'diagram') => void;
   onRequestDelete: (nodeId: string) => void;
+  onTogglePin: (nodeId: string) => void;
   creating?: boolean;
   dropPosition?: 'before' | 'after' | 'inside' | null;
   isDragActive?: boolean;
@@ -1510,6 +1569,17 @@ function DraggableTreeNode({
               <>
                 <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); }} />
                 <div ref={moreMenuRef} className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 w-40 overflow-y-auto" style={getMenuPos(moreBtnRef, moreMenuRef, 160)}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowMoreMenu(false);
+                      onTogglePin(nodeId);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-accent transition-colors"
+                  >
+                    {node.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                    {node.pinned ? 'Unpin' : 'Pin to top'}
+                  </button>
                   <div className="border-t border-border my-0.5" />
                   <button
                     onClick={(e) => {

@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS content_items (
   created_at  TEXT,                   -- ISO timestamp from upstream
   updated_at  TEXT,                   -- ISO timestamp from upstream
   deleted_at  TEXT,                   -- soft-delete timestamp
+  pinned      INTEGER DEFAULT 0,     -- 1 = pinned to top of sidebar
   synced_at   INTEGER NOT NULL        -- last sync epoch ms
 );
 

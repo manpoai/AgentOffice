@@ -198,6 +198,12 @@ try {
   if (migrated > 0) console.log(`[gateway] Migrated ${migrated} agents to actors table`);
 } catch (e) { /* actors table not yet created or already migrated */ }
 
+// Migrate: add pinned column to content_items
+try {
+  db.exec('ALTER TABLE content_items ADD COLUMN pinned INTEGER DEFAULT 0');
+  console.log('[gateway] DB migrated: added pinned column to content_items');
+} catch { /* already exists */ }
+
 // ─── Helpers ─────────────────────────────────────
 function genId(prefix) {
   return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -2816,7 +2822,7 @@ app.get('/api/content-items', authenticateAgent, (req, res) => {
     const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all();
     return res.json({ items: rows });
   }
-  const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NULL ORDER BY sort_order ASC, created_at ASC').all();
+  const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NULL ORDER BY pinned DESC, sort_order ASC, created_at ASC').all();
   res.json({ items: rows });
 });
 
@@ -3115,7 +3121,7 @@ app.post('/api/content-items/sync', authenticateAgent, async (req, res) => {
 
 // API: update content item metadata (icon, parent, sort_order) — local-only changes
 app.patch('/api/content-items/:id', authenticateAgent, (req, res) => {
-  const { icon, parent_id, sort_order, title } = req.body;
+  const { icon, parent_id, sort_order, title, pinned } = req.body;
   const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'NOT_FOUND' });
 
@@ -3125,6 +3131,7 @@ app.patch('/api/content-items/:id', authenticateAgent, (req, res) => {
   if (parent_id !== undefined) { updates.push('parent_id = ?'); params.push(parent_id); }
   if (sort_order !== undefined) { updates.push('sort_order = ?'); params.push(sort_order); }
   if (title !== undefined) { updates.push('title = ?'); params.push(title); }
+  if (pinned !== undefined) { updates.push('pinned = ?'); params.push(pinned ? 1 : 0); }
   if (updates.length === 0) return res.json(item);
 
   params.push(req.params.id);

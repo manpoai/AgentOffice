@@ -150,6 +150,7 @@ export interface ContentItem {
   created_at: string | null;
   updated_at: string | null;
   deleted_at: string | null;
+  pinned: number;
   synced_at: number;
 }
 
@@ -202,6 +203,7 @@ export async function updateContentItem(id: string, fields: {
   parent_id?: string | null;
   sort_order?: number;
   title?: string;
+  pinned?: boolean;
 }): Promise<ContentItem> {
   return gwFetch(`/content-items/${encodeURIComponent(id)}`, {
     method: 'PATCH',
