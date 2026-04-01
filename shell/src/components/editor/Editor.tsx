@@ -6,6 +6,8 @@ import dynamic from 'next/dynamic';
 import 'katex/dist/katex.min.css';
 import { commentHighlightPlugin, updateCommentHighlights } from './comment-highlight-plugin';
 import { ContentLinkPicker } from '../shared/ContentLink/ContentLinkPicker';
+import { DiagramPicker } from '../shared/EmbeddedDiagram/DiagramPicker';
+import { DiagramEditorDialog } from '../shared/EmbeddedDiagram/DiagramEditorDialog';
 import { FloatingToolbar } from '../shared/FloatingToolbar';
 import { DOCS_TEXT_ITEMS, DOCS_TABLE_ITEMS, DOCS_IMAGE_ITEMS } from '../shared/FloatingToolbar/presets';
 import { createDocsTextHandler, createDocsTableHandler, createDocsImageHandler } from './docs-toolbar-handler';
@@ -38,6 +40,8 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
   const viewRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [contentLinkPicker, setContentLinkPicker] = useState<{ top: number; left: number } | null>(null);
+  const [diagramPicker, setDiagramPicker] = useState<{ top: number; left: number } | null>(null);
+  const [editingDiagramId, setEditingDiagramId] = useState<string | null>(null);
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null);
   const [tableToolbarInfo, setTableToolbarInfo] = useState<TableToolbarInfo | null>(null);
   const [imageToolbarInfo, setImageToolbarInfo] = useState<{
@@ -53,6 +57,8 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
     let destroyed = false;
     let contentLinkPickerHandler: ((e: Event) => void) | null = null;
     let imageToolbarHandler: ((e: Event) => void) | null = null;
+    let diagramPickerHandler: ((e: Event) => void) | null = null;
+    let diagramEditorHandler: ((e: Event) => void) | null = null;
 
     (async () => {
       try {
@@ -260,6 +266,20 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
         };
         editorRef.current!.addEventListener('image-toolbar', imageToolbarHandler);
 
+        // Diagram picker trigger from slash menu
+        diagramPickerHandler = (e: Event) => {
+          const { top, left } = (e as CustomEvent).detail;
+          setDiagramPicker({ top, left });
+        };
+        editorRef.current!.addEventListener('open-diagram-picker', diagramPickerHandler);
+
+        // Diagram editor trigger from node view click
+        diagramEditorHandler = (e: Event) => {
+          const { diagramId } = (e as CustomEvent).detail;
+          setEditingDiagramId(diagramId);
+        };
+        editorRef.current!.addEventListener('open-diagram-editor', diagramEditorHandler);
+
         if (autoFocus) {
           setTimeout(() => {
             if (!view || destroyed) return;
@@ -282,6 +302,12 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
       }
       if (imageToolbarHandler) {
         editorRef.current?.removeEventListener('image-toolbar', imageToolbarHandler);
+      }
+      if (diagramPickerHandler) {
+        editorRef.current?.removeEventListener('open-diagram-picker', diagramPickerHandler);
+      }
+      if (diagramEditorHandler) {
+        editorRef.current?.removeEventListener('open-diagram-editor', diagramEditorHandler);
       }
       if (view) {
         view.destroy();
@@ -323,6 +349,25 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
 
   const handleContentLinkCancel = useCallback(() => {
     setContentLinkPicker(null);
+    viewRef.current?.focus();
+  }, []);
+
+  const handleDiagramSelect = useCallback((diagramId: string, item: any) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const schema = view.state.schema;
+    const node = schema.nodes.diagram_embed.create({
+      diagramId,
+      title: item.title || 'Untitled Diagram',
+    });
+    const { from, to } = view.state.selection;
+    view.dispatch(view.state.tr.replaceWith(from, to, node).scrollIntoView());
+    setDiagramPicker(null);
+    view.focus();
+  }, []);
+
+  const handleDiagramPickerCancel = useCallback(() => {
+    setDiagramPicker(null);
     viewRef.current?.focus();
   }, []);
 
@@ -397,6 +442,28 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           />
         </div>,
         document.body,
+      )}
+      {diagramPicker && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: diagramPicker.top,
+            left: diagramPicker.left,
+            zIndex: 1001,
+          }}
+        >
+          <DiagramPicker
+            onSelect={handleDiagramSelect}
+            onCancel={handleDiagramPickerCancel}
+          />
+        </div>,
+        document.body,
+      )}
+      {editingDiagramId && (
+        <DiagramEditorDialog
+          diagramId={editingDiagramId}
+          onClose={() => setEditingDiagramId(null)}
+        />
       )}
     </div>
   );

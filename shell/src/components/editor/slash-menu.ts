@@ -166,31 +166,25 @@ function buildSlashItems(getDocId?: () => string | undefined): SlashMenuItem[] {
     {
       label: 'Content Link', description: 'Insert a link to a doc, table, or diagram', icon: '🔗', keywords: 'link content doc table embed reference',
       command: (view) => {
-        // Insert a placeholder content_link node — user can paste or type the ID
-        const contentId = prompt('Enter content ID (e.g. doc:abc123):');
-        if (!contentId) return;
-        const node = schema.nodes.content_link.create({
-          contentId,
-          title: contentId,
-        });
-        const { from, to } = view.state.selection;
-        view.dispatch(view.state.tr.replaceWith(from, to, node).scrollIntoView());
-        view.focus();
+        // Dispatch custom event — Editor.tsx listens and shows ContentLinkPicker
+        const coords = view.coordsAtPos(view.state.selection.from);
+        view.dom.dispatchEvent(new CustomEvent('open-content-link-picker', {
+          bubbles: true,
+          detail: { top: coords.bottom + 4, left: coords.left },
+        }));
       },
     },
     // --- Diagram Embed ---
     {
       label: 'Embed Diagram', description: 'Embed a diagram with live preview', icon: '\u{1F500}', keywords: 'diagram embed flowchart graph x6',
       command: (view) => {
-        const diagramId = prompt('Enter diagram ID:');
-        if (!diagramId) return;
-        const node = schema.nodes.diagram_embed.create({
-          diagramId,
-          title: 'Diagram',
-        });
-        const { from, to } = view.state.selection;
-        view.dispatch(view.state.tr.replaceWith(from, to, node).scrollIntoView());
-        view.focus();
+        const editorEl = view.dom.closest('.outline-editor');
+        if (editorEl) {
+          const coords = view.coordsAtPos(view.state.selection.from);
+          editorEl.dispatchEvent(new CustomEvent('open-diagram-picker', {
+            detail: { top: coords.bottom + 4, left: coords.left },
+          }));
+        }
       },
     },
   ];

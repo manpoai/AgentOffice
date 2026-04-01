@@ -93,7 +93,12 @@ export class DiagramEmbedView implements NodeView {
       e.preventDefault();
       e.stopPropagation();
       if (node.attrs.diagramId) {
-        window.location.href = `/content?id=diagram:${encodeURIComponent(node.attrs.diagramId)}`;
+        const editorEl = this.dom.closest('.outline-editor');
+        if (editorEl) {
+          editorEl.dispatchEvent(new CustomEvent('open-diagram-editor', {
+            detail: { diagramId: node.attrs.diagramId },
+          }));
+        }
       }
     });
 
