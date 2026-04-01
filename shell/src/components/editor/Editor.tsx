@@ -7,8 +7,8 @@ import 'katex/dist/katex.min.css';
 import { commentHighlightPlugin, updateCommentHighlights } from './comment-highlight-plugin';
 import { ContentLinkPicker } from '../shared/ContentLink/ContentLinkPicker';
 import { FloatingToolbar } from '../shared/FloatingToolbar';
-import { DOCS_TEXT_ITEMS, DOCS_TABLE_ITEMS } from '../shared/FloatingToolbar/presets';
-import { createDocsTextHandler, createDocsTableHandler } from './docs-toolbar-handler';
+import { DOCS_TEXT_ITEMS, DOCS_TABLE_ITEMS, DOCS_IMAGE_ITEMS } from '../shared/FloatingToolbar/presets';
+import { createDocsTextHandler, createDocsTableHandler, createDocsImageHandler } from './docs-toolbar-handler';
 import type { SelectionInfo } from './floating-toolbar';
 import type { TableToolbarInfo } from './table-menu-plugin';
 
@@ -40,6 +40,11 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
   const [contentLinkPicker, setContentLinkPicker] = useState<{ top: number; left: number } | null>(null);
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null);
   const [tableToolbarInfo, setTableToolbarInfo] = useState<TableToolbarInfo | null>(null);
+  const [imageToolbarInfo, setImageToolbarInfo] = useState<{
+    anchor: { top: number; left: number; width: number };
+    nodePos: number;
+    view: any;
+  } | null>(null);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -47,6 +52,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
     let view: any = null;
     let destroyed = false;
     let contentLinkPickerHandler: ((e: Event) => void) | null = null;
+    let imageToolbarHandler: ((e: Event) => void) | null = null;
 
     (async () => {
       try {
@@ -243,6 +249,17 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
         };
         editorRef.current!.addEventListener('open-content-link-picker', contentLinkPickerHandler);
 
+        // Image toolbar event from ImageNodeView
+        imageToolbarHandler = (e: Event) => {
+          const detail = (e as CustomEvent).detail;
+          if (detail) {
+            setImageToolbarInfo({ anchor: detail.anchor, nodePos: detail.nodePos, view: detail.view });
+          } else {
+            setImageToolbarInfo(null);
+          }
+        };
+        editorRef.current!.addEventListener('image-toolbar', imageToolbarHandler);
+
         if (autoFocus) {
           setTimeout(() => {
             if (!view || destroyed) return;
@@ -262,6 +279,9 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
       destroyed = true;
       if (contentLinkPickerHandler) {
         editorRef.current?.removeEventListener('open-content-link-picker', contentLinkPickerHandler);
+      }
+      if (imageToolbarHandler) {
+        editorRef.current?.removeEventListener('image-toolbar', imageToolbarHandler);
       }
       if (view) {
         view.destroy();
@@ -352,6 +372,14 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
             el?.__toolbarHover?.(hovering);
             el?.__toolbarInteracting?.(hovering);
           }}
+        />
+      )}
+      {imageToolbarInfo && !readOnly && (
+        <FloatingToolbar
+          items={DOCS_IMAGE_ITEMS}
+          handler={createDocsImageHandler(imageToolbarInfo.view, imageToolbarInfo.nodePos)}
+          anchor={imageToolbarInfo.anchor}
+          visible={true}
         />
       )}
       {contentLinkPicker && createPortal(

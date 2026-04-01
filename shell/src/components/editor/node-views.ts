@@ -452,7 +452,8 @@ class ImageNodeView implements NodeView {
     this.dom.style.background = 'transparent';
     this.img.style.outline = '2px solid hsl(var(--primary, 220 90% 56%))';
     this.img.style.outlineOffset = '2px';
-    this.showToolbar();
+    // Use unified React toolbar instead of vanilla DOM toolbar
+    this.emitImageToolbar(true);
     if (this.captionContainer) this.captionContainer.style.display = 'block';
     if (this.captionInput) {
       (this.captionInput as unknown as HTMLElement).textContent = this.node.attrs.alt || '';
@@ -467,10 +468,28 @@ class ImageNodeView implements NodeView {
     this.dom.style.background = '';
     this.img.style.outline = 'none';
     this.img.style.outlineOffset = '';
-    this.hideToolbar();
+    this.emitImageToolbar(false);
     // Hide caption if no content
     const hasContent = !!(this.node.attrs.alt?.trim());
     if (this.captionContainer) this.captionContainer.style.display = hasContent ? 'block' : 'none';
+  }
+
+  private emitImageToolbar(show: boolean) {
+    const editorMount = this.view.dom.parentElement;
+    if (!editorMount) return;
+    if (show) {
+      const imgRect = this.img.getBoundingClientRect();
+      const pos = this.getPos();
+      editorMount.dispatchEvent(new CustomEvent('image-toolbar', {
+        detail: {
+          anchor: { top: imgRect.top, left: imgRect.left, width: imgRect.width },
+          nodePos: pos,
+          view: this.view,
+        },
+      }));
+    } else {
+      editorMount.dispatchEvent(new CustomEvent('image-toolbar', { detail: null }));
+    }
   }
 
   destroy() {
