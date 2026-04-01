@@ -14,7 +14,6 @@ import { CommentPanel } from '@/components/shared/CommentPanel';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { EditFAB } from '@/components/shared/EditFAB';
-import { MobileToolbar } from '@/components/shared/MobileToolbar';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
@@ -305,93 +304,6 @@ function X6DiagramEditorInner({
       graph.off('node:resized', onNodeMoved);
     };
   }, [graph]);
-
-  // ─── Mobile toolbar items ──
-  const mobileToolbarItems = useMemo(() => {
-    if (!graph) return [];
-    return [
-      {
-        icon: <Plus className="w-5 h-5" />,
-        label: 'Add Node',
-        onClick: () => {
-          const { tx, ty } = graph.translate();
-          const zoom = graph.zoom();
-          const cx = (window.innerWidth / 2 - tx) / zoom;
-          const cy = (window.innerHeight / 2 - ty) / zoom;
-          const newNode = graph.addNode({
-            id: newNodeId(),
-            shape: 'flowchart-node',
-            x: cx - 60,
-            y: cy - 30,
-            width: 120,
-            height: 60,
-            data: {
-              label: '',
-              flowchartShape: 'rounded-rect' as FlowchartShape,
-              bgColor: DEFAULT_NODE_COLOR.bg,
-              borderColor: DEFAULT_NODE_COLOR.border,
-              textColor: DEFAULT_NODE_COLOR.text,
-              fontSize: 14,
-              fontWeight: 'normal',
-              fontStyle: 'normal',
-            },
-          });
-          graph.select(newNode);
-        },
-      },
-      {
-        icon: <GitBranch className="w-5 h-5" />,
-        label: 'Add Edge',
-        onClick: () => {
-          setActiveTool('select');
-          // Enable edge drawing mode — user taps a port to connect
-          // For mobile, we just ensure we're in select mode so port clicks work
-        },
-        active: activeTool === 'select',
-      },
-      {
-        icon: <Type className="w-5 h-5" />,
-        label: 'Add Text',
-        onClick: () => {
-          const { tx, ty } = graph.translate();
-          const zoom = graph.zoom();
-          const cx = (window.innerWidth / 2 - tx) / zoom;
-          const cy = (window.innerHeight / 2 - ty) / zoom;
-          const textNode = graph.addNode({
-            id: newNodeId(),
-            shape: 'flowchart-node',
-            x: cx - 60,
-            y: cy - 20,
-            width: 120,
-            height: 40,
-            data: {
-              label: '',
-              flowchartShape: 'rounded-rect' as FlowchartShape,
-              bgColor: 'transparent',
-              borderColor: 'transparent',
-              textColor: '#1f2937',
-              fontSize: 14,
-              fontWeight: 'normal',
-              fontStyle: 'normal',
-            },
-          });
-          graph.select(textNode);
-          setTimeout(() => {
-            if (startEditRef.current) startEditRef.current(textNode);
-          }, 50);
-        },
-      },
-      {
-        icon: <Trash className="w-5 h-5" />,
-        label: 'Delete',
-        onClick: () => {
-          const cells = graph.getSelectedCells();
-          if (cells.length) graph.removeCells(cells);
-        },
-        disabled: !graph.getSelectedCells().length,
-      },
-    ];
-  }, [graph, activeTool]);
 
   // ─── Load diagram data ──
   const { data: diagram } = useQuery({
@@ -1511,24 +1423,18 @@ function X6DiagramEditorInner({
             style={{ width: 180, height: 120 }}
           />
 
-          {/* Mobile: EditFAB (preview mode) + MobileToolbar (edit mode) */}
+          {/* Mobile: EditFAB (preview mode) */}
           {isMobile && (
-            <>
-              <EditFAB
-                isEditing={mobileEditing}
-                onEdit={() => setMobileEditing(true)}
-                onSave={() => { save(); setMobileEditing(false); }}
-                onCancel={() => setMobileEditing(false)}
-                onUndo={() => graph?.undo()}
-                onRedo={() => graph?.redo()}
-                canUndo={!!graph?.canUndo()}
-                canRedo={!!graph?.canRedo()}
-              />
-              <MobileToolbar
-                items={mobileToolbarItems}
-                visible={mobileEditing}
-              />
-            </>
+            <EditFAB
+              isEditing={mobileEditing}
+              onEdit={() => setMobileEditing(true)}
+              onSave={() => { save(); setMobileEditing(false); }}
+              onCancel={() => setMobileEditing(false)}
+              onUndo={() => graph?.undo()}
+              onRedo={() => graph?.redo()}
+              canUndo={!!graph?.canUndo()}
+              canRedo={!!graph?.canRedo()}
+            />
           )}
         </div>
 

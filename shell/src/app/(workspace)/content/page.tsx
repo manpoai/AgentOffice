@@ -4,8 +4,9 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } fr
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as docApi from '@/lib/api/documents';
 import type { Document as DocType, Comment as DocComment, Revision as DocRevision } from '@/lib/api/documents';
-import { FileText, Table2, Plus, ArrowLeft, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Download, ChevronRight, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2, Presentation, GitBranch, Pin, PinOff } from 'lucide-react';
+import { FileText, Table2, Plus, Trash2, X, Search, Clock, MoreHorizontal, MessageSquare as MessageSquareIcon, Download, ChevronDown, FolderOpen, Smile, Eye, Code2, Maximize2, RotateCcw, ArrowLeftToLine, ArrowRightToLine, Link2, Presentation, GitBranch, Pin, PinOff } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { SwipeBack } from '@/components/shared/SwipeBack';
 import { ContentSidebar } from '@/components/ContentSidebar';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
@@ -13,10 +14,15 @@ import { formatRelativeTime } from '@/lib/utils/time';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import dynamic from 'next/dynamic';
 import { SearchBar } from '@/components/editor';
-import { Comments } from '@/components/comments/Comments';
-import RevisionHistory from '@/components/RevisionHistory';
+import { CommentPanel } from '@/components/shared/CommentPanel';
+import { RevisionHistory } from '@/components/shared/RevisionHistory';
 // DocRevision is imported above
 import { EditorSkeleton, TableSkeleton } from '@/components/shared/Skeleton';
+import { MobileNav } from '@/components/shared/MobileNav';
+import { NotificationPanel } from '@/components/shared/NotificationPanel';
+import { EditFAB } from '@/components/shared/EditFAB';
+import { BottomSheet } from '@/components/shared/BottomSheet';
+import { useIsMobile } from '@/lib/hooks/use-mobile';
 
 const Editor = dynamic(
   () => import('@/components/editor/Editor').then(m => ({ default: m.Editor })),
@@ -175,6 +181,7 @@ export default function ContentPage() {
   const [selection, setSelection] = useState<Selection>(null);
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list');
   const [showNewMenu, setShowNewMenu] = useState(false);
+  const [showMobileFabMenu, setShowMobileFabMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [creating, setCreating] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -186,7 +193,15 @@ export default function ContentPage() {
   const [docListVisible, setDocListVisible] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [showMobileNotifications, setShowMobileNotifications] = useState(false);
   const queryClient = useQueryClient();
+
+  // Unread notification count for MobileNav badge
+  const { data: mobileUnreadCount = 0 } = useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: gw.getUnreadCount,
+    refetchInterval: 30_000,
+  });
 
   // Hydrate client-only state after mount (avoid SSR mismatch)
   useEffect(() => {
@@ -205,6 +220,17 @@ export default function ContentPage() {
     const savedCollapsed = localStorage.getItem('asuite-sidebar-collapsed');
     if (savedCollapsed === 'true') setSidebarCollapsed(true);
     setHydrated(true);
+
+    // Listen for popstate events (SPA navigation from ContentLink clicks)
+    const handlePopState = () => {
+      const sel = selectionFromURL();
+      if (sel) {
+        setSelection(sel);
+        setMobileView('detail');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   // On mount: fetch tree state from Gateway (migration from localStorage)
@@ -839,54 +865,6 @@ export default function ContentPage() {
 
   const dragActiveNode = dragActiveId ? effectiveNodes.get(dragActiveId) : null;
 
-  // ── Mobile swipe-back gesture (left edge → right swipe returns to list) ──
-  const [swipeProgress, setSwipeProgress] = useState(0);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const isMobile = window.innerWidth < 768;
-    if (!isMobile) return;
-
-    let startX = 0;
-    let startY = 0;
-    let swiping = false;
-
-    const onStart = (e: TouchEvent) => {
-      const touch = e.touches[0];
-      if (touch.clientX < 30 && mobileView === 'detail') {
-        startX = touch.clientX;
-        startY = touch.clientY;
-        swiping = true;
-        setSwipeProgress(0);
-      }
-    };
-
-    const onMove = (e: TouchEvent) => {
-      if (!swiping) return;
-      const dx = e.touches[0].clientX - startX;
-      const dy = Math.abs(e.touches[0].clientY - startY);
-      if (dy > 50) { swiping = false; setSwipeProgress(0); return; } // vertical scroll, cancel
-      if (dx > 0) {
-        setSwipeProgress(Math.min(dx / 80, 1));
-      }
-      if (dx > 80) {
-        swiping = false;
-        setSwipeProgress(0);
-        setMobileView('list');
-      }
-    };
-
-    const onEnd = () => { swiping = false; setSwipeProgress(0); };
-
-    window.addEventListener('touchstart', onStart, { passive: true });
-    window.addEventListener('touchmove', onMove, { passive: true });
-    window.addEventListener('touchend', onEnd);
-    return () => {
-      window.removeEventListener('touchstart', onStart);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onEnd);
-    };
-  }, [mobileView]);
-
   // Get depth of a node for rendering
   const getDepth = (nodeId: string): number => {
     let depth = 0;
@@ -900,20 +878,6 @@ export default function ContentPage() {
 
   return (
     <div className="flex h-full overflow-hidden flex-col md:flex-row relative">
-      {/* Mobile swipe-back indicator */}
-      {swipeProgress > 0 && mobileView === 'detail' && (
-        <div
-          className="fixed left-0 top-0 bottom-0 z-50 pointer-events-none flex items-center md:hidden"
-          style={{ width: 32 }}
-        >
-          <div
-            className="w-8 h-16 flex items-center justify-center rounded-r-lg bg-primary/20 backdrop-blur-sm transition-opacity"
-            style={{ opacity: swipeProgress, transform: `translateX(${swipeProgress * 12 - 12}px)` }}
-          >
-            <ArrowLeft className="w-4 h-4 text-primary" style={{ opacity: swipeProgress }} />
-          </div>
-        </div>
-      )}
       {/* Unified sidebar (desktop only) — includes logo, search, tree, settings */}
       <ContentSidebar
         collapsed={sidebarCollapsed}
@@ -979,7 +943,7 @@ export default function ContentPage() {
                 {/* Pinned section */}
                 {pinnedIds.length > 0 && (
                   <>
-                    <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Pinned</div>
+                    <div className="px-2 pt-1.5 pb-0.5 flex items-center gap-1 text-sm font-medium text-foreground">Pinned <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /></div>
                     {pinnedIds.map(nodeId => (
                       <TreeNodeRecursive
                         key={nodeId}
@@ -1007,7 +971,7 @@ export default function ContentPage() {
                 )}
                 {/* Library section */}
                 {pinnedIds.length > 0 && unpinnedIds.length > 0 && (
-                  <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Library</div>
+                  <div className="px-2 pt-0.5 pb-0.5 flex items-center gap-1 text-sm font-medium text-foreground">Library <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /></div>
                 )}
                 {unpinnedIds.map(nodeId => (
                   <TreeNodeRecursive
@@ -1116,16 +1080,13 @@ export default function ContentPage() {
       {/* Mobile sidebar (only visible on mobile when in list view) */}
       {mobileView === 'list' && (
         <div className="md:hidden w-full bg-sidebar flex flex-col min-h-0 overflow-hidden">
-          <div className="px-3 pt-3 pb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              {sidebarView === 'library' ? 'Library' : (t('content.trash') || 'Trash')}
-            </span>
-            {sidebarView === 'library' && (
-              <button onClick={() => setShowNewMenu(v => !v)} className="p-1 text-muted-foreground hover:text-foreground" title={t('common.new')}>
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          <MobileNav
+            unreadCount={mobileUnreadCount}
+            onSearch={() => window.dispatchEvent(new Event('open-command-palette'))}
+            onNotifications={() => setShowMobileNotifications(true)}
+            onSettings={() => window.dispatchEvent(new Event('open-command-palette'))}
+          />
+          {/* Section header removed — Figma shows Pinned/Library inline with tree items */}
           <ScrollArea className="flex-1 min-h-0">
             <div className="px-2 py-1">
               {/* Reuse same tree content for mobile - simplified without DnD for now */}
@@ -1150,15 +1111,15 @@ export default function ContentPage() {
                 >
                   {pinnedIds.length > 0 && (
                     <>
-                      <div className="px-2 pt-1.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Pinned</div>
+                      <div className="px-2 pt-3 pb-1 flex items-center gap-1 text-sm font-medium text-foreground">Pinned <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /></div>
                       {pinnedIds.map(nodeId => (
                         <TreeNodeRecursive key={nodeId} nodeId={nodeId} nodes={effectiveNodes} childrenMap={childrenMap} selection={selection} expandedIds={expandedIds} onSelect={handleSelect} onToggle={toggleExpand} onCreateDoc={handleCreateDoc} onCreateTable={handleCreateTable} onCreatePresentation={handleCreatePresentation} onCreateDiagram={handleCreateDiagram} onRequestDelete={requestDelete} onTogglePin={handleTogglePin} depth={0} creating={creating} dropIntent={dropIntent} dragActiveId={dragActiveId} />
                       ))}
-                      <div className="border-t border-border/50 my-1 mx-2" />
+                      <div className="border-t border-border/50 my-1.5 mx-2" />
                     </>
                   )}
                   {pinnedIds.length > 0 && unpinnedIds.length > 0 && (
-                    <div className="px-2 pt-0.5 pb-0.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">Library</div>
+                    <div className="px-2 pt-1 pb-1 flex items-center gap-1 text-sm font-medium text-foreground">Library <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /></div>
                   )}
                   {unpinnedIds.map(nodeId => (
                     <TreeNodeRecursive key={nodeId} nodeId={nodeId} nodes={effectiveNodes} childrenMap={childrenMap} selection={selection} expandedIds={expandedIds} onSelect={handleSelect} onToggle={toggleExpand} onCreateDoc={handleCreateDoc} onCreateTable={handleCreateTable} onCreatePresentation={handleCreatePresentation} onCreateDiagram={handleCreateDiagram} onRequestDelete={requestDelete} onTogglePin={handleTogglePin} depth={0} creating={creating} dropIntent={dropIntent} dragActiveId={dragActiveId} />
@@ -1178,8 +1139,68 @@ export default function ContentPage() {
         </div>
       )}
 
+      {/* Mobile FAB for creating new content */}
+      {mobileView === 'list' && (
+        <div className="md:hidden">
+          {/* Backdrop */}
+          {showMobileFabMenu && (
+            <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowMobileFabMenu(false)} />
+          )}
+          {/* FAB menu */}
+          {showMobileFabMenu && (
+            <div className="fixed bottom-20 right-6 z-50 flex flex-col gap-1 bg-card border border-border rounded-lg shadow-lg py-1 w-44 animate-in fade-in slide-in-from-bottom-2 duration-150">
+              <button
+                onClick={() => { setShowMobileFabMenu(false); handleCreateDoc(); }}
+                disabled={creating}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-foreground hover:bg-accent active:bg-accent transition-colors disabled:opacity-50"
+              >
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                {t('content.newDoc')}
+              </button>
+              <button
+                onClick={() => { setShowMobileFabMenu(false); handleCreateTable(); }}
+                disabled={creating}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-foreground hover:bg-accent active:bg-accent transition-colors disabled:opacity-50"
+              >
+                <Table2 className="h-4 w-4 text-muted-foreground" />
+                {t('content.newTable')}
+              </button>
+              <button
+                onClick={() => { setShowMobileFabMenu(false); handleCreatePresentation(); }}
+                disabled={creating}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-foreground hover:bg-accent active:bg-accent transition-colors disabled:opacity-50"
+              >
+                <Presentation className="h-4 w-4 text-muted-foreground" />
+                {t('content.newPresentation') || 'New Presentation'}
+              </button>
+              <button
+                onClick={() => { setShowMobileFabMenu(false); handleCreateDiagram(); }}
+                disabled={creating}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-foreground hover:bg-accent active:bg-accent transition-colors disabled:opacity-50"
+              >
+                <GitBranch className="h-4 w-4 text-muted-foreground" />
+                {t('content.newDiagram') || 'New Diagram'}
+              </button>
+            </div>
+          )}
+          {/* FAB button */}
+          <button
+            onClick={() => setShowMobileFabMenu(v => !v)}
+            className={cn(
+              'fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-sidebar-primary text-sidebar-primary-foreground shadow-lg',
+              'flex items-center justify-center',
+              'active:scale-95 transition-transform duration-100',
+              showMobileFabMenu && 'rotate-45'
+            )}
+            aria-label={t('common.new')}
+          >
+            <Plus className="h-6 w-6" />
+          </button>
+        </div>
+      )}
+
       {/* Detail area */}
-      <div className={cn(
+      <SwipeBack onBack={() => setMobileView('list')} enabled={mobileView === 'detail'} className={cn(
         'flex-1 flex flex-col min-w-0 min-h-0 bg-card',
         mobileView === 'list' ? 'hidden md:flex' : 'flex'
       )}>
@@ -1283,7 +1304,7 @@ export default function ContentPage() {
             <p className="text-xs text-muted-foreground/50">{t('content.createHint')}</p>
           </div>
         )}
-      </div>
+      </SwipeBack>
 
       {/* Delete dialog for docs with children */}
       {deleteDialog && (
@@ -1320,6 +1341,12 @@ export default function ContentPage() {
           </div>
         </>
       )}
+
+      {/* Mobile notification panel (triggered from MobileNav) */}
+      <NotificationPanel
+        open={showMobileNotifications}
+        onClose={() => setShowMobileNotifications(false)}
+      />
     </div>
   );
 }
@@ -1463,7 +1490,7 @@ function DraggableTreeNode({
       icon: <Link2 className="h-3.5 w-3.5" />,
       shortcut: '⌘L',
       onClick: () => {
-        const link = `${window.location.origin}/content?id=${node.rawId}&type=${node.type}`;
+        const link = `${window.location.origin}/content?id=${node.type}:${node.rawId}`;
         navigator.clipboard.writeText(link).catch(() => {});
       },
     },
@@ -1539,7 +1566,7 @@ function DraggableTreeNode({
       )}
       <div
         className={cn(
-          'group relative flex items-center gap-1 py-1.5 px-1 text-sm transition-colors rounded-lg cursor-pointer',
+          'group relative flex items-center gap-1 py-1.5 px-1 text-base md:text-sm transition-colors rounded-lg cursor-pointer',
           isDragActive && 'opacity-40',
           isSelected && !isDragActive
             ? 'bg-sidebar-accent text-sidebar-primary'
@@ -1876,6 +1903,8 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
   const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
   const [commentTopOffset, setCommentTopOffset] = useState<number | null>(null);
   const [insightsEnabled, setInsightsEnabled] = useState(true);
+  const [mobileEditMode, setMobileEditMode] = useState(false);
+  const isMobile = useIsMobile();
   const [previewRevision, setPreviewRevision] = useState<DocRevision | null>(null);
   const [prevRevision, setPrevRevision] = useState<DocRevision | null>(null);
   const [highlightChanges, setHighlightChanges] = useState(false);
@@ -2009,6 +2038,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     setShowHistory(false);
     setPreviewRevision(null);
     setPrevRevision(null);
+    setMobileEditMode(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc.id]);
 
@@ -2133,10 +2163,29 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
 
   const statusText = saveStatus === 'saving' ? t('content.saving') : saveStatus === 'unsaved' ? t('content.unsaved') : saveStatus === 'error' ? t('content.saveFailed') : '';
 
+  // Mobile preview/edit mode: on mobile, default to read-only preview
+  const mobileReadOnly = isMobile && !mobileEditMode;
+
+  const getEditorView = useCallback(() => {
+    const mount = document.querySelector('.outline-editor-mount') as any;
+    return mount?.__pmView || null;
+  }, []);
+
+  // Cancel mobile edit mode
+  const handleMobileCancel = useCallback(() => {
+    setMobileEditMode(false);
+  }, []);
+
+  // Save from mobile edit mode
+  const handleMobileSave = useCallback(() => {
+    setMobileEditMode(false);
+  }, []);
+
   return (
-    <div className="flex flex-row h-full overflow-hidden">
-    <div className="flex-1 min-w-0 flex flex-col">
-      {/* Top bar — breadcrumb + actions, split when comments open */}
+    <div className="flex-1 min-w-0 flex flex-row h-full overflow-hidden">
+      {/* Left column: TopBar + editor content */}
+      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
+      {/* Top bar — breadcrumb + actions */}
       <div className="flex items-center border-b border-border bg-card shrink-0">
         <ContentTopBar
           breadcrumb={breadcrumb}
@@ -2156,30 +2205,44 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
           }
           statusText={statusText}
           statusError={saveStatus === 'error'}
+          mode={isMobile && mobileEditMode ? 'edit' : 'preview'}
+          onCancelEdit={handleMobileCancel}
+          onSave={handleMobileSave}
           actions={<>
+            {/* Search — desktop only */}
             <button
               onClick={() => { setShowSearch(true); setSearchWithReplace(false); }}
-              className={cn('p-1.5 rounded transition-colors', showSearch ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('hidden md:flex p-1.5 rounded transition-colors', showSearch ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
               title={t('content.findReplace') || 'Find & Replace'}
             >
               <Search className="h-4 w-4" />
             </button>
+            {/* History — Figma mobile: 🕐 black icon directly visible */}
+            <button
+              onClick={() => setShowHistory(true)}
+              className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground"
+              title={t('content.versionHistory')}
+            >
+              <Clock className="h-5 w-5 md:h-4 md:w-4" />
+            </button>
+            {/* Comments — Figma: @ green icon */}
             <button
               onClick={() => setShowComments(v => !v)}
-              className={cn('p-1.5 rounded transition-colors', showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('p-1.5 rounded transition-colors', showComments ? 'text-[#2fcc71] bg-[#2fcc71]/10' : 'text-[#2fcc71] hover:text-[#27ae60]')}
               title={t('content.comments')}
             >
-              <MessageSquareIcon className="h-4 w-4" />
+              <MessageSquareIcon className="h-5 w-5 md:h-4 md:w-4" />
             </button>
+            {/* More menu */}
             <div className="relative">
               <button onClick={() => setShowDocMenu(v => !v)} className="p-1.5 text-muted-foreground hover:text-foreground shrink-0" title={t('content.moreActions')}>
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
               </button>
               {showDocMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowDocMenu(false)} />
                   <div className="absolute right-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-44">
-                    <DocMenuBtn icon={Clock} label={t('content.versionHistory')} onClick={() => { setShowDocMenu(false); setShowHistory(true); }} />
+                    <DocMenuBtn icon={Search} label={t('content.findReplace') || 'Find & Replace'} onClick={() => { setShowDocMenu(false); setShowSearch(true); setSearchWithReplace(false); }} />
                     <DocMenuBtn icon={Link2} label={t('content.copyLink')} onClick={() => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); setShowDocMenu(false); }} />
                     <DocMenuBtn icon={Download} label={t('content.download')} onClick={() => {
                       const blob = new Blob([doc.text], { type: 'text/markdown' });
@@ -2201,16 +2264,6 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
             </div>
           </>}
         />
-        {/* Comment sidebar header — aligned with top bar */}
-        {showComments && !showHistory && (
-          <div className="w-80 shrink-0 flex items-center justify-between px-4 py-2 border-l border-border">
-            <h3 className="text-sm font-semibold text-foreground">{t('content.comments')}</h3>
-            <button onClick={() => setShowComments(false)} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title={t('common.close')}>
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-        {/* History sidebar — no top bar extension, sidebar has its own header */}
       </div>
 
       {/* Content area */}
@@ -2268,7 +2321,8 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
               ) : (
                 <input
                   ref={titleInputRef}
-                  autoFocus={!doc.title}
+                  autoFocus={!doc.title && !mobileReadOnly}
+                  readOnly={mobileReadOnly}
                   value={title}
                   onChange={handleTitleChange}
                   onKeyDown={(e) => {
@@ -2332,9 +2386,10 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
               />
             ) : (
               <Editor
-                key={`${doc.id}-${editorKey}`}
+                key={`${doc.id}-${editorKey}${mobileReadOnly ? '-ro' : ''}`}
                 defaultValue={doc.text}
                 onChange={handleTextChange}
+                readOnly={mobileReadOnly}
                 placeholder={t('content.editorPlaceholder')}
                 documentId={doc.id}
                 onSearchOpen={(withReplace) => { setShowSearch(true); setSearchWithReplace(withReplace); }}
@@ -2344,62 +2399,83 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
           </div>
         </div>
 
-        {showComments && !showHistory && (
-          <div className="w-80 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
-            <Comments
-              queryKey={['doc-comments', doc.id]}
-              fetchComments={fetchDocComments}
-              postComment={(text, parentId) => gw.commentOnDoc(doc.id, text, parentId)}
-              editComment={async (commentId, text) => {
-                await docApi.updateComment(commentId, docApi.textToProseMirror(text));
-              }}
-              deleteComment={async (commentId) => {
-                await docApi.deleteComment(commentId);
-              }}
-              resolveComment={async (commentId) => {
-                await docApi.resolveComment(commentId);
-              }}
-              unresolveComment={async (commentId) => {
-                await docApi.unresolveComment(commentId);
-              }}
-              uploadImage={async (file) => {
-                const result = await docApi.uploadFile(file, doc.id);
-                return result.url;
-              }}
-              initialQuote={commentQuote}
-              onQuoteConsumed={() => setCommentQuote('')}
-              topOffset={commentTopOffset}
+      </div>
+
+    {/* Mobile: EditFAB (preview mode) */}
+    {isMobile && (
+      <EditFAB
+        isEditing={mobileEditMode}
+        onEdit={() => setMobileEditMode(true)}
+        onSave={handleMobileSave}
+        onCancel={handleMobileCancel}
+      />
+    )}
+    </div>{/* end left column */}
+
+      {/* Sidebar — full height on desktop, BottomSheet on mobile */}
+      {showComments && !showHistory && (
+        <>
+          <div className="hidden md:flex w-80 border-l border-border bg-card flex-col shrink-0 overflow-hidden h-full">
+            <CommentPanel
+              targetType="doc"
+              targetId={`doc:${doc.id}`}
+              onClose={() => setShowComments(false)}
             />
           </div>
-        )}
+          <BottomSheet open={true} onClose={() => setShowComments(false)} title="Comments" initialHeight="full">
+            <CommentPanel
+              targetType="doc"
+              targetId={`doc:${doc.id}`}
+              onClose={() => setShowComments(false)}
+            />
+          </BottomSheet>
+        </>
+      )}
 
-      </div>
-    </div>
+      {showHistory && (
+        <>
+          <div className="hidden md:flex w-72 border-l border-border bg-card flex-col shrink-0 overflow-hidden h-full">
+            <RevisionHistory
+              contentType="doc"
+              contentId={doc.id}
+              onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+              onRestore={async () => {
+                await queryClient.invalidateQueries({ queryKey: ['document', doc.id] });
+                await queryClient.invalidateQueries({ queryKey: ['content-items'] });
+                const restored = await queryClient.fetchQuery({ queryKey: ['document', doc.id], queryFn: () => docApi.getDocument(doc.id) });
+                setTitle(restored.title);
+                setText(restored.text);
+                latestTitleRef.current = restored.title;
+                latestTextRef.current = restored.text;
+                latestEmojiRef.current = (restored.icon || null) as string | null;
+                setEditorKey(k => k + 1);
+                onSaved();
+              }}
+            />
+          </div>
+          {/* Mobile: RevisionHistory renders its own BottomSheet internally */}
+          <div className="md:hidden">
+            <RevisionHistory
+              contentType="doc"
+              contentId={doc.id}
+              onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+              onRestore={async () => {
+                await queryClient.invalidateQueries({ queryKey: ['document', doc.id] });
+                await queryClient.invalidateQueries({ queryKey: ['content-items'] });
+                const restored = await queryClient.fetchQuery({ queryKey: ['document', doc.id], queryFn: () => docApi.getDocument(doc.id) });
+                setTitle(restored.title);
+                setText(restored.text);
+                latestTitleRef.current = restored.title;
+                latestTextRef.current = restored.text;
+                latestEmojiRef.current = (restored.icon || null) as string | null;
+                setEditorKey(k => k + 1);
+                onSaved();
+              }}
+            />
+          </div>
+        </>
+      )}
 
-    {/* History sidebar — full height, independent from top bar */}
-    {showHistory && (
-      <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
-        <RevisionHistory
-          doc={doc as any}
-          onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
-          onRestored={async () => {
-            await queryClient.invalidateQueries({ queryKey: ['document', doc.id] });
-            await queryClient.invalidateQueries({ queryKey: ['content-items'] });
-            const restored = await queryClient.fetchQuery({ queryKey: ['document', doc.id], queryFn: () => docApi.getDocument(doc.id) });
-            setTitle(restored.title);
-            setText(restored.text);
-            latestTitleRef.current = restored.title;
-            latestTextRef.current = restored.text;
-            latestEmojiRef.current = (restored.icon || null) as string | null;
-            setEditorKey(k => k + 1);
-            onSaved();
-          }}
-          onSelect={(rev, prev) => { setPreviewRevision(rev as any); setPrevRevision(prev as any); }}
-          highlightChanges={highlightChanges}
-          onHighlightChangesToggle={() => setHighlightChanges(v => !v)}
-        />
-      </div>
-    )}
     </div>
   );
 }
