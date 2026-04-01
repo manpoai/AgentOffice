@@ -7,9 +7,10 @@ import 'katex/dist/katex.min.css';
 import { commentHighlightPlugin, updateCommentHighlights } from './comment-highlight-plugin';
 import { ContentLinkPicker } from '../shared/ContentLink/ContentLinkPicker';
 import { FloatingToolbar } from '../shared/FloatingToolbar';
-import { DOCS_TEXT_ITEMS } from '../shared/FloatingToolbar/presets';
-import { createDocsTextHandler } from './docs-toolbar-handler';
+import { DOCS_TEXT_ITEMS, DOCS_TABLE_ITEMS } from '../shared/FloatingToolbar/presets';
+import { createDocsTextHandler, createDocsTableHandler } from './docs-toolbar-handler';
 import type { SelectionInfo } from './floating-toolbar';
+import type { TableToolbarInfo } from './table-menu-plugin';
 
 interface EditorProps {
   defaultValue: string;
@@ -38,6 +39,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
   const [error, setError] = useState<string | null>(null);
   const [contentLinkPicker, setContentLinkPicker] = useState<{ top: number; left: number } | null>(null);
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null);
+  const [tableToolbarInfo, setTableToolbarInfo] = useState<TableToolbarInfo | null>(null);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -121,7 +123,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           plugins.push(imageUploadPlugin(() => documentId));
           plugins.push(placeholderPlugin(placeholder || ''));
           plugins.push(blockHandlePlugin());
-          plugins.push(tableMenuPlugin());
+          plugins.push(tableMenuPlugin((info) => setTableToolbarInfo(info)));
         }
 
         // Comment highlight decorations — highlights text matching comment quotes
@@ -331,6 +333,19 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           items={DOCS_TEXT_ITEMS}
           handler={createDocsTextHandler(selectionInfo.view)}
           anchor={selectionInfo.anchor}
+          visible={true}
+          onHover={(hovering) => {
+            const el = editorRef.current?.closest('.outline-editor') as any;
+            el?.__toolbarHover?.(hovering);
+            el?.__toolbarInteracting?.(hovering);
+          }}
+        />
+      )}
+      {tableToolbarInfo && !readOnly && (
+        <FloatingToolbar
+          items={DOCS_TABLE_ITEMS}
+          handler={createDocsTableHandler(tableToolbarInfo.view)}
+          anchor={tableToolbarInfo.anchor}
           visible={true}
           onHover={(hovering) => {
             const el = editorRef.current?.closest('.outline-editor') as any;

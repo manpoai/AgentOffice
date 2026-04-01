@@ -2,6 +2,10 @@ import { toggleMark, setBlockType, wrapIn, lift } from 'prosemirror-commands';
 import { liftListItem, wrapInList } from 'prosemirror-schema-list';
 import type { EditorView } from 'prosemirror-view';
 import type { NodeType } from 'prosemirror-model';
+import {
+  CellSelection, mergeCells, splitCell, toggleHeaderRow, toggleHeaderColumn,
+  deleteRow, deleteColumn,
+} from 'prosemirror-tables';
 import type { ToolbarHandler, ToolbarState } from '@/components/shared/FloatingToolbar/types';
 import { schema } from './schema';
 
@@ -218,6 +222,250 @@ export function createDocsTextHandler(view: EditorView): ToolbarHandler {
           break;
         }
       }
+    },
+  };
+}
+
+// ── Docs Table Toolbar Handler ──
+
+function toggleMarkOnCellSelection(view: EditorView, markName: string) {
+  const markType = schema.marks[markName];
+  if (!markType) return;
+  const sel = view.state.selection;
+  const { tr } = view.state;
+
+  if (sel instanceof CellSelection) {
+    (sel as any).forEachCell((cell: any, pos: number) => {
+      const from = pos + 1;
+      const to = pos + cell.nodeSize - 1;
+      if (tr.doc.rangeHasMark(from, to, markType)) {
+        tr.removeMark(from, to, markType);
+      } else {
+        tr.addMark(from, to, markType.create());
+      }
+    });
+  } else {
+    const { from, to } = sel;
+    if (tr.doc.rangeHasMark(from, to, markType)) {
+      tr.removeMark(from, to, markType);
+    } else {
+      tr.addMark(from, to, markType.create());
+    }
+  }
+  view.dispatch(tr);
+}
+
+export function createDocsTableHandler(view: EditorView): ToolbarHandler {
+  return {
+    getState(): ToolbarState {
+      const sel = view.state.selection;
+      const isCellSel = sel instanceof CellSelection;
+      const canMerge = isCellSel && !!mergeCells(view.state);
+      const canSplit = !!splitCell(view.state);
+
+      return {
+        bold: isMarkActive(view, 'strong'),
+        italic: isMarkActive(view, 'em'),
+        strikethrough: isMarkActive(view, 'strikethrough'),
+        underline: isMarkActive(view, 'underline'),
+        code: isMarkActive(view, 'code'),
+        canMerge: canMerge,
+        canSplit: canSplit,
+      };
+    },
+
+    execute(key: string, value?: unknown) {
+      switch (key) {
+        case 'toggleHeaderRow':
+          toggleHeaderRow(view.state, view.dispatch);
+          break;
+        case 'toggleHeaderCol':
+          toggleHeaderColumn(view.state, view.dispatch);
+          break;
+        case 'mergeCells':
+          mergeCells(view.state, view.dispatch);
+          break;
+        case 'splitCell':
+          splitCell(view.state, view.dispatch);
+          break;
+        case 'cellBgColor': {
+          const sel = view.state.selection;
+          const { tr } = view.state;
+          if (sel instanceof CellSelection) {
+            (sel as any).forEachCell((_cell: any, pos: number) => {
+              const node = tr.doc.nodeAt(pos);
+              if (node) tr.setNodeMarkup(pos, undefined, { ...node.attrs, background: value || null });
+            });
+          } else {
+            const { $from } = sel;
+            for (let d = $from.depth; d > 0; d--) {
+              const n = $from.node(d);
+              if (n.type.name === 'table_cell' || n.type.name === 'table_header') {
+                tr.setNodeMarkup($from.before(d), undefined, { ...n.attrs, background: value || null });
+                break;
+              }
+            }
+          }
+          view.dispatch(tr);
+          break;
+        }
+        case 'bold': toggleMarkOnCellSelection(view, 'strong'); break;
+        case 'italic': toggleMarkOnCellSelection(view, 'em'); break;
+        case 'strikethrough': toggleMarkOnCellSelection(view, 'strikethrough'); break;
+        case 'underline': toggleMarkOnCellSelection(view, 'underline'); break;
+        case 'highlight': {
+          const sel = view.state.selection;
+          const { tr } = view.state;
+          const hlMark = schema.marks.highlight;
+          if (!hlMark) break;
+          if (sel instanceof CellSelection) {
+            (sel as any).forEachCell((cell: any, pos: number) => {
+              const from = pos + 1;
+              const to = pos + cell.nodeSize - 1;
+              tr.removeMark(from, to, hlMark);
+              if (value) tr.addMark(from, to, hlMark.create({ color: value }));
+            });
+          } else {
+            const { from, to } = sel;
+            tr.removeMark(from, to, hlMark);
+            if (value) tr.addMark(from, to, hlMark.create({ color: value }));
+          }
+          view.dispatch(tr);
+          break;
+        }
+        case 'code': toggleMarkOnCellSelection(view, 'code'); break;
+        case 'blockquote': {
+          // Toggle blockquote — reuse the existing logic
+          const bqType = schema.nodes.blockquote;
+          if (isBlockActive(view, bqType)) {
+            lift(view.state, view.dispatch);
+          } else {
+            wrapIn(bqType)(view.state, view.dispatch);
+          }
+          break;
+        }
+        case 'heading': {
+          // value: '1', '2', '3', or 'paragraph'
+          const level = Number(value);
+          if (level >= 1 && level <= 3) {
+            setBlockType(schema.nodes.heading, { level })(view.state, view.dispatch);
+          } else {
+            setBlockType(schema.nodes.paragraph)(view.state, view.dispatch);
+          }
+          break;
+        }
+        case 'list': {
+          // value: 'checkbox', 'ordered', 'bullet'
+          const listType = schema.nodes[value === 'checkbox' ? 'checkbox_list' : value === 'ordered' ? 'ordered_list' : 'bullet_list'];
+          if (listType && isBlockActive(view, listType)) {
+            liftListItem(schema.nodes.list_item || schema.nodes.checkbox_item)(view.state, view.dispatch);
+          } else if (listType) {
+            const itemType = value === 'checkbox' ? schema.nodes.checkbox_item : schema.nodes.list_item;
+            wrapInList(listType)(view.state, view.dispatch);
+          }
+          break;
+        }
+        case 'comment': {
+          const sel = view.state.selection;
+          let text = '';
+          if (sel instanceof CellSelection) {
+            const parts: string[] = [];
+            (sel as any).forEachCell((cell: any) => { parts.push(cell.textContent); });
+            text = parts.join(' | ');
+          } else {
+            const { from, to } = sel;
+            text = view.state.doc.textBetween(from, to, ' ');
+          }
+          if (text.length > 100) text = text.slice(0, 100) + '…';
+          window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text } }));
+          break;
+        }
+        case 'deleteRow':
+          deleteRow(view.state, view.dispatch);
+          break;
+        case 'deleteCol':
+          deleteColumn(view.state, view.dispatch);
+          break;
+      }
+      view.focus();
+    },
+  };
+}
+
+// ── Docs Image Toolbar Handler ──
+
+export function createDocsImageHandler(view: EditorView, nodePos: number): ToolbarHandler {
+  return {
+    getState(): ToolbarState {
+      const node = view.state.doc.nodeAt(nodePos);
+      if (!node) return {};
+      return {
+        align: node.attrs.align || 'center',
+      };
+    },
+
+    execute(key: string, value?: unknown) {
+      const node = view.state.doc.nodeAt(nodePos);
+      if (!node) return;
+
+      switch (key) {
+        case 'alignLeft':
+        case 'alignCenter':
+        case 'alignRight':
+        case 'alignFull':
+        case 'alignFit': {
+          const alignMap: Record<string, string> = {
+            alignLeft: 'left', alignCenter: 'center', alignRight: 'right',
+            alignFull: 'full', alignFit: 'fit',
+          };
+          const tr = view.state.tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, align: alignMap[key] });
+          view.dispatch(tr);
+          break;
+        }
+        case 'replace': {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/*';
+          input.onchange = () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              const src = reader.result as string;
+              const tr = view.state.tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, src });
+              view.dispatch(tr);
+            };
+            reader.readAsDataURL(file);
+          };
+          input.click();
+          break;
+        }
+        case 'download': {
+          const a = document.createElement('a');
+          a.href = node.attrs.src;
+          a.download = node.attrs.alt || 'image';
+          a.click();
+          break;
+        }
+        case 'delete': {
+          const tr = view.state.tr.delete(nodePos, nodePos + node.nodeSize);
+          view.dispatch(tr);
+          break;
+        }
+        case 'altText': {
+          const alt = prompt('Alt text:', node.attrs.alt || '');
+          if (alt !== null) {
+            const tr = view.state.tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, alt });
+            view.dispatch(tr);
+          }
+          break;
+        }
+        case 'comment': {
+          window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text: node.attrs.alt || '' } }));
+          break;
+        }
+      }
+      view.focus();
     },
   };
 }

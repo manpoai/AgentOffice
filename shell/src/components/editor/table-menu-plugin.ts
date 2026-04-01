@@ -126,7 +126,15 @@ function btn(text: string, title: string, onClick: (e: MouseEvent) => void, cls?
 
 // ── Plugin ───────────────────────────────────────────────────────
 
-export function tableMenuPlugin(): Plugin {
+export interface TableToolbarInfo {
+  anchor: { top: number; left: number; width: number };
+  view: EditorView;
+  isCellSelection: boolean;
+  isFullRow: boolean;
+  isFullCol: boolean;
+}
+
+export function tableMenuPlugin(onCellToolbar?: (info: TableToolbarInfo | null) => void): Plugin {
   let container: HTMLElement | null = null;
   let topBar: HTMLElement | null = null;
   let leftBar: HTMLElement | null = null;
@@ -190,6 +198,9 @@ export function tableMenuPlugin(): Plugin {
   }
 
   function closeCellToolbar() {
+    if (onCellToolbar) {
+      onCellToolbar(null);
+    }
     if (cellToolbar && cellToolbar.parentElement) {
       cellToolbar.parentElement.removeChild(cellToolbar);
     }
@@ -857,10 +868,51 @@ export function tableMenuPlugin(): Plugin {
   function showCellToolbar(view: EditorView) {
     closeCellToolbar();
     closeContextMenu();
-    const t = getT();
 
     const sel = view.state.selection;
     const isCellSel = sel instanceof CellSelection;
+
+    // If React callback is provided, emit toolbar info instead of building DOM
+    if (onCellToolbar) {
+      const isRow = isCellSel ? isFullRowSelection(view) : false;
+      const isCol = isCellSel ? isFullColSelection(view) : false;
+
+      if (isCellSel) {
+        let minTop = Infinity;
+        let minLeft = Infinity;
+        let maxRight = -Infinity;
+        (sel as any).forEachCell((_cell: any, pos: number) => {
+          const dom = view.nodeDOM(pos);
+          if (dom && dom instanceof HTMLElement) {
+            const r = dom.getBoundingClientRect();
+            if (r.top < minTop) minTop = r.top;
+            if (r.left < minLeft) minLeft = r.left;
+            if (r.right > maxRight) maxRight = r.right;
+          }
+        });
+        if (minTop === Infinity) return;
+        onCellToolbar({
+          anchor: { top: minTop, left: minLeft, width: maxRight - minLeft },
+          view,
+          isCellSelection: true,
+          isFullRow: isRow,
+          isFullCol: isCol,
+        });
+      } else {
+        const coords = view.coordsAtPos(view.state.selection.from);
+        const endCoords = view.coordsAtPos(view.state.selection.to);
+        onCellToolbar({
+          anchor: { top: coords.top, left: coords.left, width: endCoords.left - coords.left || 200 },
+          view,
+          isCellSelection: false,
+          isFullRow: false,
+          isFullCol: false,
+        });
+      }
+      return;
+    }
+
+    const t = getT();
 
     cellToolbar = el('div', `${P}-cell-toolbar`);
     const mount = view.dom.parentElement;

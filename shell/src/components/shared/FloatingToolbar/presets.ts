@@ -2,9 +2,11 @@ import {
   Bold, Italic, Strikethrough, Underline, Highlighter, Code2, Quote,
   Heading1, Heading2, Heading3, ListTodo, ListOrdered, List,
   Link, MessageSquare, Type, Palette,
-  AlignLeft, AlignCenter, AlignRight,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Paintbrush, Square, Copy, Trash2, Layers, ImageIcon,
   Minus, ArrowRight,
+  TableProperties, Columns, Merge, Split, Download, Pencil,
+  Maximize, Minimize,
 } from 'lucide-react';
 import type { ToolbarItem } from './types';
 import { createElement } from 'react';
@@ -37,6 +39,65 @@ export const DOCS_TEXT_ITEMS: ToolbarItem[] = [
   { key: 'bulletList', type: 'toggle', icon: icon(List), label: 'Bullet list', group: 'list' },
   { key: 'link', type: 'action', icon: icon(Link), label: 'Link', group: 'insert' },
   { key: 'comment', type: 'action', icon: icon(MessageSquare), label: 'Comment', group: 'insert' },
+];
+
+// ── Docs Table Toolbar ──
+
+const CELL_BG_COLORS = [
+  { name: 'None', value: '' },
+  { name: 'Yellow', value: '#fef3c7' },
+  { name: 'Blue', value: '#dbeafe' },
+  { name: 'Green', value: '#d1fae5' },
+  { name: 'Pink', value: '#fce7f3' },
+  { name: 'Purple', value: '#ede9fe' },
+  { name: 'Orange', value: '#ffedd5' },
+  { name: 'Gray', value: '#f3f4f6' },
+];
+
+export const DOCS_TABLE_ITEMS: ToolbarItem[] = [
+  { key: 'toggleHeaderRow', type: 'action', icon: icon(TableProperties), label: 'Toggle header row', group: 'table' },
+  { key: 'toggleHeaderCol', type: 'action', icon: icon(Columns), label: 'Toggle header column', group: 'table' },
+  { key: 'mergeCells', type: 'action', icon: icon(Merge), label: 'Merge cells', group: 'table' },
+  { key: 'splitCell', type: 'action', icon: icon(Split), label: 'Split cell', group: 'table' },
+  { key: 'cellBgColor', type: 'color', icon: icon(Paintbrush), label: 'Cell background', group: 'cellStyle', colors: CELL_BG_COLORS, colorClearable: true },
+  { key: 'bold', type: 'toggle', icon: icon(Bold), label: 'Bold', group: 'format' },
+  { key: 'italic', type: 'toggle', icon: icon(Italic), label: 'Italic', group: 'format' },
+  { key: 'strikethrough', type: 'toggle', icon: icon(Strikethrough), label: 'Strikethrough', group: 'format' },
+  { key: 'underline', type: 'toggle', icon: icon(Underline), label: 'Underline', group: 'format' },
+  { key: 'highlight', type: 'color', icon: icon(Highlighter), label: 'Highlight', group: 'style', colors: HIGHLIGHT_COLORS, colorClearable: true },
+  { key: 'code', type: 'toggle', icon: icon(Code2), label: 'Code', group: 'style' },
+  { key: 'blockquote', type: 'toggle', icon: icon(Quote), label: 'Quote', group: 'style' },
+  { key: 'heading', type: 'dropdown', icon: icon(Heading1), label: 'Heading', group: 'block',
+    options: [
+      { value: '1', label: 'H1', icon: icon(Heading1) },
+      { value: '2', label: 'H2', icon: icon(Heading2) },
+      { value: '3', label: 'H3', icon: icon(Heading3) },
+      { value: 'paragraph', label: 'Paragraph', icon: icon(Type) },
+    ]},
+  { key: 'list', type: 'dropdown', icon: icon(List), label: 'List', group: 'block',
+    options: [
+      { value: 'checkbox', label: 'Checkbox', icon: icon(ListTodo) },
+      { value: 'ordered', label: 'Ordered', icon: icon(ListOrdered) },
+      { value: 'bullet', label: 'Bullet', icon: icon(List) },
+    ]},
+  { key: 'comment', type: 'action', icon: icon(MessageSquare), label: 'Comment', group: 'insert' },
+  { key: 'deleteRow', type: 'action', icon: icon(Trash2), label: 'Delete row', group: 'delete' },
+  { key: 'deleteCol', type: 'action', icon: icon(Trash2), label: 'Delete column', group: 'delete' },
+];
+
+// ── Docs Image Toolbar ──
+
+export const DOCS_IMAGE_ITEMS: ToolbarItem[] = [
+  { key: 'alignLeft', type: 'action', icon: icon(AlignLeft), label: 'Left', group: 'align' },
+  { key: 'alignCenter', type: 'action', icon: icon(AlignCenter), label: 'Center', group: 'align' },
+  { key: 'alignRight', type: 'action', icon: icon(AlignRight), label: 'Right', group: 'align' },
+  { key: 'alignFull', type: 'action', icon: icon(Maximize), label: 'Full width', group: 'align' },
+  { key: 'alignFit', type: 'action', icon: icon(Minimize), label: 'Fit width', group: 'align' },
+  { key: 'replace', type: 'action', icon: icon(ImageIcon), label: 'Replace', group: 'action' },
+  { key: 'download', type: 'action', icon: icon(Download), label: 'Download', group: 'action' },
+  { key: 'delete', type: 'action', icon: icon(Trash2), label: 'Delete', group: 'action' },
+  { key: 'altText', type: 'action', icon: icon(Pencil), label: 'Alt text', group: 'action' },
+  { key: 'comment', type: 'action', icon: icon(MessageSquare), label: 'Comment', group: 'action' },
 ];
 
 // ── PPT Text Toolbar ──
