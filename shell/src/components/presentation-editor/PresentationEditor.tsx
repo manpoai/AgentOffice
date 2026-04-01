@@ -6,7 +6,7 @@ import * as gw from '@/lib/api/gateway';
 import {
   ArrowLeft, ArrowLeftToLine, ArrowRightToLine,
   MoreHorizontal, Link2, Download, Trash2, ChevronRight,
-  Plus, Type, Square, Circle as CircleIcon, Triangle as TriangleIcon,
+  Plus, Type, Hexagon,
   Image as ImageIcon, Play, Copy, ChevronUp, ChevronDown,
   Minus,
   MousePointer2, Bold, Italic, Underline, Strikethrough,
@@ -19,9 +19,21 @@ import {
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
-import { ColorPicker } from '@/components/shared/ColorPicker';
-import { Comments } from '@/components/comments/Comments';
-import ContentRevisionHistory from '@/components/ContentRevisionHistory';
+import { ColorPicker } from '@/components/ui/color-picker';
+import { CommentPanel } from '@/components/shared/CommentPanel';
+import { RevisionHistory } from '@/components/shared/RevisionHistory';
+import { BottomSheet } from '@/components/shared/BottomSheet';
+import { usePinchZoom } from '@/lib/hooks/use-pinch-zoom';
+import { SlidePreviewList } from '@/components/shared/SlidePreviewList';
+import { EditFAB } from '@/components/shared/EditFAB';
+import { ShapePicker } from '@/components/shared/ShapeSet';
+import type { ShapeType } from '@/components/shared/ShapeSet/shapes';
+import { createFabricShape } from '@/components/shared/ShapeSet/adapters/FabricShape';
+import { RichTable } from '@/components/shared/RichTable';
+import type { RichTableData } from '@/components/shared/RichTable/types';
+import { FloatingToolbar } from '@/components/shared/FloatingToolbar';
+import { PPT_TEXT_ITEMS } from '@/components/shared/FloatingToolbar/presets';
+import { createPPTTextHandler } from './ppt-toolbar-handler';
 
 // ─── Types ──────────────────────────────────────────
 interface SlideData {
@@ -252,10 +264,12 @@ export function PresentationEditor({
   const [showHistory, setShowHistory] = useState(false);
   const [mobileEditMode, setMobileEditMode] = useState(false);
   const [isMobileView, setIsMobileView] = useState(false);
+  // All table objects on the current slide (for DOM RichTable overlays)
+  const [tableObjects, setTableObjects] = useState<any[]>([]);
 
   // Track screen width for mobile vertical preview
   useEffect(() => {
-    const checkMobile = () => setIsMobileView(window.innerWidth < 768);
+    const checkMobile = () => setIsMobileView(window.innerWidth < 640);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
@@ -277,6 +291,21 @@ export function PresentationEditor({
   const isLoadingSlideRef = useRef(false);
   const saveCurrentSlideToStateRef = useRef<() => void>(() => {});
   const modifiedDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ─── Pinch-to-zoom & touch pan for mobile ──────────
+  usePinchZoom(canvasContainerRef, {
+    onZoom: (newScale, center) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      // Fabric.js zoom: setZoom sets an absolute zoom level.
+      // We need to clamp and apply relative to SLIDE_WIDTH fitting.
+      canvas.setZoom(newScale);
+      canvas.renderAll();
+    },
+    getCurrentScale: () => canvasRef.current?.getZoom() ?? 1,
+    minScale: 0.2,
+    maxScale: 3,
+  });
 
   // Load Fabric.js
   useEffect(() => {
@@ -342,6 +371,12 @@ export function PresentationEditor({
       fitCanvasToContainer(canvas, canvasContainerRef.current);
     });
 
+    // Scan canvas for table objects and update state for DOM overlays
+    const refreshTableObjects = () => {
+      const tables = canvas.getObjects().filter((o: any) => o.__isTable);
+      setTableObjects([...tables]); // new array ref to trigger re-render
+    };
+
     // Track changes for undo and auto-save
     const handleModified = () => {
       if (isLoadingSlideRef.current) return;
@@ -355,6 +390,7 @@ export function PresentationEditor({
     const handleAddRemove = () => {
       if (isLoadingSlideRef.current) return;
       saveCurrentSlideToStateRef.current();
+      refreshTableObjects();
     };
 
     canvas.on('object:modified', handleModified);
@@ -395,62 +431,9 @@ export function PresentationEditor({
       observer.observe(container);
     }
 
-    // Draw table grid lines and text after canvas render
-    canvas.on('after:render', () => {
-      const ctx = canvas.getContext();
-      if (!ctx) return;
-      for (const obj of canvas.getObjects()) {
-        if (!(obj as any).__isTable) continue;
-        const tData: string[][] = (obj as any).__tableData || [];
-        const tRows: number = (obj as any).__tableRows || 3;
-        const tCols: number = (obj as any).__tableCols || 3;
-        const zoom = canvas.getZoom() || 1;
-        const x = (obj.left || 0) * zoom;
-        const y = (obj.top || 0) * zoom;
-        const cellW = 120 * zoom;
-        const cellH = 36 * zoom;
-
-        ctx.save();
-        ctx.strokeStyle = '#d1d5db';
-        ctx.lineWidth = 1;
-        // Draw horizontal lines
-        for (let r = 0; r <= tRows; r++) {
-          ctx.beginPath();
-          ctx.moveTo(x, y + r * cellH);
-          ctx.lineTo(x + tCols * cellW, y + r * cellH);
-          ctx.stroke();
-        }
-        // Draw vertical lines
-        for (let c = 0; c <= tCols; c++) {
-          ctx.beginPath();
-          ctx.moveTo(x + c * cellW, y);
-          ctx.lineTo(x + c * cellW, y + tRows * cellH);
-          ctx.stroke();
-        }
-        // Draw header row background
-        ctx.fillStyle = '#f3f4f6';
-        ctx.fillRect(x, y, tCols * cellW, cellH);
-        // Redraw header border
-        ctx.strokeRect(x, y, tCols * cellW, cellH);
-
-        // Draw cell text
-        ctx.fillStyle = '#1f2937';
-        ctx.font = `${Math.max(10, 12 * zoom)}px Inter, system-ui, sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        for (let r = 0; r < tRows; r++) {
-          for (let c = 0; c < tCols; c++) {
-            const text = tData[r]?.[c] || '';
-            if (text) {
-              const cx = x + c * cellW + cellW / 2;
-              const cy = y + r * cellH + cellH / 2;
-              ctx.fillText(text, cx, cy, cellW - 8);
-            }
-          }
-        }
-        ctx.restore();
-      }
-    });
+    // Table grid lines are rendered by DOM RichTable overlays — no canvas drawing needed
+    // Refresh table object list after each render (catches slide loads)
+    canvas.on('after:render', refreshTableObjects);
 
     return () => {
       observer?.disconnect();
@@ -610,11 +593,9 @@ export function PresentationEditor({
           ...common,
           width: cellW * tCols,
           height: cellH * tRows,
-          fill: '#ffffff',
-          stroke: '#d1d5db',
-          strokeWidth: 1,
-          rx: 2,
-          ry: 2,
+          fill: 'transparent',
+          stroke: 'transparent',
+          strokeWidth: 0,
         });
         (obj as any).__tableData = el.tableData || Array.from({ length: tRows }, () => Array(tCols).fill(''));
         (obj as any).__tableRows = tRows;
@@ -833,25 +814,24 @@ export function PresentationEditor({
     setSelectedTool('select');
   }, []);
 
-  const addShape = useCallback((shape: 'rect' | 'circle' | 'triangle') => {
+  const [showShapePicker, setShowShapePicker] = useState(false);
+
+  const addShape = useCallback((shapeType: ShapeType) => {
     const canvas = canvasRef.current;
     if (!canvas || !fabricModule) return;
-    const { Rect, Circle, Triangle } = fabricModule;
 
-    let obj: any;
-    if (shape === 'rect') {
-      obj = new Rect({ left: 100, top: 100, width: 200, height: 150, fill: '#e2e8f0', stroke: '#94a3b8', strokeWidth: 1, rx: 4, ry: 4 });
-    } else if (shape === 'circle') {
-      obj = new Circle({ left: 100, top: 100, radius: 80, fill: '#e2e8f0', stroke: '#94a3b8', strokeWidth: 1 });
-    } else {
-      obj = new Triangle({ left: 100, top: 100, width: 160, height: 140, fill: '#e2e8f0', stroke: '#94a3b8', strokeWidth: 1 });
-    }
+    const obj = createFabricShape(fabricModule, shapeType, {
+      left: 100, top: 100,
+      fill: '#e2e8f0', stroke: '#94a3b8', strokeWidth: 1,
+    });
+    if (!obj) return;
 
     canvas.add(obj);
     canvas.setActiveObject(obj);
     canvas.renderAll();
     setSelectedTool('select');
-  }, []);
+    setShowShapePicker(false);
+  }, [fabricModule]);
 
   // FIX 3: Upload images to server instead of base64
   const addImage = useCallback(() => {
@@ -926,11 +906,9 @@ export function PresentationEditor({
       top: 80,
       width: tableW,
       height: tableH,
-      fill: '#ffffff',
-      stroke: '#d1d5db',
-      strokeWidth: 1,
-      rx: 2,
-      ry: 2,
+      fill: 'transparent',
+      stroke: 'transparent',
+      strokeWidth: 0,
     });
 
     // Store table data in the object's custom property
@@ -1112,6 +1090,11 @@ export function PresentationEditor({
 
   // ─── Mobile Vertical Preview Mode ────────────────
   if (isMobileView && !mobileEditMode) {
+    const previewSlides = slides.map((slide, i) => ({
+      id: String(i),
+      data: slide,
+    }));
+
     return (
       <div ref={containerRef} className="flex-1 flex flex-col min-h-0 bg-card">
         {/* Header */}
@@ -1141,27 +1124,29 @@ export function PresentationEditor({
           />
         </div>
         {/* Vertical scroll preview */}
-        <div className="flex-1 overflow-y-auto bg-[#f0f0f0] dark:bg-zinc-900 px-4 py-4 space-y-3">
-          {slides.map((slide, i) => (
-            <button
-              key={i}
-              onClick={() => {
-                setCurrentSlideIndex(i);
-                setMobileEditMode(true);
-              }}
-              className="block w-full rounded-lg overflow-hidden shadow-md border border-border/50 bg-card"
-              style={{ aspectRatio: `${SLIDE_WIDTH}/${SLIDE_HEIGHT}` }}
-            >
-              <SlideThumb slide={slide} />
-            </button>
-          ))}
-        </div>
+        <SlidePreviewList
+          slides={previewSlides}
+          currentSlideIndex={currentSlideIndex}
+          onSlideSelect={(i) => {
+            setCurrentSlideIndex(i);
+            setMobileEditMode(true);
+          }}
+        />
+        {/* Edit FAB */}
+        <EditFAB
+          isEditing={false}
+          onEdit={() => setMobileEditMode(true)}
+          onSave={() => {}}
+          onCancel={() => {}}
+        />
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="flex-1 flex flex-col min-h-0 bg-card">
+    <div ref={containerRef} className="flex-1 flex flex-row min-h-0 bg-card">
+      {/* Left column: TopBar + Toolbar + main area */}
+      <div className="flex-1 flex flex-col min-h-0 min-w-0">
       {/* ─── Header Bar ─── */}
       <div className="flex items-center border-b border-border shrink-0">
         <ContentTopBar
@@ -1194,10 +1179,10 @@ export function PresentationEditor({
             </button>
             <button
               onClick={() => { setShowComments(v => !v); setShowHistory(false); }}
-              className={cn('p-1.5 rounded transition-colors', showComments ? 'text-sidebar-primary bg-sidebar-primary/10' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('p-1.5 rounded transition-colors', showComments ? 'text-[#2fcc71] bg-[#2fcc71]/10' : 'text-[#2fcc71] hover:text-[#27ae60]')}
               title={t('content.comments') || 'Comments'}
             >
-              <MessageSquare className="h-4 w-4" />
+              <MessageSquare className="h-5 w-5 md:h-4 md:w-4" />
             </button>
             <div className="relative">
               <button
@@ -1205,7 +1190,7 @@ export function PresentationEditor({
                 className="p-1.5 text-muted-foreground hover:text-foreground shrink-0"
                 title={t('content.moreActions') || 'More'}
               >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="h-5 w-5 md:h-4 md:w-4" />
               </button>
               {showMenu && (
                 <>
@@ -1236,9 +1221,17 @@ export function PresentationEditor({
         <ToolBtn icon={MousePointer2} active={selectedTool === 'select'} onClick={() => setSelectedTool('select')} title="Select" />
         <div className="w-px h-5 bg-border mx-1" />
         <ToolBtn icon={Type} onClick={addTextbox} title="Text" />
-        <ToolBtn icon={Square} onClick={() => addShape('rect')} title="Rectangle" />
-        <ToolBtn icon={CircleIcon} onClick={() => addShape('circle')} title="Circle" />
-        <ToolBtn icon={TriangleIcon} onClick={() => addShape('triangle')} title="Triangle" />
+        <div className="relative">
+          <ToolBtn icon={Hexagon} active={showShapePicker} onClick={() => setShowShapePicker(v => !v)} title="Shapes" />
+          {showShapePicker && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setShowShapePicker(false)} />
+              <div className="absolute left-0 top-full mt-1 z-20">
+                <ShapePicker onSelect={addShape} columns={6} />
+              </div>
+            </>
+          )}
+        </div>
         <ToolBtn icon={ImageIcon} onClick={addImage} title="Image" />
         <ToolBtn icon={Table2} onClick={() => addTable(3, 3)} title="Table" />
         <ToolBtn icon={Workflow} onClick={insertDiagram} title="Insert Diagram" />
@@ -1322,23 +1315,41 @@ export function PresentationEditor({
             <div ref={canvasHostRef} className="shadow-xl rounded-sm" />
           </div>
           {/* Floating text toolbar */}
-          {selectedObj && getObjType(selectedObj) === 'textbox' && (
-            <FloatingTextToolbar
-              obj={selectedObj}
+          {selectedObj && getObjType(selectedObj) === 'textbox' && canvasRef.current && canvasContainerRef.current && (() => {
+            const canvas = canvasRef.current!;
+            const container = canvasContainerRef.current!;
+            const zoom = canvas.getZoom() || 1;
+            const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
+            const containerRect = container.getBoundingClientRect();
+            const wrapperLeft = wrapper ? parseFloat(wrapper.style.marginLeft || '0') : 0;
+            const wrapperTop = wrapper ? parseFloat(wrapper.style.marginTop || '0') : 0;
+            const objLeft = (selectedObj.left || 0) * zoom + wrapperLeft;
+            const objTop = (selectedObj.top || 0) * zoom + wrapperTop;
+            const objWidth = (selectedObj.width || 0) * (selectedObj.scaleX || 1) * zoom;
+            return (
+              <FloatingToolbar
+                items={PPT_TEXT_ITEMS}
+                handler={createPPTTextHandler({ obj: selectedObj, canvas })}
+                anchor={{
+                  top: containerRect.top + objTop,
+                  left: containerRect.left + objLeft,
+                  width: objWidth,
+                }}
+                visible={true}
+              />
+            );
+          })()}
+          {/* Table DOM overlays — always visible for all table objects */}
+          {tableObjects.map((tObj, idx) => (
+            <PPTTableOverlay
+              key={tObj.__uid || idx}
+              obj={tObj}
               canvas={canvasRef.current}
               containerRef={canvasContainerRef}
               propVersion={propVersion}
+              isSelected={selectedObj === tObj}
             />
-          )}
-          {/* Table DOM overlay for direct editing */}
-          {selectedObj && getObjType(selectedObj) === 'table' && (
-            <TableOverlay
-              obj={selectedObj}
-              canvas={canvasRef.current}
-              containerRef={canvasContainerRef}
-              propVersion={propVersion}
-            />
-          )}
+          ))}
         </div>
 
         {/* Property Panel (right) */}
@@ -1355,34 +1366,37 @@ export function PresentationEditor({
           />
         )}
 
-        {/* Comments sidebar */}
-        {showComments && !showHistory && (
-          <div className="w-80 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border">
-              <h3 className="text-sm font-semibold text-foreground">{t('content.comments') || 'Comments'}</h3>
-              <button onClick={() => setShowComments(false)} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title={t('common.close') || 'Close'}>
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <Comments
-              queryKey={['content-comments', `presentation:${presentationId}`]}
-              fetchComments={() => gw.listContentComments(`presentation:${presentationId}`)}
-              postComment={(text, parentId) => gw.createContentComment(`presentation:${presentationId}`, text, parentId)}
-              editComment={(commentId, text) => gw.editContentComment(commentId, text)}
-              deleteComment={(commentId) => gw.deleteContentComment(commentId)}
-              resolveComment={(commentId) => gw.resolveContentComment(commentId)}
-              unresolveComment={(commentId) => gw.unresolveContentComment(commentId)}
+      </div>
+      </div>{/* end left column */}
+
+      {/* Sidebar — full height on desktop, BottomSheet on mobile */}
+      {showComments && !showHistory && (
+        <>
+          <div className="hidden md:flex w-80 border-l border-border bg-card flex-col shrink-0 overflow-hidden h-full">
+            <CommentPanel
+              targetType="presentation"
+              targetId={`presentation:${presentationId}`}
+              onClose={() => setShowComments(false)}
             />
           </div>
-        )}
+          <BottomSheet open={true} onClose={() => setShowComments(false)} title="Comments" initialHeight="full">
+            <CommentPanel
+              targetType="presentation"
+              targetId={`presentation:${presentationId}`}
+              onClose={() => setShowComments(false)}
+            />
+          </BottomSheet>
+        </>
+      )}
 
-        {/* Version history sidebar */}
-        {showHistory && (
-          <div className="w-72 border-l border-border bg-card flex flex-col shrink-0 overflow-hidden">
-            <ContentRevisionHistory
-              contentId={`presentation:${presentationId}`}
+      {showHistory && (
+        <>
+          <div className="hidden md:flex w-72 border-l border-border bg-card flex-col shrink-0 overflow-hidden h-full">
+            <RevisionHistory
+              contentType="presentation"
+              contentId={presentationId}
               onClose={() => setShowHistory(false)}
-              onRestored={async (data) => {
+              onRestore={async (data) => {
                 if (data?.slides) {
                   setSlides(data.slides);
                   setCurrentSlideIndex(0);
@@ -1392,8 +1406,24 @@ export function PresentationEditor({
               }}
             />
           </div>
-        )}
-      </div>
+          {/* Mobile: RevisionHistory renders its own BottomSheet internally via portal */}
+          <div className="contents md:hidden">
+            <RevisionHistory
+              contentType="presentation"
+              contentId={presentationId}
+              onClose={() => setShowHistory(false)}
+              onRestore={async (data) => {
+                if (data?.slides) {
+                  setSlides(data.slides);
+                  setCurrentSlideIndex(0);
+                  await gw.savePresentation(presentationId, { slides: data.slides });
+                  queryClient.invalidateQueries({ queryKey: ['presentation', presentationId] });
+                }
+              }}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2131,7 +2161,7 @@ function TablePropertiesSection({ obj, canvas, propVersion }: {
           <span>{rows} rows × {cols} columns</span>
         </div>
         <p className="text-muted-foreground text-[10px]">
-          Click the table on canvas to edit cells directly. Use + Row / + Col buttons to add rows or columns.
+          Click the table on canvas to edit. Use the toolbar to add/remove rows and columns, merge cells, and more.
         </p>
       </div>
     </>
@@ -2338,169 +2368,104 @@ function FloatingTextToolbar({ obj, canvas, containerRef, propVersion }: {
   );
 }
 
-// ─── Table DOM Overlay ───────────────────────────────
-function TableOverlay({ obj, canvas, containerRef, propVersion }: {
+// ─── PPT Table Overlay — RichTable positioned over Fabric.js table rect ────
+function stringArrayToRichTableData(data: string[][]): RichTableData {
+  if (!data || data.length === 0) return { hasHeader: false, rows: [{ cells: [{ content: '' }] }] };
+  return {
+    hasHeader: false,
+    rows: data.map(row => ({ cells: row.map(cell => ({ content: cell || '' })) })),
+  };
+}
+
+function richTableDataToStringArray(data: RichTableData): string[][] {
+  return data.rows.map(row => row.cells.map(cell => cell.content || ''));
+}
+
+function PPTTableOverlay({ obj, canvas, containerRef, propVersion, isSelected }: {
   obj: any;
   canvas: any;
   containerRef: React.RefObject<HTMLDivElement | null>;
   propVersion: number;
+  isSelected?: boolean;
 }) {
-  const [tableData, setTableData] = useState<string[][]>(obj.__tableData || []);
-  const [rows, setRows] = useState(obj.__tableRows || 3);
-  const [cols, setCols] = useState(obj.__tableCols || 3);
+  const [pos, setPos] = useState({ left: 0, top: 0, width: 200, height: 100 });
+  const [data, setData] = useState<RichTableData>(() => stringArrayToRichTableData(obj.__tableData || []));
 
-  // Sync from obj when selection changes
+  // Sync data when object data changes externally
   useEffect(() => {
-    setTableData(obj.__tableData || []);
-    setRows(obj.__tableRows || 3);
-    setCols(obj.__tableCols || 3);
-  }, [obj]);
+    setData(stringArrayToRichTableData(obj.__tableData || []));
+  }, [obj, propVersion]);
 
-  const updateCell = (r: number, c: number, val: string) => {
-    const newData = tableData.map(row => [...row]);
-    newData[r][c] = val;
-    setTableData(newData);
-    obj.__tableData = newData;
-    canvas?.fire('object:modified', { target: obj });
-  };
+  // Compute position relative to canvas container
+  const updatePos = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || !canvas) return;
+    const zoom = canvas.getZoom() || 1;
+    const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
+    const wrapperLeft = wrapper ? parseFloat(wrapper.style.marginLeft || '0') : 0;
+    const wrapperTop = wrapper ? parseFloat(wrapper.style.marginTop || '0') : 0;
+    const objW = (obj.width || 200) * (obj.scaleX || 1);
+    const objH = (obj.height || 100) * (obj.scaleY || 1);
+    setPos({
+      left: (obj.left || 0) * zoom + wrapperLeft,
+      top: (obj.top || 0) * zoom + wrapperTop,
+      width: objW * zoom,
+      height: objH * zoom,
+    });
+  }, [obj, canvas, containerRef]);
 
-  const addRow = () => {
-    const newData = [...tableData, Array(cols).fill('')];
-    setTableData(newData);
-    const newRows = rows + 1;
-    setRows(newRows);
-    obj.__tableData = newData;
-    obj.__tableRows = newRows;
-    // Resize the rect
-    obj.set('height', newRows * 36);
+  useEffect(() => {
+    updatePos();
+    if (!canvas) return;
+    const handler = () => updatePos();
+    canvas.on('after:render', handler);
+    return () => { canvas.off('after:render', handler); };
+  }, [canvas, updatePos]);
+
+  const handleChange = useCallback((newData: RichTableData) => {
+    setData(newData);
+    const arr = richTableDataToStringArray(newData);
+    obj.__tableData = arr;
+    obj.__tableRows = arr.length;
+    obj.__tableCols = arr[0]?.length || 0;
+    obj.set('width', (arr[0]?.length || 1) * 120);
+    obj.set('height', arr.length * 36);
     canvas?.renderAll();
     canvas?.fire('object:modified', { target: obj });
-  };
+  }, [obj, canvas]);
 
-  const addCol = () => {
-    const newData = tableData.map(row => [...row, '']);
-    setTableData(newData);
-    const newCols = cols + 1;
-    setCols(newCols);
-    obj.__tableData = newData;
-    obj.__tableCols = newCols;
-    obj.set('width', newCols * 120);
-    canvas?.renderAll();
-    canvas?.fire('object:modified', { target: obj });
-  };
-
-  const removeRow = (idx: number) => {
-    if (rows <= 1) return;
-    const newData = tableData.filter((_, i) => i !== idx);
-    setTableData(newData);
-    const newRows = rows - 1;
-    setRows(newRows);
-    obj.__tableData = newData;
-    obj.__tableRows = newRows;
-    obj.set('height', newRows * 36);
-    canvas?.renderAll();
-    canvas?.fire('object:modified', { target: obj });
-  };
-
-  const removeCol = (idx: number) => {
-    if (cols <= 1) return;
-    const newData = tableData.map(row => row.filter((_, i) => i !== idx));
-    setTableData(newData);
-    const newCols = cols - 1;
-    setCols(newCols);
-    obj.__tableData = newData;
-    obj.__tableCols = newCols;
-    obj.set('width', newCols * 120);
-    canvas?.renderAll();
-    canvas?.fire('object:modified', { target: obj });
-  };
-
-  // Position overlay above the canvas object
-  const container = containerRef.current;
-  if (!container || !canvas) return null;
-  const zoom = canvas.getZoom() || 1;
-  const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
-  const wrapperLeft = wrapper ? parseFloat(wrapper.style.marginLeft || '0') : 0;
-  const wrapperTop = wrapper ? parseFloat(wrapper.style.marginTop || '0') : 0;
-
-  const left = (obj.left || 0) * zoom + wrapperLeft;
-  const top = (obj.top || 0) * zoom + wrapperTop;
-  const cellW = 120 * zoom;
-  const cellH = 36 * zoom;
-  const fontSize = Math.max(10, 12 * zoom);
+  // Click on non-selected table overlay → select the Fabric.js object
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isSelected && canvas) {
+      canvas.setActiveObject(obj);
+      canvas.renderAll();
+    }
+  }, [isSelected, canvas, obj]);
 
   return (
     <div
-      className="absolute z-20"
-      style={{ left, top }}
-      onMouseDown={(e) => e.stopPropagation()}
+      className="absolute overflow-visible"
+      style={{
+        left: pos.left,
+        top: pos.top,
+        width: pos.width,
+        minHeight: pos.height,
+        zIndex: isSelected ? 30 : 10,
+      }}
+      onMouseDown={handleMouseDown}
     >
-      <table className="border-collapse" style={{ borderSpacing: 0 }}>
-        <tbody>
-          {tableData.map((row, ri) => (
-            <tr key={ri}>
-              {row.map((cell, ci) => (
-                <td
-                  key={ci}
-                  className="border border-border"
-                  style={{ width: cellW, height: cellH, padding: 0 }}
-                >
-                  <input
-                    value={cell}
-                    onChange={(e) => updateCell(ri, ci, e.target.value)}
-                    className="w-full h-full px-1 bg-transparent outline-none text-center"
-                    style={{ fontSize, border: 'none' }}
-                  />
-                </td>
-              ))}
-              {/* Delete row button */}
-              <td style={{ width: 20, padding: 0 }}>
-                {rows > 1 && (
-                  <button
-                    onClick={() => removeRow(ri)}
-                    className="w-5 h-5 flex items-center justify-center text-muted-foreground hover:text-destructive text-[10px]"
-                    title="Delete row"
-                  >
-                    ×
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {/* Delete column buttons row */}
-          <tr>
-            {tableData[0]?.map((_, ci) => (
-              <td key={ci} style={{ height: 20, padding: 0, textAlign: 'center' }}>
-                {cols > 1 && (
-                  <button
-                    onClick={() => removeCol(ci)}
-                    className="w-5 h-5 inline-flex items-center justify-center text-muted-foreground hover:text-destructive text-[10px]"
-                    title="Delete column"
-                  >
-                    ×
-                  </button>
-                )}
-              </td>
-            ))}
-            <td />
-          </tr>
-        </tbody>
-      </table>
-      {/* Add row/col buttons */}
-      <div className="flex gap-1 mt-1">
-        <button
-          onClick={addRow}
-          className="px-2 py-0.5 text-[10px] rounded bg-muted text-muted-foreground hover:text-foreground border border-border"
-        >
-          + Row
-        </button>
-        <button
-          onClick={addCol}
-          className="px-2 py-0.5 text-[10px] rounded bg-muted text-muted-foreground hover:text-foreground border border-border"
-        >
-          + Col
-        </button>
-      </div>
+      <RichTable
+        data={data}
+        onChange={isSelected ? handleChange : undefined}
+        config={{
+          cellMinWidth: 60,
+          showToolbar: false,
+          showContextMenu: isSelected,
+          readonly: !isSelected,
+        }}
+        width="100%"
+      />
     </div>
   );
 }
