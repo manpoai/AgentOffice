@@ -49,19 +49,37 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
   let showTimeout: ReturnType<typeof setTimeout> | null = null;
   let isHovering = false;
   let hideTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Track last selection range to avoid repositioning on format-only changes
+  let lastFrom = -1;
+  let lastTo = -1;
+  let isShown = false;
 
   function scheduleHide() {
     if (hideTimeout) clearTimeout(hideTimeout);
     if (showTimeout) { clearTimeout(showTimeout); showTimeout = null; }
     hideTimeout = setTimeout(() => {
       hideTimeout = null;
-      if (!isHovering) onSelection(null);
+      if (!isHovering) {
+        onSelection(null);
+        isShown = false;
+        lastFrom = -1;
+        lastTo = -1;
+      }
     }, 150);
   }
 
-  function showAt(view: EditorView) {
+  function showAt(view: EditorView, forceReposition: boolean) {
     if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
     const { from, to } = view.state.selection;
+    // If toolbar is already shown at this selection range, don't recompute position
+    // (formatting changes like bold/code change text width but shouldn't move toolbar)
+    if (isShown && !forceReposition && from === lastFrom && to === lastTo) {
+      // Still send the view ref so handler can refresh state, but keep same anchor
+      return;
+    }
+    lastFrom = from;
+    lastTo = to;
+    isShown = true;
     onSelection({ anchor: computeAnchor(view, from, to), view });
   }
 
@@ -82,7 +100,7 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
         isMouseDown = false;
         showTimeout = setTimeout(() => {
           showTimeout = null;
-          if (shouldShow(editorView)) showAt(editorView);
+          if (shouldShow(editorView)) showAt(editorView, true);
           else scheduleHide();
         }, 50);
       };
@@ -91,8 +109,8 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
 
       return {
         update(view) {
-          if (isMouseDown) { onSelection(null); return; }
-          if (shouldShow(view)) showAt(view);
+          if (isMouseDown) { onSelection(null); isShown = false; lastFrom = -1; lastTo = -1; return; }
+          if (shouldShow(view)) showAt(view, false);
           else scheduleHide();
         },
         destroy() {
