@@ -25,7 +25,7 @@ interface FloatingToolbarProps {
 export function FloatingToolbar({ items, handler, anchor, visible, onHover, className }: FloatingToolbarProps) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ToolbarState>({});
-  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
   const refreshState = useCallback(() => {
     setState(handler.getState());
@@ -35,7 +35,7 @@ export function FloatingToolbar({ items, handler, anchor, visible, onHover, clas
     if (visible) refreshState();
   }, [visible, refreshState]);
 
-  // Position toolbar above anchor
+  // Position toolbar above anchor — only recompute when anchor changes, not on state changes
   useEffect(() => {
     if (!visible || !anchor || !toolbarRef.current) return;
     const tb = toolbarRef.current.getBoundingClientRect();
@@ -45,7 +45,7 @@ export function FloatingToolbar({ items, handler, anchor, visible, onHover, clas
       top: Math.max(8, top),
       left: Math.max(8, Math.min(left, window.innerWidth - tb.width - 8)),
     });
-  }, [visible, anchor, state]);
+  }, [visible, anchor]);
 
   const handleExecute = useCallback((key: string, value?: unknown) => {
     handler.execute(key, value);
@@ -127,10 +127,13 @@ export function FloatingToolbar({ items, handler, anchor, visible, onHover, clas
       className={cn(
         'fixed z-[1000] flex items-center gap-0 px-[3px] py-[2px]',
         'bg-popover border border-border rounded-lg shadow-xl backdrop-blur-sm',
-        'animate-in fade-in-0 zoom-in-95 duration-150',
         className,
       )}
-      style={{ top: position.top, left: position.left }}
+      style={{
+        top: position?.top ?? 0,
+        left: position?.left ?? 0,
+        visibility: position ? 'visible' : 'hidden',
+      }}
       onMouseDown={(e) => e.preventDefault()}
       onMouseEnter={() => onHover?.(true)}
       onMouseLeave={() => onHover?.(false)}
