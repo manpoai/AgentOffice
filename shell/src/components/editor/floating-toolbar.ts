@@ -53,6 +53,8 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
   let lastFrom = -1;
   let lastTo = -1;
   let isShown = false;
+  // When true, mousedown/mouseup came from the toolbar itself — skip hide/reposition
+  let toolbarInteracting = false;
 
   function scheduleHide() {
     if (hideTimeout) clearTimeout(hideTimeout);
@@ -74,7 +76,6 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
     // If toolbar is already shown at this selection range, don't recompute position
     // (formatting changes like bold/code change text width but shouldn't move toolbar)
     if (isShown && !forceReposition && from === lastFrom && to === lastTo) {
-      // Still send the view ref so handler can refresh state, but keep same anchor
       return;
     }
     lastFrom = from;
@@ -93,10 +94,19 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
           isHovering = hovering;
           if (hovering && hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
         };
+        // Expose toolbar interaction flag — toolbar sets this to prevent hide/reposition
+        (el as any).__toolbarInteracting = (interacting: boolean) => {
+          toolbarInteracting = interacting;
+        };
       }
 
-      const onMouseDown = () => { isMouseDown = true; if (showTimeout) { clearTimeout(showTimeout); showTimeout = null; } };
+      const onMouseDown = () => {
+        if (toolbarInteracting) return; // Click is on the toolbar, not the document
+        isMouseDown = true;
+        if (showTimeout) { clearTimeout(showTimeout); showTimeout = null; }
+      };
       const onMouseUp = () => {
+        if (toolbarInteracting) return;
         isMouseDown = false;
         showTimeout = setTimeout(() => {
           showTimeout = null;
@@ -109,6 +119,7 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
 
       return {
         update(view) {
+          if (toolbarInteracting) return; // Skip updates during toolbar interaction
           if (isMouseDown) { onSelection(null); isShown = false; lastFrom = -1; lastTo = -1; return; }
           if (shouldShow(view)) showAt(view, false);
           else scheduleHide();

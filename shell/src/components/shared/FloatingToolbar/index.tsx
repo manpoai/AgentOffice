@@ -134,7 +134,10 @@ export function FloatingToolbar({ items, handler, anchor, visible, onHover, clas
         left: position?.left ?? 0,
         visibility: position ? 'visible' : 'hidden',
       }}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onHover?.(true); // Signal that interaction is on toolbar
+      }}
       onMouseEnter={() => onHover?.(true)}
       onMouseLeave={() => onHover?.(false)}
     >

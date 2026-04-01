@@ -335,6 +335,7 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
           onHover={(hovering) => {
             const el = editorRef.current?.closest('.outline-editor') as any;
             el?.__toolbarHover?.(hovering);
+            el?.__toolbarInteracting?.(hovering);
           }}
         />
       )}
