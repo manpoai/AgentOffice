@@ -37,6 +37,7 @@ export const diagramEmbedNodeSpec: NodeSpec = {
 export class DiagramEmbedView implements NodeView {
   dom: HTMLElement;
   private loading = false;
+  private refreshHandler: ((e: Event) => void) | null = null;
 
   constructor(private node: PMNode, private view: EditorView, private getPos: () => number | undefined) {
     this.dom = document.createElement('div');
@@ -102,8 +103,24 @@ export class DiagramEmbedView implements NodeView {
       }
     });
 
-    // Fetch diagram data
-    this.loadDiagram(svgContainer);
+    // Fetch diagram data (initial load)
+    this.fetchAndRender();
+
+    // Listen for diagram updates from DiagramEditorDialog
+    this.refreshHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.diagramId === this.node.attrs.diagramId) {
+        this.loading = false; // reset so fetchAndRender won't skip
+        this.fetchAndRender();
+      }
+    };
+    window.addEventListener('diagram-updated', this.refreshHandler);
+  }
+
+  private fetchAndRender() {
+    const container = this.dom.querySelector('.diagram-embed-preview') as HTMLElement | null;
+    if (!container) return;
+    this.loadDiagram(container);
   }
 
   private async loadDiagram(container: HTMLElement) {
@@ -125,6 +142,13 @@ export class DiagramEmbedView implements NodeView {
       container.innerHTML = '<span style="color: hsl(var(--destructive, 0 72% 51%)); font-size: 13px;">Failed to load diagram</span>';
     }
     this.loading = false;
+  }
+
+  destroy() {
+    if (this.refreshHandler) {
+      window.removeEventListener('diagram-updated', this.refreshHandler);
+      this.refreshHandler = null;
+    }
   }
 
   stopEvent() { return true; }
