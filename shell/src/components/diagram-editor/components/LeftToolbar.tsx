@@ -3,15 +3,17 @@
 import { useState, useCallback, useRef } from 'react';
 import type { Graph } from '@antv/x6';
 import {
-  Type, Brain, ImageIcon,
+  Type, Brain, ImageIcon, Table2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  SHAPE_META, SHAPE_ICON_PATHS, DEFAULT_NODE_COLOR,
+  SHAPE_META, DEFAULT_NODE_COLOR,
   type FlowchartShape, type ConnectorType,
 } from '../constants';
+import { SHAPE_MAP } from '@/components/shared/ShapeSet/shapes';
+import { ShapePicker } from '@/components/shared/ShapeSet';
 
-export type ActiveTool = 'select' | 'text' | FlowchartShape | 'connector' | 'mindmap';
+export type ActiveTool = 'select' | 'text' | 'table' | FlowchartShape | 'connector' | 'mindmap';
 
 interface LeftToolbarProps {
   activeTool: ActiveTool;
@@ -22,19 +24,20 @@ interface LeftToolbarProps {
 }
 
 function ShapeIcon({ shape, size = 20 }: { shape: FlowchartShape; size?: number }) {
-  const path = SHAPE_ICON_PATHS[shape];
+  const shapeDef = SHAPE_MAP.get(shape);
+  const iconPath = shapeDef?.iconPath ?? '';
   const isBrace = shape === 'brace-left' || shape === 'brace-right';
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
       {isBrace ? (
-        <path d={path} fill="none" />
+        <path d={iconPath} fill="none" />
       ) : shape === 'cylinder' ? (
         <>
           <ellipse cx="12" cy="7" rx="8" ry="3" fill="none" />
           <path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7" fill="none" />
         </>
       ) : (
-        <path d={path} fill="none" />
+        <path d={iconPath} fill="none" />
       )}
     </svg>
   );
@@ -44,7 +47,7 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
   const [showShapes, setShowShapes] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isShapeTool = Object.keys(SHAPE_META).includes(activeTool);
+  const isShapeTool = SHAPE_MAP.has(activeTool as any);
 
   const handleDragStart = useCallback((shape: FlowchartShape) => (e: React.DragEvent) => {
     const meta = SHAPE_META[shape];
@@ -102,25 +105,17 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
 
         {showShapes && (
           <div
-            className="absolute left-full top-0 ml-2 bg-card rounded-lg shadow-lg border border-border p-2 grid grid-cols-6 gap-0.5"
-            style={{ width: 220 }}
+            className="absolute left-full top-0 ml-2 z-40"
             onMouseEnter={showShapeList}
             onMouseLeave={scheduleHideShapeList}
           >
-            {(Object.keys(SHAPE_META) as FlowchartShape[]).map((key) => (
-              <button
-                key={key}
-                className={cn(
-                  'w-8 h-8 flex items-center justify-center rounded hover:bg-muted transition-colors',
-                  activeTool === key && 'bg-sidebar-accent text-sidebar-primary',
-                )}
-                onClick={() => { onToolChange(key); setShowShapes(false); }}
-                draggable
-                onDragStart={handleDragStart(key)}
-              >
-                <ShapeIcon shape={key} size={20} />
-              </button>
-            ))}
+            <ShapePicker
+              onSelect={(shapeType) => { onToolChange(shapeType as FlowchartShape); setShowShapes(false); }}
+              selectedShape={isShapeTool ? activeTool as any : undefined}
+              draggable
+              onDragStart={(shapeType, e) => handleDragStart(shapeType as FlowchartShape)(e)}
+              columns={6}
+            />
           </div>
         )}
       </div>
@@ -173,6 +168,15 @@ export function LeftToolbar({ activeTool, onToolChange, activeConnector, onConne
         title="图片 (I)"
       >
         <ImageIcon size={18} />
+      </ToolButton>
+
+      {/* Table */}
+      <ToolButton
+        active={activeTool === 'table'}
+        onClick={() => { onToolChange('table'); setShowShapes(false); }}
+        title="表格"
+      >
+        <Table2 size={18} />
       </ToolButton>
     </div>
   );

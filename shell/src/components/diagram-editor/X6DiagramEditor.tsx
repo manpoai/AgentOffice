@@ -22,8 +22,10 @@ import { useAutoSave } from './hooks/useAutoSave';
 import { usePinchZoom } from '@/lib/hooks/use-pinch-zoom';
 import { LeftToolbar, type ActiveTool } from './components/LeftToolbar';
 import { FloatingToolbar } from '@/components/shared/FloatingToolbar';
-import { DIAGRAM_NODE_ITEMS, DIAGRAM_EDGE_ITEMS, DIAGRAM_IMAGE_ITEMS } from '@/components/shared/FloatingToolbar/presets';
+import { DIAGRAM_NODE_ITEMS, DIAGRAM_EDGE_ITEMS, DIAGRAM_IMAGE_ITEMS, DOCS_TABLE_ITEMS } from '@/components/shared/FloatingToolbar/presets';
 import { createDiagramNodeHandler, createDiagramEdgeHandler, createDiagramImageHandler } from './diagram-toolbar-handler';
+import { RichTable } from '@/components/shared/RichTable';
+import { createDocsTableHandler } from '@/components/editor/docs-toolbar-handler';
 import { ShapePicker } from '@/components/shared/ShapeSet';
 import { SHAPE_MAP } from '@/components/shared/ShapeSet/shapes';
 import type { ToolbarItem } from '@/components/shared/FloatingToolbar/types';
@@ -149,6 +151,130 @@ function DiagramShapeSelector({ current, onSelect }: { current: string; onSelect
   );
 }
 
+/** DOM overlay for table nodes in the diagram */
+function DiagramTableOverlay({ graph, node, containerRef, isSelected }: {
+  graph: any;
+  node: any;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  isSelected: boolean;
+}) {
+  const [pos, setPos] = useState({ left: 0, top: 0, width: 360, height: 108 });
+  const [editing, setEditing] = useState(false);
+  const [tableToolbarInfo, setTableToolbarInfo] = useState<{
+    anchor: { top: number; left: number; width: number };
+    view: any;
+  } | null>(null);
+
+  const tableJSON = node.getData()?.tableJSON || null;
+
+  const updatePos = useCallback(() => {
+    if (!graph || !containerRef.current) return;
+    const position = node.getPosition();
+    const size = node.getSize();
+    const topLeft = graph.localToGraph(position.x, position.y);
+    const bottomRight = graph.localToGraph(position.x + size.width, position.y + size.height);
+    setPos({
+      left: topLeft.x,
+      top: topLeft.y,
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
+    });
+  }, [graph, node, containerRef]);
+
+  useEffect(() => {
+    if (!graph) return;
+    const handler = () => updatePos();
+    graph.on('scale', handler);
+    graph.on('translate', handler);
+    graph.on('node:moved', handler);
+    graph.on('node:resized', handler);
+    updatePos();
+    return () => {
+      graph.off('scale', handler);
+      graph.off('translate', handler);
+      graph.off('node:moved', handler);
+      graph.off('node:resized', handler);
+    };
+  }, [graph, updatePos]);
+
+  // Double-click to enter edit mode
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isSelected) setEditing(true);
+  }, [isSelected]);
+
+  // Exit edit mode
+  useEffect(() => {
+    if (!editing) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const overlay = (e.target as HTMLElement).closest('.diagram-table-overlay');
+      if (!overlay) {
+        setEditing(false);
+        setTableToolbarInfo(null);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setEditing(false);
+        setTableToolbarInfo(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [editing]);
+
+  const handleProsemirrorChange = useCallback((json: Record<string, unknown>) => {
+    node.setData({ ...node.getData(), tableJSON: json });
+  }, [node]);
+
+  if (!tableJSON) return null;
+
+  return (
+    <>
+      <div
+        className="diagram-table-overlay absolute overflow-visible"
+        style={{
+          left: pos.left,
+          top: pos.top,
+          width: pos.width,
+          minHeight: pos.height,
+          zIndex: editing ? 50 : isSelected ? 30 : 10,
+          pointerEvents: editing || isSelected ? 'auto' : 'none',
+        }}
+        onDoubleClick={handleDoubleClick}
+      >
+        <RichTable
+          prosemirrorJSON={tableJSON}
+          onProsemirrorChange={editing ? handleProsemirrorChange : undefined}
+          onCellToolbar={editing ? (info) => setTableToolbarInfo(info) : undefined}
+          config={{
+            cellMinWidth: 60,
+            showToolbar: false,
+            showContextMenu: editing,
+            readonly: !editing,
+          }}
+          width="100%"
+        />
+        {!editing && isSelected && (
+          <div className="absolute inset-0 border-2 border-sidebar-primary/50 rounded pointer-events-none" />
+        )}
+      </div>
+      {tableToolbarInfo && editing && (
+        <FloatingToolbar
+          items={DOCS_TABLE_ITEMS}
+          handler={createDocsTableHandler(tableToolbarInfo.view)}
+          anchor={tableToolbarInfo.anchor}
+          visible={true}
+        />
+      )}
+    </>
+  );
+}
+
 export default function X6DiagramEditor(props: X6DiagramEditorProps) {
   return (
     <DiagramErrorBoundary>
@@ -186,6 +312,9 @@ function X6DiagramEditorInner({
   // Floating toolbar selection tracking
   const [diagramToolbarCell, setDiagramToolbarCell] = useState<Cell | null>(null);
   const [diagramToolbarAnchor, setDiagramToolbarAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  // Table nodes for DOM overlays
+  const [tableNodes, setTableNodes] = useState<any[]>([]);
 
   // Mindmap state
   const mindmapTreeRef = useRef<MindmapTreeNode | null>(null);
@@ -302,6 +431,24 @@ function X6DiagramEditorInner({
       graph.off('selection:changed', updateSelection);
       graph.off('node:moved', onNodeMoved);
       graph.off('node:resized', onNodeMoved);
+    };
+  }, [graph]);
+
+  // ─── Track table nodes for DOM overlays ──
+  useEffect(() => {
+    if (!graph) return;
+    const refreshTableNodes = () => {
+      const nodes = graph.getNodes().filter((n: any) => n.getData()?.type === 'table');
+      setTableNodes([...nodes]);
+    };
+    graph.on('node:added', refreshTableNodes);
+    graph.on('node:removed', refreshTableNodes);
+    graph.on('node:change:data', refreshTableNodes);
+    refreshTableNodes();
+    return () => {
+      graph.off('node:added', refreshTableNodes);
+      graph.off('node:removed', refreshTableNodes);
+      graph.off('node:change:data', refreshTableNodes);
     };
   }, [graph]);
 
@@ -779,6 +926,42 @@ function X6DiagramEditorInner({
       // Convert that offset to local coords so the node appears where the preview is.
       const zoom = graph.zoom();
       const previewOffset = 12 / zoom;
+
+      if (activeTool === 'table') {
+        const defaultTableJSON = {
+          type: 'doc',
+          content: [{ type: 'table', content: [
+            { type: 'table_row', content: Array.from({ length: 3 }, () => ({
+              type: 'table_header',
+              attrs: { colspan: 1, rowspan: 1, alignment: null, colwidth: null, background: null },
+              content: [{ type: 'paragraph' }],
+            }))},
+            ...Array.from({ length: 2 }, () => ({
+              type: 'table_row',
+              content: Array.from({ length: 3 }, () => ({
+                type: 'table_cell',
+                attrs: { colspan: 1, rowspan: 1, alignment: null, colwidth: null, background: null },
+                content: [{ type: 'paragraph' }],
+              })),
+            })),
+          ]}],
+        };
+        const nodeId = `tbl_${Date.now().toString(36)}`;
+        graph.addNode({
+          id: nodeId,
+          x: x + previewOffset - 180,
+          y: y + previewOffset - 54,
+          width: 360,
+          height: 108,
+          data: { type: 'table', tableJSON: defaultTableJSON },
+          attrs: {
+            body: { fill: 'transparent', stroke: 'transparent', strokeWidth: 0 },
+          },
+        });
+        graph.select(graph.getCellById(nodeId)!);
+        setActiveTool('select');
+        return;
+      }
 
       if (activeTool === 'text') {
         const textNode = graph.addNode({
@@ -1404,6 +1587,17 @@ function X6DiagramEditorInner({
               />
             );
           })()}
+
+          {/* Table DOM overlays */}
+          {graph && tableNodes.map((tNode) => (
+            <DiagramTableOverlay
+              key={tNode.id}
+              graph={graph}
+              node={tNode}
+              containerRef={containerRef}
+              isSelected={diagramToolbarCell?.id === tNode.id}
+            />
+          ))}
 
           {/* Zoom bar — hidden on mobile */}
           {!isMobile && <ZoomBar graph={graph} />}
