@@ -2054,7 +2054,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     return () => document.removeEventListener('mousedown', handler);
   }, [showEmojiPicker]);
 
-  // Shared save execution — sends current latestRefs to Outline API
+  // Shared save execution — saves document via Gateway API
   const executeSave = useCallback(async (saveDocId: string, titleVersion: number, textVersion: number) => {
     if (saveDocId !== docIdRef.current) return;
     setSaveStatus('saving');
@@ -2062,9 +2062,9 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
       const savingTitle = latestTitleRef.current;
       const savingText = latestTextRef.current;
       const savingEmoji = latestEmojiRef.current;
-      const outlineEmoji = savingEmoji && (savingEmoji.startsWith('/api/') || savingEmoji.startsWith('http')) ? null : savingEmoji;
+      const docEmoji = savingEmoji && (savingEmoji.startsWith('/api/') || savingEmoji.startsWith('http')) ? null : savingEmoji;
       const titleToSave = savingTitle ?? '';
-      const savedDoc = await docApi.updateDocument(saveDocId, titleToSave, savingText, outlineEmoji);
+      const savedDoc = await docApi.updateDocument(saveDocId, titleToSave, savingText, docEmoji);
       // Only update cache if no newer save of either type has been scheduled
       if (titleVersionRef.current !== titleVersion || textVersionRef.current !== textVersion) return;
       const confirmedTitle = savedDoc.title;
@@ -2131,8 +2131,8 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
     const isUrl = selectedEmoji && (selectedEmoji.startsWith('/api/') || selectedEmoji.startsWith('http'));
 
     if (isUrl) {
-      // Image-based icon: save to Baserow (custom editor doesn't support URL icons)
-      // Clear Outline's native icon
+      // Image-based icon: save to Gateway as custom icon (URL icons not stored in doc metadata)
+      // Clear doc's native emoji field
       scheduleTitleSave(title, null);
       try {
         await gw.setDocIcon(doc.id, selectedEmoji);
@@ -2141,7 +2141,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
         console.error('Failed to save custom icon:', e);
       }
     } else {
-      // Unicode emoji or null (remove): save to Outline, remove custom icon
+      // Unicode emoji or null (remove): save to Gateway doc metadata, remove custom icon
       scheduleTitleSave(title, selectedEmoji);
       try {
         await gw.removeDocIcon(doc.id);
@@ -2285,7 +2285,7 @@ function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onN
               </button>
             </div>
           )}
-          {/* Title area — Outline style: emoji inline when set, hover icon positioned outside */}
+          {/* Title area — emoji inline when set, hover icon positioned outside */}
           <div
             className="doc-title-wrap"
             onMouseEnter={() => setShowTitleIcon(true)}

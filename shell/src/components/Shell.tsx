@@ -18,7 +18,7 @@ const MODULE_LIST: { id: Module; label: string; icon: string }[] = [
 function buildUrl(mod: Module, tokens: ServiceTokens): string {
   // All services use sso-inject — sets auth cookies server-side then redirects to /
   if (mod === 'im') return 'https://mm.gridtabs.com/sso-inject';
-  if (mod === 'docs') return 'https://outline.gridtabs.com/sso-inject';
+  if (mod === 'docs') return 'https://asuite.gridtabs.com/content';
   if (mod === 'tasks') return 'https://plane.gridtabs.com/sso-inject';
   if (mod === 'data') return 'https://noco.gridtabs.com/sso-inject';
   return 'https://noco.gridtabs.com';
@@ -47,7 +47,7 @@ export function Shell() {
         setUrls({
           im:    'https://mm.gridtabs.com',
           tasks: 'https://plane.gridtabs.com',
-          docs:  'https://outline.gridtabs.com',
+          docs:  'https://asuite.gridtabs.com/content',
           data:  'https://noco.gridtabs.com',
         });
       });
