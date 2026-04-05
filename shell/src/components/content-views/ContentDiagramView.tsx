@@ -105,14 +105,14 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
             onHistory={() => { setShowHistory(true); setShowComments(false); }}
             onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
             menuItems={[
-              { icon: Link2, label: 'Copy link', shortcut: '⌘⇧L', onClick: () => onCopyLink() },
-              { icon: Pin, label: 'Pin to top', onClick: () => {} },
-              { icon: Download, label: 'Download', onClick: () => editorRef.current?.exportPNG() },
-              { icon: Share2, label: 'Share', onClick: () => {} },
-              { icon: Trash2, label: 'Move to Trash', danger: true, onClick: handleDelete },
-              { icon: Clock, label: 'Version History', separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
-              { icon: MessageSquareIcon, label: 'Comments', shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
-              { icon: Search, label: 'Search', shortcut: '⌘F', onClick: () => {} },
+              { icon: Link2, label: t('actions.copyLink'), shortcut: '⌘⇧L', onClick: () => onCopyLink() },
+              { icon: Pin, label: t('actions.pin'), onClick: () => {} },
+              { icon: Download, label: t('actions.download'), onClick: () => editorRef.current?.exportPNG() },
+              { icon: Share2, label: t('actions.share'), onClick: () => {} },
+              { icon: Trash2, label: t('actions.moveToTrash'), danger: true, onClick: handleDelete },
+              { icon: Clock, label: t('content.versionHistory'), separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
+              { icon: MessageSquareIcon, label: t('content.comments'), shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
+              { icon: Search, label: t('common.search'), shortcut: '⌘F', onClick: () => {} },
             ]}
             actions={<>
               {/* Search */}

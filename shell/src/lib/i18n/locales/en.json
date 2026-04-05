@@ -5,11 +5,19 @@
   },
   "theme": {
     "toLight": "Switch to Light",
-    "toDark": "Switch to Dark"
+    "toDark": "Switch to Dark",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
   },
   "settings": {
     "theme": "Theme",
-    "language": "Language"
+    "language": "Language",
+    "password": "Password",
+    "trash": "Trash",
+    "logout": "Log out",
+    "avatarUploadFailed": "Avatar upload failed",
+    "nameUpdateFailed": "Name update failed"
   },
   "shortcuts": {
     "title": "Keyboard Shortcuts",
@@ -665,7 +673,11 @@
     "createPresentationFailed": "Failed to create presentation",
     "createDiagramFailed": "Failed to create diagram",
     "imageUploadFailed": "Image upload failed",
-    "markdownParseFailed": "Markdown parsing failed"
+    "markdownParseFailed": "Markdown parsing failed",
+    "restoreFailed": "Restore failed",
+    "permanentDeleteFailed": "Permanent delete failed",
+    "renameItemFailed": "Rename failed",
+    "updateIconFailed": "Failed to update icon"
   },
   "entities": {
     "doc": "Doc",
@@ -712,14 +724,21 @@
     "newTokenWarning": "Save this token now. It won't be shown again."
   },
   "notification": {
-    "noNotifications": "No notifications"
+    "noNotifications": "No notifications",
+    "messages": "Messages",
+    "markAllRead": "Mark all read",
+    "noMessages": "No messages"
   },
   "search": {
     "find": "Find...",
     "replace": "Replace..."
   },
   "sidebar": {
-    "searchPlaceholder": "Search(⌘+K)"
+    "searchPlaceholder": "Search(⌘+K)",
+    "pendingApproved": "Pending Approved",
+    "noAgents": "No agents registered",
+    "connected": "Connected",
+    "newToken": "New Token"
   },
   "icon": {
     "changeIcon": "Change icon",

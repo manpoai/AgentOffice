@@ -5,11 +5,19 @@
   },
   "theme": {
     "toLight": "ライトモードに切替",
-    "toDark": "ダークモードに切替"
+    "toDark": "ダークモードに切替",
+    "light": "ライト",
+    "dark": "ダーク",
+    "system": "システム"
   },
   "settings": {
     "theme": "テーマ",
-    "language": "言語"
+    "language": "言語",
+    "password": "パスワード",
+    "trash": "ゴミ箱",
+    "logout": "ログアウト",
+    "avatarUploadFailed": "アバターのアップロードに失敗しました",
+    "nameUpdateFailed": "名前の更新に失敗しました"
   },
   "shortcuts": {
     "title": "キーボードショートカット",
@@ -79,7 +87,21 @@
     "colType": "列タイプ",
     "create": "作成",
     "cancelCreate": "キャンセル",
-    "searchContent": "コンテンツを検索..."
+    "searchContent": "コンテンツを検索...",
+    "duplicate": "複製",
+    "selectRevision": "プレビューするバージョンを選択",
+    "currentVersion": "最新",
+    "loading": "読み込み中...",
+    "noRevisions": "以前のバージョンなし",
+    "restoreVersion": "このバージョンに復元",
+    "restoring": "復元中...",
+    "justNow": "たった今",
+    "minutesAgo": "分前",
+    "hoursAgo": "時間前",
+    "daysAgo": "日前",
+    "viewerInsights": "閲覧者のインサイトを有効化",
+    "enableEmbeds": "埋め込みを有効化",
+    "fullWidth": "全幅"
   },
   "contacts": {
     "title": "Agent管理",
@@ -142,6 +164,8 @@
     "inlineCode": "インラインコード",
     "highlight": "ハイライト",
     "comment": "コメント",
+    "checkboxList": "チェックボックスリスト",
+    "copy": "コピー",
     "loading": "エディタを読み込み中...",
     "initFailed": "エディタの初期化に失敗しました"
   },
@@ -169,7 +193,31 @@
     "resolved": "解決済み",
     "noResolved": "解決済みのコメントはありません",
     "resolvedBy": "{name} が解決",
-    "addComment": "コメントを追加"
+    "addComment": "コメントを追加",
+    "replyPlaceholder": "返信を入力..."
+  },
+  "table": {
+    "alignLeft": "左揃え",
+    "alignCenter": "中央揃え",
+    "alignRight": "右揃え",
+    "sortAsc": "昇順",
+    "sortDesc": "降順",
+    "cellColor": "セルの色",
+    "toggleHeader": "ヘッダー行を切り替え",
+    "toggleHeaderCol": "ヘッダー列を切り替え",
+    "alignment": "配置",
+    "insertBefore": "前に挿入",
+    "insertAfter": "後に挿入",
+    "insertAbove": "上に挿入",
+    "insertBelow": "下に挿入",
+    "moveLeft": "左に移動",
+    "moveRight": "右に移動",
+    "moveUp": "上に移動",
+    "moveDown": "下に移動",
+    "deleteColumn": "列を削除",
+    "deleteRow": "行を削除",
+    "mergeCells": "セルを結合",
+    "splitCell": "セルを分割"
   },
   "dataTable": {
     "colTypes": {
@@ -220,7 +268,9 @@
       "lt": "より小さい",
       "lte": "以下",
       "is": "空",
-      "isnot": "空でない"
+      "isnot": "空でない",
+      "checked": "チェック済み",
+      "notchecked": "未チェック"
     },
     "viewTypes": {
       "grid": "グリッド",
@@ -623,7 +673,11 @@
     "createPresentationFailed": "プレゼンテーションの作成に失敗しました",
     "createDiagramFailed": "ダイアグラムの作成に失敗しました",
     "imageUploadFailed": "画像のアップロードに失敗しました",
-    "markdownParseFailed": "Markdownの解析に失敗しました"
+    "markdownParseFailed": "Markdownの解析に失敗しました",
+    "restoreFailed": "復元に失敗しました",
+    "permanentDeleteFailed": "完全削除に失敗しました",
+    "renameItemFailed": "名前の変更に失敗しました",
+    "updateIconFailed": "アイコンの更新に失敗しました"
   },
   "entities": {
     "doc": "ドキュメント",
@@ -655,17 +709,36 @@
     "copyPrompt": "コピー",
     "resetToken": "トークンをリセット",
     "resetTokenConfirm": "現在のトークンが無効になります。続行しますか？",
-    "newTokenWarning": "このトークンを今すぐ保存してください。再表示されません。"
+    "newTokenWarning": "このトークンを今すぐ保存してください。再表示されません。",
+    "cut": "切り取り",
+    "copy": "コピー",
+    "paste": "貼り付け",
+    "comment": "コメント",
+    "background": "背景設定",
+    "openRecord": "レコードを開く",
+    "rowComments": "行コメント",
+    "deleteRecord": "レコードを削除",
+    "sortAscending": "昇順で並び替え",
+    "sortDescending": "降順で並び替え",
+    "hideColumn": "列を非表示",
+    "deleteColumn": "列を削除"
   },
   "notification": {
-    "noNotifications": "通知はありません"
+    "noNotifications": "通知はありません",
+    "messages": "メッセージ",
+    "markAllRead": "すべて既読にする",
+    "noMessages": "メッセージはありません"
   },
   "search": {
     "find": "検索...",
     "replace": "置換..."
   },
   "sidebar": {
-    "searchPlaceholder": "検索(⌘+K)"
+    "searchPlaceholder": "検索(⌘+K)",
+    "pendingApproved": "承認待ち",
+    "noAgents": "登録済みのエージェントはありません",
+    "connected": "接続済み",
+    "newToken": "新しいトークン"
   },
   "icon": {
     "changeIcon": "アイコンを変更",

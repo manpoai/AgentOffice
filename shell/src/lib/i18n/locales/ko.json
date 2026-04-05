@@ -5,11 +5,19 @@
   },
   "theme": {
     "toLight": "라이트 모드로 전환",
-    "toDark": "다크 모드로 전환"
+    "toDark": "다크 모드로 전환",
+    "light": "라이트",
+    "dark": "다크",
+    "system": "시스템"
   },
   "settings": {
     "theme": "테마",
-    "language": "언어"
+    "language": "언어",
+    "password": "비밀번호",
+    "trash": "휴지통",
+    "logout": "로그아웃",
+    "avatarUploadFailed": "아바타 업로드에 실패했습니다",
+    "nameUpdateFailed": "이름 업데이트에 실패했습니다"
   },
   "shortcuts": {
     "title": "키보드 단축키",
@@ -79,7 +87,21 @@
     "colType": "열 유형",
     "create": "생성",
     "cancelCreate": "취소",
-    "searchContent": "콘텐츠 검색..."
+    "searchContent": "콘텐츠 검색...",
+    "duplicate": "복제",
+    "selectRevision": "미리볼 버전 선택",
+    "currentVersion": "현재",
+    "loading": "로딩 중...",
+    "noRevisions": "이전 버전 없음",
+    "restoreVersion": "이 버전으로 복원",
+    "restoring": "복원 중...",
+    "justNow": "방금 전",
+    "minutesAgo": "분 전",
+    "hoursAgo": "시간 전",
+    "daysAgo": "일 전",
+    "viewerInsights": "뷰어 인사이트 활성화",
+    "enableEmbeds": "임베드 활성화",
+    "fullWidth": "전체 너비"
   },
   "contacts": {
     "title": "Agent 관리",
@@ -142,6 +164,8 @@
     "inlineCode": "인라인 코드",
     "highlight": "강조",
     "comment": "댓글",
+    "checkboxList": "체크박스 목록",
+    "copy": "복사",
     "loading": "에디터 로딩 중...",
     "initFailed": "에디터 초기화에 실패했습니다"
   },
@@ -169,7 +193,31 @@
     "resolved": "해결됨",
     "noResolved": "해결된 댓글이 없습니다",
     "resolvedBy": "{name}이(가) 해결",
-    "addComment": "댓글 추가"
+    "addComment": "댓글 추가",
+    "replyPlaceholder": "답글을 입력..."
+  },
+  "table": {
+    "alignLeft": "왼쪽 정렬",
+    "alignCenter": "가운데 정렬",
+    "alignRight": "오른쪽 정렬",
+    "sortAsc": "오름차순",
+    "sortDesc": "내림차순",
+    "cellColor": "셀 색상",
+    "toggleHeader": "헤더 행 전환",
+    "toggleHeaderCol": "헤더 열 전환",
+    "alignment": "정렬",
+    "insertBefore": "앞에 삽입",
+    "insertAfter": "뒤에 삽입",
+    "insertAbove": "위에 삽입",
+    "insertBelow": "아래에 삽입",
+    "moveLeft": "왼쪽으로 이동",
+    "moveRight": "오른쪽으로 이동",
+    "moveUp": "위로 이동",
+    "moveDown": "아래로 이동",
+    "deleteColumn": "열 삭제",
+    "deleteRow": "행 삭제",
+    "mergeCells": "셀 병합",
+    "splitCell": "셀 분할"
   },
   "dataTable": {
     "colTypes": {
@@ -220,7 +268,9 @@
       "lt": "보다 작음",
       "lte": "이하",
       "is": "비어 있음",
-      "isnot": "비어 있지 않음"
+      "isnot": "비어 있지 않음",
+      "checked": "체크됨",
+      "notchecked": "체크 안됨"
     },
     "viewTypes": {
       "grid": "그리드",
@@ -623,7 +673,11 @@
     "createPresentationFailed": "프레젠테이션 생성에 실패했습니다",
     "createDiagramFailed": "다이어그램 생성에 실패했습니다",
     "imageUploadFailed": "이미지 업로드에 실패했습니다",
-    "markdownParseFailed": "Markdown 파싱에 실패했습니다"
+    "markdownParseFailed": "Markdown 파싱에 실패했습니다",
+    "restoreFailed": "복원에 실패했습니다",
+    "permanentDeleteFailed": "영구 삭제에 실패했습니다",
+    "renameItemFailed": "이름 변경에 실패했습니다",
+    "updateIconFailed": "아이콘 업데이트에 실패했습니다"
   },
   "entities": {
     "doc": "문서",
@@ -655,17 +709,36 @@
     "copyPrompt": "복사",
     "resetToken": "토큰 재설정",
     "resetTokenConfirm": "현재 토큰이 무효화됩니다. 계속하시겠습니까?",
-    "newTokenWarning": "지금 이 토큰을 저장하세요. 다시 표시되지 않습니다."
+    "newTokenWarning": "지금 이 토큰을 저장하세요. 다시 표시되지 않습니다.",
+    "cut": "잘라내기",
+    "copy": "복사",
+    "paste": "붙여넣기",
+    "comment": "댓글",
+    "background": "배경 설정",
+    "openRecord": "레코드 열기",
+    "rowComments": "행 댓글",
+    "deleteRecord": "레코드 삭제",
+    "sortAscending": "오름차순 정렬",
+    "sortDescending": "내림차순 정렬",
+    "hideColumn": "열 숨기기",
+    "deleteColumn": "열 삭제"
   },
   "notification": {
-    "noNotifications": "알림이 없습니다"
+    "noNotifications": "알림이 없습니다",
+    "messages": "메시지",
+    "markAllRead": "모두 읽음으로 표시",
+    "noMessages": "메시지가 없습니다"
   },
   "search": {
     "find": "찾기...",
     "replace": "바꾸기..."
   },
   "sidebar": {
-    "searchPlaceholder": "검색(⌘+K)"
+    "searchPlaceholder": "검색(⌘+K)",
+    "pendingApproved": "승인 대기 중",
+    "noAgents": "등록된 에이전트가 없습니다",
+    "connected": "연결됨",
+    "newToken": "새 토큰"
   },
   "icon": {
     "changeIcon": "아이콘 변경",

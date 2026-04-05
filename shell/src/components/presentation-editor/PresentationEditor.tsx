@@ -1535,15 +1535,15 @@ export function PresentationEditor({
             onHistory={() => { setShowHistory(true); setShowComments(false); }}
             onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
             menuItems={[
-              { icon: Link2, label: 'Copy link', shortcut: '⌘⇧L', onClick: () => onCopyLink?.() },
-              { icon: Pin, label: 'Pin to top', onClick: () => {} },
-              { icon: Download, label: 'Download', onClick: () => handleDownload() },
-              { icon: Share2, label: 'Share', onClick: () => {} },
-              { icon: Trash2, label: 'Move to Trash', danger: true, onClick: handleDelete },
-              { icon: Clock, label: 'Version History', separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
-              { icon: MessageSquare, label: 'Comments', shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
-              { icon: Search, label: 'Search', shortcut: '⌘F', onClick: () => {} },
-              { icon: Play, label: 'Present', onClick: () => startPresentation() },
+              { icon: Link2, label: t('actions.copyLink'), shortcut: '⌘⇧L', onClick: () => onCopyLink?.() },
+              { icon: Pin, label: t('actions.pin'), onClick: () => {} },
+              { icon: Download, label: t('actions.download'), onClick: () => handleDownload() },
+              { icon: Share2, label: t('actions.share'), onClick: () => {} },
+              { icon: Trash2, label: t('actions.moveToTrash'), danger: true, onClick: handleDelete },
+              { icon: Clock, label: t('content.versionHistory'), separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
+              { icon: MessageSquare, label: t('content.comments'), shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
+              { icon: Search, label: t('common.search'), shortcut: '⌘F', onClick: () => {} },
+              { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
             ]}
           />
         </div>
@@ -1626,15 +1626,15 @@ export function PresentationEditor({
           onHistory={() => { setShowHistory(true); setShowComments(false); }}
           onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
           menuItems={[
-            { icon: Link2, label: 'Copy link', shortcut: '⌘⇧L', onClick: () => onCopyLink?.() },
-            { icon: Pin, label: 'Pin to top', onClick: () => {} },
-            { icon: Download, label: 'Download', onClick: () => handleDownload() },
-            { icon: Share2, label: 'Share', onClick: () => {} },
-            { icon: Trash2, label: 'Move to Trash', danger: true, onClick: handleDelete },
-            { icon: Clock, label: 'Version History', separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
-            { icon: MessageSquare, label: 'Comments', shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
-            { icon: Search, label: 'Search', shortcut: '⌘F', onClick: () => {} },
-            { icon: Play, label: 'Present', onClick: () => startPresentation() },
+            { icon: Link2, label: t('actions.copyLink'), shortcut: '⌘⇧L', onClick: () => onCopyLink?.() },
+            { icon: Pin, label: t('actions.pin'), onClick: () => {} },
+            { icon: Download, label: t('actions.download'), onClick: () => handleDownload() },
+            { icon: Share2, label: t('actions.share'), onClick: () => {} },
+            { icon: Trash2, label: t('actions.moveToTrash'), danger: true, onClick: handleDelete },
+            { icon: Clock, label: t('content.versionHistory'), separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
+            { icon: MessageSquare, label: t('content.comments'), shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
+            { icon: Search, label: t('common.search'), shortcut: '⌘F', onClick: () => {} },
+            { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
           ]}
           actions={<>
             {/* Search */}

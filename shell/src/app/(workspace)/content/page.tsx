@@ -21,7 +21,7 @@ import { BottomSheet } from '@/components/shared/BottomSheet';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from 'next-themes';
-import { LogOut, Key, Globe, Bot, Camera, ChevronRight } from 'lucide-react';
+import { LogOut, Key, Globe, Camera, ChevronRight } from 'lucide-react';
 import { DocPanel } from './components/DocPanel';
 import { DiagramPanel } from './components/DiagramPanel';
 
@@ -42,6 +42,7 @@ import type { ContextMenuItem } from '@/lib/hooks/use-context-menu';
 import { contentItemActions, type ContentItemCtx } from '@/actions/content-item.actions';
 import { contentItemSurfaces } from '@/surfaces/content-item.surfaces';
 import { toContextMenuItems, toContentMenuItems } from '@/surfaces/bridge';
+import { AgentPanelContent } from '@/components/shared/AgentPanelContent';
 import { buildActionMap } from '@/actions/types';
 import {
   DndContext,
@@ -510,7 +511,7 @@ export default function ContentPage() {
       await gw.deleteContentItem(nodeId, mode);
       await queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (err) {
-      showError('Delete failed', err);
+      showError(t('errors.deleteFailed'), err);
     }
     setDeleteDialog(null);
   };
@@ -618,7 +619,7 @@ export default function ContentPage() {
       await gw.updateContentItem(nodeId, { pinned: !node.pinned });
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (e) {
-      showError('Failed to toggle pin', e);
+      showError(t('errors.togglePinFailed'), e);
     }
   };
 
@@ -640,7 +641,7 @@ export default function ContentPage() {
       syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
-      showError('Create doc failed', e);
+      showError(t('errors.createDocFailed'), e);
     } finally {
       setCreating(false);
     }
@@ -664,7 +665,7 @@ export default function ContentPage() {
       syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
-      showError('Create table failed', e);
+      showError(t('errors.createTableFailed'), e);
     } finally {
       setCreating(false);
     }
@@ -688,7 +689,7 @@ export default function ContentPage() {
       syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
-      showError('Create presentation failed', e);
+      showError(t('errors.createPresentationFailed'), e);
     } finally {
       setCreating(false);
     }
@@ -712,7 +713,7 @@ export default function ContentPage() {
       syncSelectionToURL(sel);
       setMobileView('detail');
     } catch (e) {
-      showError('Create diagram failed', e);
+      showError(t('errors.createDiagramFailed'), e);
     } finally {
       setCreating(false);
     }
@@ -1127,7 +1128,7 @@ export default function ContentPage() {
                       await gw.restoreContentItem(entry.nodeId);
                       queryClient.invalidateQueries({ queryKey: ['content-items'] });
                       queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
-                    } catch (err) { showError('Restore failed', err); }
+                    } catch (err) { showError(t('errors.restoreFailed'), err); }
                   }}
                   onPermanentDelete={async () => {
                     const msg = t('content.permanentDeleteConfirm') || 'Permanently delete? This cannot be undone.';
@@ -1135,7 +1136,7 @@ export default function ContentPage() {
                     try {
                       await gw.permanentlyDeleteContentItem(entry.nodeId);
                       queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
-                    } catch (err) { showError('Permanent delete failed', err); }
+                    } catch (err) { showError(t('errors.permanentDeleteFailed'), err); }
                   }}
                 />
               ));
@@ -1480,7 +1481,7 @@ export default function ContentPage() {
                   try {
                     await gw.uploadUserAvatar(file);
                     await refreshActor();
-                  } catch (err) { showError('Avatar upload failed', err); }
+                  } catch (err) { showError(t('settings.avatarUploadFailed'), err); }
                   setMobileSavingProfile(false);
                   e.target.value = '';
                 }}
@@ -1497,7 +1498,7 @@ export default function ContentPage() {
                       try {
                         await gw.updateProfile({ name: mobileEditNameValue.trim() });
                         await refreshActor();
-                      } catch (err) { showError('Name update failed', err); }
+                      } catch (err) { showError(t('settings.nameUpdateFailed'), err); }
                       setMobileSavingProfile(false);
                       setMobileEditingName(false);
                     }
@@ -1528,14 +1529,14 @@ export default function ContentPage() {
               className="flex items-center gap-3 w-full px-4 py-3 text-base text-foreground active:bg-accent transition-colors"
             >
               <Key className="h-5 w-5 text-[#939493] dark:text-[#818181]" />
-              Password
+              {t('settings.password')}
             </button>
             <button
               onClick={() => setMobileShowLang(true)}
               className="flex items-center gap-3 w-full px-4 py-3 text-base text-foreground active:bg-accent transition-colors"
             >
               <Globe className="h-5 w-5 text-[#939493] dark:text-[#818181]" />
-              Language
+              {t('settings.language')}
               <ChevronRight className="h-4 w-4 ml-auto opacity-40" />
             </button>
             <button
@@ -1543,14 +1544,14 @@ export default function ContentPage() {
               className="flex items-center gap-3 w-full px-4 py-3 text-base text-foreground active:bg-accent transition-colors"
             >
               <Trash2 className="h-5 w-5 text-[#939493] dark:text-[#818181]" />
-              Trash
+              {t('settings.trash')}
             </button>
             <button
               onClick={() => { setShowMobileProfile(false); logout(); }}
               className="flex items-center gap-3 w-full px-4 py-3 text-base text-foreground active:bg-accent transition-colors"
             >
               <LogOut className="h-5 w-5 text-[#939493] dark:text-[#818181]" />
-              Log out
+              {t('settings.logout')}
             </button>
 
             {/* Theme toggle */}
@@ -1566,7 +1567,7 @@ export default function ContentPage() {
                       : 'bg-black/[0.03] dark:bg-white/[0.05] text-foreground border-black/10 dark:border-white/10 active:bg-black/[0.06]'
                   )}
                 >
-                  {th.charAt(0).toUpperCase() + th.slice(1)}
+                  {t(`theme.${th}`)}
                 </button>
               ))}
             </div>
@@ -1577,38 +1578,7 @@ export default function ContentPage() {
       {/* Mobile agents BottomSheet */}
       <BottomSheet open={showMobileAgents} onClose={() => setShowMobileAgents(false)} title={t('toolbar.agents')}>
         <div className="py-2 px-4">
-          {(() => {
-            const connected = mobileAgents?.filter(a => !a.pending_approval) || [];
-            if (!mobileAgents || connected.length === 0) {
-              return (
-                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                  <Bot className="h-10 w-10 mb-3 opacity-30" />
-                  <p className="text-sm">No agents registered</p>
-                </div>
-              );
-            }
-            return connected.map(agent => (
-              <div key={agent.agent_id || agent.name} className="flex items-center gap-3 py-3">
-                <div className="w-12 h-12 rounded-full bg-muted overflow-hidden shrink-0 border border-black/10 relative">
-                  {agent.avatar_url ? (
-                    <img src={agent.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Bot className="h-5 w-5 text-sidebar-primary" />
-                    </div>
-                  )}
-                  <div className={cn(
-                    'absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-card',
-                    agent.online ? 'bg-green-500' : 'bg-gray-300'
-                  )} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-base font-medium text-foreground truncate block">{agent.display_name || agent.name}</span>
-                  <span className="text-sm text-muted-foreground">{agent.name}</span>
-                </div>
-              </div>
-            ));
-          })()}
+          <AgentPanelContent variant="bottomsheet" allAgents={mobileAgents} />
         </div>
       </BottomSheet>
     </div>
@@ -1790,7 +1760,7 @@ function DraggableTreeNode({
       await gw.updateContentItem(node.id, { icon: selectedEmoji || null });
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (e) {
-      showError('Failed to update icon', e);
+      showError(t('errors.updateIconFailed'), e);
     }
   };
 
@@ -1801,7 +1771,7 @@ function DraggableTreeNode({
     try {
       await gw.updateContentItem(node.id, { title: trimmed });
     } catch (e) {
-      showError('Rename failed', e);
+      showError(t('errors.renameItemFailed'), e);
     }
   };
 

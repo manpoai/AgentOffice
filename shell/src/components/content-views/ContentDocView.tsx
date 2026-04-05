@@ -440,21 +440,21 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
           onHistory={() => setShowHistory(true)}
           onComments={() => setShowComments(v => !v)}
           menuItems={[
-            { icon: Link2, label: 'Copy link', shortcut: '⌘⇧L', onClick: () => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); } },
-            { icon: Pin, label: 'Pin to top', onClick: () => {} },
-            { icon: Download, label: 'Download', onClick: () => {
+            { icon: Link2, label: t('actions.copyLink'), shortcut: '⌘⇧L', onClick: () => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); } },
+            { icon: Pin, label: t('actions.pin'), onClick: () => {} },
+            { icon: Download, label: t('actions.download'), onClick: () => {
               const blob = new Blob([doc.text], { type: 'text/markdown' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a'); a.href = url; a.download = `${title}.md`; a.click();
               URL.revokeObjectURL(url);
             } },
-            { icon: Share2, label: 'Share', onClick: () => {} },
-            { icon: Trash2, label: 'Move to Trash', danger: true, onClick: handleDelete },
-            { icon: Clock, label: 'Version History', separator: true, shortcut: '⌘⇧H', onClick: () => setShowHistory(true) },
-            { icon: MessageSquareIcon, label: 'Comments', shortcut: '⌘J', onClick: () => setShowComments(true) },
-            { icon: Search, label: 'Search and Replace', shortcut: '⌘F', onClick: () => { setShowSearch(true); setSearchWithReplace(false); } },
-            { icon: Maximize2, label: 'Full width', separator: true, desktopOnly: true, onClick: () => {}, desktopRender: (
-              <DocMenuToggle icon={Maximize2} label="Full width" checked={fullWidth} onChange={async (v) => {
+            { icon: Share2, label: t('actions.share'), onClick: () => {} },
+            { icon: Trash2, label: t('actions.moveToTrash'), danger: true, onClick: handleDelete },
+            { icon: Clock, label: t('content.versionHistory'), separator: true, shortcut: '⌘⇧H', onClick: () => setShowHistory(true) },
+            { icon: MessageSquareIcon, label: t('content.comments'), shortcut: '⌘J', onClick: () => setShowComments(true) },
+            { icon: Search, label: t('content.findReplace'), shortcut: '⌘F', onClick: () => { setShowSearch(true); setSearchWithReplace(false); } },
+            { icon: Maximize2, label: t('content.fullWidth'), separator: true, desktopOnly: true, onClick: () => {}, desktopRender: (
+              <DocMenuToggle icon={Maximize2} label={t('content.fullWidth')} checked={fullWidth} onChange={async (v) => {
                 setFullWidth(v);
                 await docApi.updateDocument(doc.id, undefined, undefined, undefined, { fullWidth: v });
               }} />
@@ -472,7 +472,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
             {/* Share button — Figma: bordered, external-link icon + text */}
             <button className="flex items-center gap-1.5 h-8 px-3 ml-1 border border-black/20 dark:border-white/20 rounded-lg text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors">
               <ExternalLink className="h-4 w-4" />
-              Share
+              {t('actions.share')}
             </button>
             {/* History — Figma: bordered square */}
             <button

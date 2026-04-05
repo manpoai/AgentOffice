@@ -5,11 +5,19 @@
   },
   "theme": {
     "toLight": "切换浅色",
-    "toDark": "切换深色"
+    "toDark": "切换深色",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "系统"
   },
   "settings": {
     "theme": "主题",
-    "language": "语言"
+    "language": "语言",
+    "password": "密码",
+    "trash": "回收站",
+    "logout": "退出登录",
+    "avatarUploadFailed": "头像上传失败",
+    "nameUpdateFailed": "姓名更新失败"
   },
   "shortcuts": {
     "title": "键盘快捷键",
@@ -665,7 +673,11 @@
     "createPresentationFailed": "创建演示文稿失败",
     "createDiagramFailed": "创建图表失败",
     "imageUploadFailed": "图片上传失败",
-    "markdownParseFailed": "Markdown 解析失败"
+    "markdownParseFailed": "Markdown 解析失败",
+    "restoreFailed": "恢复失败",
+    "permanentDeleteFailed": "永久删除失败",
+    "renameItemFailed": "重命名失败",
+    "updateIconFailed": "更新图标失败"
   },
   "entities": {
     "doc": "文档",
@@ -712,14 +724,21 @@
     "newTokenWarning": "请立即保存此 Token，关闭后不可再查看。"
   },
   "notification": {
-    "noNotifications": "暂无通知"
+    "noNotifications": "暂无通知",
+    "messages": "消息",
+    "markAllRead": "全部标为已读",
+    "noMessages": "暂无消息"
   },
   "search": {
     "find": "查找...",
     "replace": "替换..."
   },
   "sidebar": {
-    "searchPlaceholder": "搜索(⌘+K)"
+    "searchPlaceholder": "搜索(⌘+K)",
+    "pendingApproved": "待审批",
+    "noAgents": "暂无已注册的 Agent",
+    "connected": "已连接",
+    "newToken": "新 Token"
   },
   "icon": {
     "changeIcon": "修改图标",

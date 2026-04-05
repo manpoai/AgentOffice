@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sun, Moon, Monitor, Globe, ChevronRight, ChevronDown, FolderOpen, Trash2, Plus, PlusCircle, FileText, Table2, Presentation, GitBranch, Search, Link2, Settings, PanelLeftClose, Users, HelpCircle, MessageSquare, AtSign, Pencil, Bot, Circle, Check, X, Bell, Camera, Key, LogOut, Copy } from 'lucide-react';
+import { Sun, Moon, Monitor, Globe, ChevronRight, ChevronDown, FolderOpen, Trash2, Plus, PlusCircle, FileText, Table2, Presentation, GitBranch, Search, Link2, Settings, PanelLeftClose, Users, HelpCircle, MessageSquare, AtSign, Pencil, Bell, Camera, Key, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/lib/auth';
@@ -10,6 +10,7 @@ import { useT, LOCALE_LABELS, type Locale } from '@/lib/i18n';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotificationPanel, NotificationBellBadge } from '@/components/shared/NotificationPanel';
+import { AgentPanelContent } from '@/components/shared/AgentPanelContent';
 import * as gw from '@/lib/api/gateway';
 import { showError } from '@/lib/utils/error';
 
@@ -85,8 +86,6 @@ export function ContentSidebar({
   const [menuPos, setMenuPos] = useState<Record<string, { top: number; left: number }>>({});
   const [showOnboardingPrompt, setShowOnboardingPrompt] = useState(false);
   const [onboardingPromptText, setOnboardingPromptText] = useState('');
-  const [resetTokenResult, setResetTokenResult] = useState<{ agentId: string; token: string } | null>(null);
-  const [resetTokenConfirmId, setResetTokenConfirmId] = useState<string | null>(null);
 
   /** Calculate dropdown position: 8px below the trigger button, left-aligned.
    *  In collapsed mode (toRight=true): menu appears 8px to the right of button, top-aligned. */
@@ -272,7 +271,7 @@ export function ContentSidebar({
                         try {
                           await gw.uploadUserAvatar(file);
                           await refreshActor();
-                        } catch (err) { showError('Avatar upload failed', err); }
+                        } catch (err) { showError(t('settings.avatarUploadFailed'), err); }
                         setSavingProfile(false);
                         e.target.value = '';
                       }}
@@ -289,7 +288,7 @@ export function ContentSidebar({
                             try {
                               await gw.updateProfile({ name: editNameValue.trim() });
                               await refreshActor();
-                            } catch (err) { showError('Name update failed', err); }
+                            } catch (err) { showError(t('settings.nameUpdateFailed'), err); }
                             setSavingProfile(false);
                             setEditingName(false);
                           } else if (e.key === 'Escape') {
@@ -322,7 +321,7 @@ export function ContentSidebar({
                     className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
                   >
                     <Key className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-                    Password
+                    {t('settings.password')}
                   </button>
                   <div className="relative">
                     <button
@@ -330,7 +329,7 @@ export function ContentSidebar({
                       className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
                     >
                       <Globe className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-                      Language
+                      {t('settings.language')}
                       <ChevronRight className="h-3.5 w-3.5 ml-auto opacity-40" />
                     </button>
                     {/* Language sub-menu — separate popup to the right */}
@@ -356,14 +355,14 @@ export function ContentSidebar({
                     className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
                   >
                     <Trash2 className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-                    Trash
+                    {t('settings.trash')}
                   </button>
                   <button
                     onClick={() => { setShowProfileMenu(false); logout(); }}
                     className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
                   >
                     <LogOut className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-                    Log out
+                    {t('settings.logout')}
                   </button>
 
                   {/* Theme toggle — NO icons, text only. pb-6 = 24px bottom padding */}
@@ -379,7 +378,7 @@ export function ContentSidebar({
                             : 'bg-black/[0.03] dark:bg-white/[0.05] text-foreground border-black/10 dark:border-white/10 hover:bg-black/[0.06]'
                         )}
                       >
-                        {th.charAt(0).toUpperCase() + th.slice(1)}
+                        {t(`theme.${th}`)}
                       </button>
                     ))}
                   </div>
@@ -515,175 +514,11 @@ export function ContentSidebar({
             style={{ top: `${menuPos.agents?.top ?? 136}px`, left: `${menuPos.agents?.left ?? 8}px`, width: '320px', maxHeight: '499px' }}
           >
             <ScrollArea className="h-full" style={{ maxHeight: '499px' }}>
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-3 relative">
-                  <h3 className="text-sm font-medium text-foreground">{t('actions.agentMembers')}</h3>
-                  <button
-                    onClick={() => setShowOnboardingPrompt(v => !v)}
-                    className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-sidebar-primary hover:bg-sidebar-primary/10 rounded transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {t('actions.addAgent')}
-                  </button>
-                  {showOnboardingPrompt && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowOnboardingPrompt(false)} />
-                      <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-card
-                                      border border-black/10 dark:border-border rounded-lg
-                                      shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] p-3 w-[360px]">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-medium text-foreground">
-                            {t('actions.sendToAgent')}
-                          </span>
-                          <button
-                            onClick={() => navigator.clipboard.writeText(onboardingPromptText)}
-                            className="flex items-center gap-1 px-2 py-0.5 text-xs text-sidebar-primary
-                                       hover:bg-sidebar-primary/10 rounded transition-colors"
-                          >
-                            <Copy className="h-3 w-3" />
-                            {t('actions.copyPrompt')}
-                          </button>
-                        </div>
-                        <pre className="text-[11px] text-muted-foreground bg-black/[0.03] dark:bg-white/[0.05]
-                                        rounded p-2 max-h-[300px] overflow-y-auto whitespace-pre-wrap
-                                        font-mono leading-relaxed">
-                          {onboardingPromptText}
-                        </pre>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Pending Approved section */}
-                {(() => {
-                  const pending = allAgents?.filter(a => a.pending_approval) || [];
-                  if (pending.length === 0) return null;
-                  return (
-                    <div className="mb-4">
-                      <p className="text-xs font-medium text-foreground/50 mb-2">Pending Approved</p>
-                      {pending.map(agent => (
-                        <div key={agent.agent_id || agent.name} className="flex items-center gap-3 py-2">
-                          <div className="w-12 h-12 rounded-full bg-muted overflow-hidden shrink-0 border border-black/10">
-                            {agent.avatar_url ? (
-                              <img src={agent.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Bot className="h-5 w-5 text-sidebar-primary" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
-                            </div>
-                            <span className="text-xs text-foreground/50">{agent.name}</span>
-                          </div>
-                          <button
-                            onClick={async () => {
-                              try { /* reject not implemented yet */ } catch {}
-                            }}
-                            className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0 hover:bg-red-100 transition-colors"
-                          >
-                            <X className="h-4 w-4 text-red-500" />
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                await gw.approveAgent(agent.agent_id || agent.name);
-                                queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
-                              } catch {}
-                            }}
-                            className="w-8 h-8 rounded-full bg-sidebar-primary flex items-center justify-center shrink-0 hover:opacity-90 transition-colors"
-                          >
-                            <Check className="h-4 w-4 text-white" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-
-                {/* Connected section */}
-                {(() => {
-                  const connected = allAgents?.filter(a => !a.pending_approval) || [];
-                  if (connected.length === 0 && (!allAgents || allAgents.length === 0)) {
-                    return (
-                      <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-                        <Bot className="h-10 w-10 mb-3 opacity-30" />
-                        <p className="text-xs">No agents registered</p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div>
-                      <p className="text-xs font-medium text-foreground/50 mb-2">Connected</p>
-                      {connected.map(agent => (
-                        <div key={agent.agent_id || agent.name} className="flex items-center gap-3 py-2 group rounded-lg hover:bg-black/[0.05] dark:hover:bg-white/[0.05] px-2 -mx-2 transition-colors">
-                          <div className="w-12 h-12 rounded-full bg-muted overflow-hidden shrink-0 border border-black/10 relative">
-                            {agent.avatar_url ? (
-                              <img src={agent.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Bot className="h-5 w-5 text-sidebar-primary" />
-                              </div>
-                            )}
-                            {/* Online dot */}
-                            <div className={cn(
-                              'absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-card',
-                              agent.online ? 'bg-green-500' : 'bg-gray-300'
-                            )} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
-                            </div>
-                            <span className="text-xs text-foreground/50">{agent.name}</span>
-                          </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05]">
-                              <Pencil className="h-3.5 w-3.5 text-foreground/40" />
-                            </button>
-                            <button className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05]">
-                              <Trash2 className="h-3.5 w-3.5 text-foreground/40" />
-                            </button>
-                            {resetTokenConfirmId === (agent.agent_id || agent.name) ? (
-                              <div className="flex items-center gap-1 ml-1">
-                                <span className="text-[10px] text-foreground/60">{t('actions.resetTokenConfirm')}</span>
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      const result = await gw.resetAgentToken(agent.agent_id || agent.name);
-                                      setResetTokenResult({ agentId: agent.agent_id || agent.name, token: result.token });
-                                    } catch {}
-                                    setResetTokenConfirmId(null);
-                                  }}
-                                  className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0"
-                                >
-                                  {t('common.confirm')}
-                                </button>
-                                <button
-                                  onClick={() => setResetTokenConfirmId(null)}
-                                  className="px-1.5 py-0.5 text-[10px] font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors shrink-0"
-                                >
-                                  {t('common.cancel')}
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setResetTokenConfirmId(agent.agent_id || agent.name)}
-                                className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05] text-[10px] text-foreground/40"
-                                title={t('actions.resetToken')}
-                              >
-                                <Key className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
+              <AgentPanelContent
+                variant="popover"
+                allAgents={allAgents}
+                onboardingPromptText={onboardingPromptText}
+              />
             </ScrollArea>
           </div>
         </>
@@ -699,7 +534,7 @@ export function ContentSidebar({
             style={{ top: `${menuPos.message?.top ?? 136}px`, left: `${menuPos.message?.left ?? 120}px`, width: '320px', maxHeight: '400px' }}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 dark:border-border">
-              <h3 className="text-sm font-medium text-foreground">Messages</h3>
+              <h3 className="text-sm font-medium text-foreground">{t('notification.messages')}</h3>
               {unreadCount > 0 && (
                 <button
                   onClick={async () => {
@@ -711,7 +546,7 @@ export function ContentSidebar({
                   }}
                   className="text-xs text-sidebar-primary hover:underline"
                 >
-                  Mark all read
+                  {t('notification.markAllRead')}
                 </button>
               )}
             </div>
@@ -719,7 +554,7 @@ export function ContentSidebar({
               {notifications.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                   <Bell className="h-10 w-10 mb-3 opacity-30" />
-                  <p className="text-xs">No messages</p>
+                  <p className="text-xs">{t('notification.noMessages')}</p>
                 </div>
               ) : (
                 <div className="py-1">
@@ -819,35 +654,6 @@ export function ContentSidebar({
         onClose={() => setShowNotifications(false)}
         anchorRect={undefined}
       />
-
-      {/* ─── New token display modal ─── */}
-      {resetTokenResult && (
-        <>
-          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-            <div className="bg-white dark:bg-card border border-black/10 dark:border-border rounded-lg p-4 w-[400px] shadow-xl">
-              <h3 className="text-sm font-semibold mb-2">New Token</h3>
-              <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">
-                {t('actions.newTokenWarning')}
-              </p>
-              <div className="flex items-center gap-2 bg-black/[0.04] dark:bg-white/[0.05] rounded p-2">
-                <code className="text-xs font-mono flex-1 break-all">{resetTokenResult.token}</code>
-                <button
-                  onClick={() => navigator.clipboard.writeText(resetTokenResult.token)}
-                  className="shrink-0 p-1 rounded hover:bg-black/[0.08] transition-colors"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <button
-                onClick={() => setResetTokenResult(null)}
-                className="mt-3 w-full py-1.5 text-xs font-medium bg-sidebar-primary text-white rounded-md hover:bg-sidebar-primary/90 transition-colors"
-              >
-                {t('common.close')}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
 
       {/* ─── Scrollable tree content area ─── */}
       <ScrollArea className="flex-1 min-h-0">

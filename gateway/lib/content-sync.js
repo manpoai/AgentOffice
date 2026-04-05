@@ -1,0 +1,79 @@
+/**
+ * Content items upsert and sync logic
+ */
+import { br, BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID } from '../baserow.js';
+
+export function createContentSync(db) {
+  const contentItemsUpsert = db.prepare(`
+    INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, collection_id, created_by, updated_by, created_at, updated_at, deleted_at, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      icon = COALESCE((SELECT icon FROM doc_icons WHERE doc_id = excluded.raw_id), excluded.icon),
+      parent_id = excluded.parent_id,
+      collection_id = excluded.collection_id,
+      created_by = excluded.created_by,
+      updated_by = excluded.updated_by,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at,
+      deleted_at = excluded.deleted_at,
+      synced_at = excluded.synced_at
+  `);
+
+  async function syncContentItems() {
+    const now = Date.now();
+    console.log('[gateway] Syncing content items from local documents + Baserow...');
+
+    // 1. Sync docs from local documents table
+    let docCount = 0;
+    try {
+      const docs = db.prepare('SELECT d.*, di.icon as custom_icon FROM documents d LEFT JOIN doc_icons di ON di.doc_id = d.id').all();
+      for (const doc of docs) {
+        const nodeId = `doc:${doc.id}`;
+        const existing = db.prepare('SELECT parent_id, collection_id FROM content_items WHERE id = ?').get(nodeId);
+        const icon = doc.custom_icon || doc.icon || null;
+        contentItemsUpsert.run(
+          nodeId, doc.id, 'doc', doc.title || '',
+          icon, existing?.parent_id || null, existing?.collection_id || null,
+          doc.created_by || null, doc.updated_by || null,
+          doc.created_at || null, doc.updated_at || null, doc.deleted_at || null,
+          now
+        );
+        docCount++;
+      }
+    } catch (err) {
+      console.error('[gateway] Content sync: documents error:', err.message);
+    }
+
+    // 2. Sync tables from Baserow
+    let tableCount = 0;
+    if (BR_EMAIL && BR_PASSWORD) {
+      try {
+        const result = await br('GET', `/api/database/tables/database/${BR_DATABASE_ID}/`);
+        if (result.status < 400 && Array.isArray(result.data)) {
+          for (const t of result.data) {
+            const nodeId = `table:${t.id}`;
+            const customIcon = db.prepare('SELECT icon FROM doc_icons WHERE doc_id = ?').get(String(t.id));
+            contentItemsUpsert.run(
+              nodeId, String(t.id), 'table', t.name || '',
+              customIcon?.icon || null, null, null,
+              null, null,
+              t.created_on || null, null, null,
+              now
+            );
+            tableCount++;
+          }
+        }
+      } catch (err) {
+        console.error('[gateway] Content sync: Baserow error:', err.message);
+      }
+    }
+
+    // 3. Remove stale table items
+    db.prepare("DELETE FROM content_items WHERE type = 'table' AND synced_at < ? AND deleted_at IS NULL").run(now);
+
+    console.log(`[gateway] Content sync done: ${docCount} docs, ${tableCount} tables`);
+  }
+
+  return { contentItemsUpsert, syncContentItems };
+}
