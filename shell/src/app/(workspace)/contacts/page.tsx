@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useT } from '@/lib/i18n';
+import { formatRelativeTime } from '@/lib/utils/time';
 
 export default function ContactsPage() {
   const { t } = useT();
@@ -153,13 +154,3 @@ function AgentCard({ agent }: { agent: gw.Agent }) {
   );
 }
 
-function formatRelativeTime(ts: number, t: (key: string, params?: Record<string, string | number>) => string): string {
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return t('time.justNow');
-  if (mins < 60) return t('time.minutesAgo', { n: mins });
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return t('time.hoursAgo', { n: hours });
-  const days = Math.floor(hours / 24);
-  return t('time.daysAgo', { n: days });
-}

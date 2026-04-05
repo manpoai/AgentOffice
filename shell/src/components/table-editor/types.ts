@@ -7,7 +7,7 @@ import React from 'react';
 import {
   Type, Hash, Calendar, CheckSquare, Link, Mail, AlignLeft, Phone,
   List, Tags, Braces, Paperclip, User, Sigma, Link2, Search, GitBranch,
-  UserCheck,
+  UserCheck, DollarSign, Percent, Star,
 } from 'lucide-react';
 
 // ── Content Link detection ──
@@ -38,6 +38,9 @@ export const COLUMN_TYPES: ColTypeDef[] = [
   // Number
   { value: 'Number', label: 'Number', icon: Hash, group: 'number' },
   { value: 'Decimal', label: 'Decimal', icon: Hash, group: 'number' },
+  { value: 'Currency', label: 'Currency', icon: DollarSign, group: 'number' },
+  { value: 'Percent', label: 'Percent', icon: Percent, group: 'number' },
+  { value: 'Rating', label: 'Rating', icon: Star, group: 'number' },
   { value: 'AutoNumber', label: 'AutoNumber', icon: Hash, group: 'number' },
   // Date & Time
   { value: 'Date', label: 'Date', icon: Calendar, group: 'datetime' },

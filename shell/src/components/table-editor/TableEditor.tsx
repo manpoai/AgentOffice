@@ -26,6 +26,7 @@ import { useT } from '@/lib/i18n';
 import * as br from '@/lib/api/baserow';
 import * as gw from '@/lib/api/gateway';
 import { RowDetailPanel } from './RowDetailPanel';
+import { ColTypeDef, COLUMN_TYPES } from './types';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { LinkRecordPicker } from './LinkRecordPicker';
 import TableHistory, { SnapshotPreview } from './TableHistory';
@@ -33,48 +34,7 @@ import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { EditFAB } from '@/components/shared/EditFAB';
 
-// ── Column type config ──
-
-interface ColTypeDef {
-  value: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  group: 'text' | 'number' | 'datetime' | 'select' | 'relation' | 'other';
-}
-
-const COLUMN_TYPES: ColTypeDef[] = [
-  // Text
-  { value: 'SingleLineText', label: 'SingleLineText', icon: Type, group: 'text' },
-  { value: 'LongText', label: 'LongText', icon: AlignLeft, group: 'text' },
-  { value: 'Email', label: 'Email', icon: Mail, group: 'text' },
-  { value: 'URL', label: 'URL', icon: Link, group: 'text' },
-  { value: 'PhoneNumber', label: 'PhoneNumber', icon: Phone, group: 'text' },
-  // Number
-  { value: 'Number', label: 'Number', icon: Hash, group: 'number' },
-  { value: 'Decimal', label: 'Decimal', icon: Hash, group: 'number' },
-  { value: 'Currency', label: 'Currency', icon: DollarSign, group: 'number' },
-  { value: 'Percent', label: 'Percent', icon: Percent, group: 'number' },
-  { value: 'Rating', label: 'Rating', icon: Star, group: 'number' },
-  { value: 'AutoNumber', label: 'AutoNumber', icon: Hash, group: 'number' },
-  // Date & Time
-  { value: 'Date', label: 'Date', icon: Calendar, group: 'datetime' },
-  { value: 'DateTime', label: 'DateTime', icon: Calendar, group: 'datetime' },
-  // Selection
-  { value: 'Checkbox', label: 'Checkbox', icon: CheckSquare, group: 'select' },
-  { value: 'SingleSelect', label: 'SingleSelect', icon: List, group: 'select' },
-  { value: 'MultiSelect', label: 'MultiSelect', icon: Tags, group: 'select' },
-  // Relation & Computed
-  { value: 'Links', label: 'Links', icon: Link2, group: 'relation' },
-  { value: 'Lookup', label: 'Lookup', icon: Search, group: 'relation' },
-  { value: 'Rollup', label: 'Rollup', icon: Sigma, group: 'relation' },
-  { value: 'Formula', label: 'Formula', icon: GitBranch, group: 'relation' },
-  // Other
-  { value: 'Attachment', label: 'Attachment', icon: Paperclip, group: 'other' },
-  { value: 'JSON', label: 'JSON', icon: Braces, group: 'other' },
-  { value: 'User', label: 'User', icon: User, group: 'other' },
-  { value: 'CreatedBy', label: 'CreatedBy', icon: UserCheck, group: 'other' },
-  { value: 'LastModifiedBy', label: 'LastModifiedBy', icon: UserCheck, group: 'other' },
-];
+// ── Column type config — imported from ./types ──
 
 // label field now stores the colType key; use tColType() to get translated label
 function tColType(t: (key: string) => string, ct: ColTypeDef): string {

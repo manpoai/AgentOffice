@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as docApi from '@/lib/api/documents';
 import type { Document as DocType } from '@/lib/api/documents';
 import { FileText, Table2, Plus, Trash2, Search, Clock, MoreHorizontal, ChevronDown, RotateCcw, Presentation, GitBranch, Pencil } from 'lucide-react';
+import { ENTITY_NAMES, CREATABLE_TYPES } from '@/actions/entity-names';
 import { SwipeBack } from '@/components/shared/SwipeBack';
 import { ContentSidebar } from '@/components/ContentSidebar';
 import { EmojiPicker } from '@/components/EmojiPicker';

@@ -59,15 +59,6 @@ const pptSlideActionMap = buildActionMap(pptSlideActions);
 
 const PPT_SHORTCUTS: ShortcutRegistration[] = [
   {
-    id: 'ppt-duplicate',
-    key: 'd',
-    modifiers: { meta: true },
-    handler: () => window.dispatchEvent(new CustomEvent('ppt:duplicate')),
-    label: 'Duplicate',
-    category: 'Presentation',
-    priority: 5,
-  },
-  {
     id: 'ppt-group',
     key: 'g',
     modifiers: { meta: true },
@@ -86,7 +77,7 @@ const PPT_SHORTCUTS: ShortcutRegistration[] = [
     priority: 6,
   },
 ];
-// NOTE: ⌘C/⌘X/⌘V/Delete/Backspace are handled in onKeyDown (capture phase)
+// NOTE: ⌘C/⌘X/⌘V/⌘D/Delete/Backspace are handled in onKeyDown (capture phase)
 // via action maps — not registered here because they require canvasRef.
 
 const THUMB_WIDTH = 180;
@@ -588,6 +579,11 @@ export function PresentationEditor({
         e.preventDefault();
         const pasteCtx: PPTCanvasCtx = { canvas, clipboardRef, setShowComments: () => {}, openBackground: () => {} };
         pptCanvasActionMap['ppt-canvas-paste'].execute(pasteCtx);
+      } else if (e.key === 'd' && !isFabricTextEditing) {
+        if (!canvas || !activeObj) return;
+        e.preventDefault();
+        const dupCtx: PPTObjectCtx = { canvas, activeObject: activeObj, clipboardRef, setShowComments: () => {} };
+        pptObjectActionMap['ppt-duplicate'].execute(dupCtx);
       }
     };
 

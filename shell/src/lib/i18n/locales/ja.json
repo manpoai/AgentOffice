@@ -167,7 +167,30 @@
     "checkboxList": "チェックボックスリスト",
     "copy": "コピー",
     "loading": "エディタを読み込み中...",
-    "initFailed": "エディタの初期化に失敗しました"
+    "initFailed": "エディタの初期化に失敗しました",
+    "blockType": {
+      "text": "テキスト",
+      "h1": "見出し1",
+      "h2": "見出し2",
+      "h3": "見出し3",
+      "todo": "Todo",
+      "ordered": "番号付きリスト",
+      "bullet": "箇条書き",
+      "quote": "引用",
+      "code": "コード",
+      "info": "情報",
+      "success": "成功",
+      "warning": "警告",
+      "tip": "ヒント"
+    },
+    "contentLink": "コンテンツリンク",
+    "contentLinkDesc": "ドキュメント、テーブル、図へのリンクを挿入",
+    "embedDiagram": "図を埋め込む",
+    "embedDiagramDesc": "ライブプレビュー付きで図を埋め込む",
+    "listNumbering": {
+      "continueFrom": "番号を継続（{n}から）",
+      "startNew": "新しいリストを開始（1から）"
+    }
   },
   "comments": {
     "title": "コメント",
@@ -383,8 +406,29 @@
     "mappedCols": "マッピング済み {mapped}/{total} 列",
     "importing": "インポート中...",
     "importNRows": "{n}行をインポート",
-    "weekdays": ["日", "月", "火", "水", "木", "金", "土"],
-    "monthNames": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+    "weekdays": [
+      "日",
+      "月",
+      "火",
+      "水",
+      "木",
+      "金",
+      "土"
+    ],
+    "monthNames": [
+      "1月",
+      "2月",
+      "3月",
+      "4月",
+      "5月",
+      "6月",
+      "7月",
+      "8月",
+      "9月",
+      "10月",
+      "11月",
+      "12月"
+    ],
     "today": "今日",
     "yearMonth": "{year}年{month}月",
     "clickToUpload": "クリックしてアップロード",
@@ -521,7 +565,13 @@
     "notFound": "ダイアグラムが見つかりません",
     "empty": "空のダイアグラム",
     "editDiagram": "ダイアグラムを編集",
-    "searchDiagrams": "ダイアグラムを検索..."
+    "searchDiagrams": "ダイアグラムを検索...",
+    "shortcuts": {
+      "addChild": "子ノードを追加",
+      "addSibling": "兄弟ノードを追加",
+      "editLabel": "ラベルを編集",
+      "selectAll": "すべて選択"
+    }
   },
   "toolbar": {
     "fonts": {
@@ -631,7 +681,8 @@
     "minutesAgo": "{n}分前",
     "hoursAgo": "{n}時間前",
     "daysAgo": "{n}日前",
-    "editedAt": "編集"
+    "editedAt": "編集",
+    "monthsAgo": "{n}ヶ月前"
   },
   "errors": {
     "createViewFailed": "ビューの作成に失敗しました",
@@ -721,7 +772,8 @@
     "sortAscending": "昇順で並び替え",
     "sortDescending": "降順で並び替え",
     "hideColumn": "列を非表示",
-    "deleteColumn": "列を削除"
+    "deleteColumn": "列を削除",
+    "duplicate": "複製"
   },
   "notification": {
     "noNotifications": "通知はありません",

@@ -14,6 +14,7 @@ import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { EditFAB } from '@/components/shared/EditFAB';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
+import { formatRelativeTime } from '@/lib/utils/time';
 import { useT, getT } from '@/lib/i18n';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { useX6Graph } from './hooks/useX6Graph';
@@ -331,41 +332,45 @@ export default function X6DiagramEditor(props: X6DiagramEditorProps) {
 
 export { X6DiagramEditor };
 
-const DIAGRAM_SHORTCUTS: ShortcutRegistration[] = [
-  {
-    id: 'diagram-tab',
-    key: 'Tab',
-    handler: () => window.dispatchEvent(new CustomEvent('diagram:add-child')),
-    label: 'Add child node',
-    category: 'Diagram',
-    priority: 5,
-  },
-  {
-    id: 'diagram-enter',
-    key: 'Enter',
-    handler: () => window.dispatchEvent(new CustomEvent('diagram:add-sibling')),
-    label: 'Add sibling',
-    category: 'Diagram',
-    priority: 5,
-  },
-  {
-    id: 'diagram-f2',
-    key: 'F2',
-    handler: () => window.dispatchEvent(new CustomEvent('diagram:edit-label')),
-    label: 'Edit label',
-    category: 'Diagram',
-    priority: 5,
-  },
-  {
-    id: 'diagram-select-all',
-    key: 'a',
-    modifiers: { meta: true },
-    handler: () => window.dispatchEvent(new CustomEvent('diagram:select-all')),
-    label: 'Select all',
-    category: 'Diagram',
-    priority: 5,
-  },
-];
+function buildDiagramShortcuts(): ShortcutRegistration[] {
+  const t = getT();
+  return [
+    {
+      id: 'diagram-tab',
+      key: 'Tab',
+      handler: () => window.dispatchEvent(new CustomEvent('diagram:add-child')),
+      label: t('diagram.shortcuts.addChild'),
+      category: 'Diagram',
+      priority: 5,
+    },
+    {
+      id: 'diagram-enter',
+      key: 'Enter',
+      handler: () => window.dispatchEvent(new CustomEvent('diagram:add-sibling')),
+      label: t('diagram.shortcuts.addSibling'),
+      category: 'Diagram',
+      priority: 5,
+    },
+    {
+      id: 'diagram-f2',
+      key: 'F2',
+      handler: () => window.dispatchEvent(new CustomEvent('diagram:edit-label')),
+      label: t('diagram.shortcuts.editLabel'),
+      category: 'Diagram',
+      priority: 5,
+    },
+    {
+      id: 'diagram-select-all',
+      key: 'a',
+      modifiers: { meta: true },
+      handler: () => window.dispatchEvent(new CustomEvent('diagram:select-all')),
+      label: t('diagram.shortcuts.selectAll'),
+      category: 'Diagram',
+      priority: 5,
+    },
+  ];
+}
+const DIAGRAM_SHORTCUTS = buildDiagramShortcuts();
 
 function X6DiagramEditorInner({
   diagramId, editorRef, onSaveStatusChange, onDeleted, embedded,

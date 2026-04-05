@@ -263,7 +263,7 @@ function buildMenuItems(): BlockMenuItem[] {
   const t = getT();
   return [
     {
-      label: 'Text',
+      label: t('editor.blockType.text'),
       matchKey: 'paragraph',
       icon: LUCIDE_BLOCK.type,
       action: (view, pos) => {
@@ -279,7 +279,7 @@ function buildMenuItems(): BlockMenuItem[] {
       },
     },
     {
-      label: 'H1',
+      label: t('editor.blockType.h1'),
       matchKey: 'heading1',
       icon: LUCIDE_BLOCK['heading-1'],
       action: (view, pos) => {
@@ -294,7 +294,7 @@ function buildMenuItems(): BlockMenuItem[] {
       },
     },
     {
-      label: 'H2',
+      label: t('editor.blockType.h2'),
       matchKey: 'heading2',
       icon: LUCIDE_BLOCK['heading-2'],
       action: (view, pos) => {
@@ -309,7 +309,7 @@ function buildMenuItems(): BlockMenuItem[] {
       },
     },
     {
-      label: 'H3',
+      label: t('editor.blockType.h3'),
       matchKey: 'heading3',
       icon: LUCIDE_BLOCK['heading-3'],
       action: (view, pos) => {
@@ -324,31 +324,31 @@ function buildMenuItems(): BlockMenuItem[] {
       },
     },
     {
-      label: 'Todo',
+      label: t('editor.blockType.todo'),
       matchKey: 'checkbox_list',
       icon: LUCIDE_BLOCK['list-todo'],
       action: (view, pos) => wrapBlockInList(view, pos, 'checkbox_list'),
     },
     {
-      label: 'Ordered',
+      label: t('editor.blockType.ordered'),
       matchKey: 'ordered_list',
       icon: LUCIDE_BLOCK['list-ordered'],
       action: (view, pos) => wrapBlockInList(view, pos, 'ordered_list'),
     },
     {
-      label: 'Bullet',
+      label: t('editor.blockType.bullet'),
       matchKey: 'bullet_list',
       icon: LUCIDE_BLOCK.list,
       action: (view, pos) => wrapBlockInList(view, pos, 'bullet_list'),
     },
     {
-      label: 'Quote',
+      label: t('editor.blockType.quote'),
       matchKey: 'blockquote',
       icon: LUCIDE_BLOCK.quote,
       action: (view, pos) => wrapBlockInNode(view, pos, 'blockquote'),
     },
     {
-      label: 'Code',
+      label: t('editor.blockType.code'),
       matchKey: 'code_block',
       icon: LUCIDE_BLOCK['code-xml'],
       action: (view, pos) => {
@@ -373,25 +373,25 @@ function buildMenuItems(): BlockMenuItem[] {
       },
     },
     {
-      label: 'Info',
+      label: t('editor.blockType.info'),
       matchKey: 'notice_info',
       icon: LUCIDE_BLOCK['badge-info'],
       action: (view, pos) => insertNoticeBlock(view, pos, 'info'),
     },
     {
-      label: 'Success',
+      label: t('editor.blockType.success'),
       matchKey: 'notice_success',
       icon: LUCIDE_BLOCK.smile,
       action: (view, pos) => insertNoticeBlock(view, pos, 'success'),
     },
     {
-      label: 'Warning',
+      label: t('editor.blockType.warning'),
       matchKey: 'notice_warning',
       icon: LUCIDE_BLOCK['octagon-alert'],
       action: (view, pos) => insertNoticeBlock(view, pos, 'warning'),
     },
     {
-      label: 'Tip',
+      label: t('editor.blockType.tip'),
       matchKey: 'notice_tip',
       icon: LUCIDE_BLOCK['square-asterisk'],
       action: (view, pos) => insertNoticeBlock(view, pos, 'tip'),

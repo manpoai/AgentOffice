@@ -59,17 +59,7 @@ export const STROKE_DASH_STYLES: { label: string; value: number[] | undefined }[
 
 // ─── Helpers ────────────────────────────────────────
 
-export function formatRelativeTime(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} minutes ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hours ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} days ago`;
-}
+export { formatRelativeTime } from '@/lib/utils/time';
 
 export function fitCanvasToContainer(canvas: any, container: HTMLElement | null) {
   if (!canvas || !container) return;

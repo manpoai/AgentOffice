@@ -167,7 +167,30 @@
     "checkboxList": "Checkbox List",
     "copy": "Copy",
     "loading": "Loading editor...",
-    "initFailed": "Editor initialization failed"
+    "initFailed": "Editor initialization failed",
+    "blockType": {
+      "text": "Text",
+      "h1": "H1",
+      "h2": "H2",
+      "h3": "H3",
+      "todo": "Todo",
+      "ordered": "Ordered",
+      "bullet": "Bullet",
+      "quote": "Quote",
+      "code": "Code",
+      "info": "Info",
+      "success": "Success",
+      "warning": "Warning",
+      "tip": "Tip"
+    },
+    "contentLink": "Content Link",
+    "contentLinkDesc": "Insert a link to a doc, table, or diagram",
+    "embedDiagram": "Embed Diagram",
+    "embedDiagramDesc": "Embed a diagram with live preview",
+    "listNumbering": {
+      "continueFrom": "Continue numbering (from {n})",
+      "startNew": "Start new list (from 1)"
+    }
   },
   "comments": {
     "title": "Comments",
@@ -383,8 +406,29 @@
     "mappedCols": "Mapped {mapped}/{total} columns",
     "importing": "Importing...",
     "importNRows": "Import {n} rows",
-    "weekdays": ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"],
-    "monthNames": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "weekdays": [
+      "Su",
+      "Mo",
+      "Tu",
+      "We",
+      "Th",
+      "Fr",
+      "Sa"
+    ],
+    "monthNames": [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+    ],
     "today": "Today",
     "yearMonth": "{month} {year}",
     "clickToUpload": "Click to upload",
@@ -521,7 +565,13 @@
     "notFound": "Diagram not found",
     "empty": "Empty diagram",
     "editDiagram": "Edit Diagram",
-    "searchDiagrams": "Search diagrams..."
+    "searchDiagrams": "Search diagrams...",
+    "shortcuts": {
+      "addChild": "Add child node",
+      "addSibling": "Add sibling node",
+      "editLabel": "Edit label",
+      "selectAll": "Select all"
+    }
   },
   "toolbar": {
     "fonts": {
@@ -631,7 +681,8 @@
     "minutesAgo": "{n}m ago",
     "hoursAgo": "{n}h ago",
     "daysAgo": "{n}d ago",
-    "editedAt": "Edited"
+    "editedAt": "Edited",
+    "monthsAgo": "{n}mo ago"
   },
   "errors": {
     "createViewFailed": "Failed to create view",
@@ -721,7 +772,8 @@
     "copyPrompt": "Copy",
     "resetToken": "Reset Token",
     "resetTokenConfirm": "This will invalidate the agent's current token. Continue?",
-    "newTokenWarning": "Save this token now. It won't be shown again."
+    "newTokenWarning": "Save this token now. It won't be shown again.",
+    "duplicate": "Duplicate"
   },
   "notification": {
     "noNotifications": "No notifications",

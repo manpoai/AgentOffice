@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
+import { formatRelativeTime } from '@/lib/utils/time';
 import { useT } from '@/lib/i18n';
 import {
   ReactFlow,
@@ -157,19 +158,6 @@ const MINDMAP_COLORS = [
   { bg: '#ffedd5', border: '#f97316', text: '#9a3412' },
   { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' },
 ];
-
-// ─── Helper ─────────────────────────────────────────
-function formatRelativeTime(ts: number): string {
-  const now = Date.now();
-  const diff = now - ts;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} minutes ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} hours ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} days ago`;
-}
 
 let nodeIdCounter = 0;
 function newNodeId() {

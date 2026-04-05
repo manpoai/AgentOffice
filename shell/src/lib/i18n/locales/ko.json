@@ -167,7 +167,30 @@
     "checkboxList": "체크박스 목록",
     "copy": "복사",
     "loading": "에디터 로딩 중...",
-    "initFailed": "에디터 초기화에 실패했습니다"
+    "initFailed": "에디터 초기화에 실패했습니다",
+    "blockType": {
+      "text": "텍스트",
+      "h1": "제목1",
+      "h2": "제목2",
+      "h3": "제목3",
+      "todo": "할일",
+      "ordered": "순서 있는 목록",
+      "bullet": "순서 없는 목록",
+      "quote": "인용",
+      "code": "코드",
+      "info": "정보",
+      "success": "성공",
+      "warning": "경고",
+      "tip": "팁"
+    },
+    "contentLink": "콘텐츠 링크",
+    "contentLinkDesc": "문서, 테이블 또는 다이어그램 링크 삽입",
+    "embedDiagram": "다이어그램 삽입",
+    "embedDiagramDesc": "실시간 미리보기로 다이어그램 삽입",
+    "listNumbering": {
+      "continueFrom": "번호 계속 ({}부터)",
+      "startNew": "새 목록 시작 (1부터)"
+    }
   },
   "comments": {
     "title": "댓글",
@@ -383,8 +406,29 @@
     "mappedCols": "매핑됨 {mapped}/{total} 열",
     "importing": "가져오는 중...",
     "importNRows": "{n}행 가져오기",
-    "weekdays": ["일", "월", "화", "수", "목", "금", "토"],
-    "monthNames": ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"],
+    "weekdays": [
+      "일",
+      "월",
+      "화",
+      "수",
+      "목",
+      "금",
+      "토"
+    ],
+    "monthNames": [
+      "1월",
+      "2월",
+      "3월",
+      "4월",
+      "5월",
+      "6월",
+      "7월",
+      "8월",
+      "9월",
+      "10월",
+      "11월",
+      "12월"
+    ],
     "today": "오늘",
     "yearMonth": "{year}년 {month}월",
     "clickToUpload": "클릭하여 업로드",
@@ -521,7 +565,13 @@
     "notFound": "다이어그램을 찾을 수 없습니다",
     "empty": "빈 다이어그램",
     "editDiagram": "다이어그램 편집",
-    "searchDiagrams": "다이어그램 검색..."
+    "searchDiagrams": "다이어그램 검색...",
+    "shortcuts": {
+      "addChild": "자식 노드 추가",
+      "addSibling": "형제 노드 추가",
+      "editLabel": "레이블 편집",
+      "selectAll": "모두 선택"
+    }
   },
   "toolbar": {
     "fonts": {
@@ -631,7 +681,8 @@
     "minutesAgo": "{n}분 전",
     "hoursAgo": "{n}시간 전",
     "daysAgo": "{n}일 전",
-    "editedAt": "수정"
+    "editedAt": "수정",
+    "monthsAgo": "{n}개월 전"
   },
   "errors": {
     "createViewFailed": "뷰 생성에 실패했습니다",
@@ -721,7 +772,8 @@
     "sortAscending": "오름차순 정렬",
     "sortDescending": "내림차순 정렬",
     "hideColumn": "열 숨기기",
-    "deleteColumn": "열 삭제"
+    "deleteColumn": "열 삭제",
+    "duplicate": "복제"
   },
   "notification": {
     "noNotifications": "알림이 없습니다",

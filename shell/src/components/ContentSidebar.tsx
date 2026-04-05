@@ -13,6 +13,8 @@ import { NotificationPanel, NotificationBellBadge } from '@/components/shared/No
 import { AgentPanelContent } from '@/components/shared/AgentPanelContent';
 import * as gw from '@/lib/api/gateway';
 import { showError } from '@/lib/utils/error';
+import { formatRelativeTime } from '@/lib/utils/time';
+import { ENTITY_NAMES } from '@/actions/entity-names';
 
 interface ContentSidebarProps {
   /** Whether the sidebar is collapsed (56px) or expanded (232px) */
@@ -585,7 +587,7 @@ export function ContentSidebar({
                       <div className="flex-1 min-w-0">
                         <p className={cn('text-sm truncate', !notif.read ? 'font-medium text-foreground' : 'text-foreground/70')}>{notif.title}</p>
                         {notif.body && <p className="text-xs text-foreground/50 truncate mt-0.5">{notif.body}</p>}
-                        <p className="text-[10px] text-foreground/40 mt-1">{formatNotifTime(notif.created_at)}</p>
+                        <p className="text-[10px] text-foreground/40 mt-1">{formatRelativeTime(typeof notif.created_at === 'string' ? new Date(notif.created_at).getTime() : notif.created_at)}</p>
                       </div>
                       {!notif.read && <div className="w-2 h-2 rounded-full bg-sidebar-primary shrink-0 mt-2" />}
                     </button>
@@ -604,38 +606,25 @@ export function ContentSidebar({
           <div className="fixed z-50 bg-white dark:bg-card border border-black/10 dark:border-border rounded-lg shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] py-1 w-[168px]"
             style={{ top: `${menuPos.plus?.top ?? 52}px`, left: `${menuPos.plus?.left ?? 170}px` }}
           >
-            <button
-              onClick={() => { onShowNewMenuChange(false); onCreateDoc(); }}
-              disabled={creating}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors disabled:opacity-50"
-            >
-              <FileText className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-              {t('actions.newDoc')}
-            </button>
-            <button
-              onClick={() => { onShowNewMenuChange(false); onCreateTable(); }}
-              disabled={creating}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors disabled:opacity-50"
-            >
-              <Table2 className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-              {t('actions.newTable')}
-            </button>
-            <button
-              onClick={() => { onShowNewMenuChange(false); onCreatePresentation(); }}
-              disabled={creating}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors disabled:opacity-50"
-            >
-              <Presentation className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-              {t('actions.newSlides')}
-            </button>
-            <button
-              onClick={() => { onShowNewMenuChange(false); onCreateDiagram(); }}
-              disabled={creating}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors disabled:opacity-50"
-            >
-              <GitBranch className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-              {t('actions.newFlowchart')}
-            </button>
+            {[
+              { entity: ENTITY_NAMES.doc, onClick: onCreateDoc },
+              { entity: ENTITY_NAMES.table, onClick: onCreateTable },
+              { entity: ENTITY_NAMES.presentation, onClick: onCreatePresentation },
+              { entity: ENTITY_NAMES.diagram, onClick: onCreateDiagram },
+            ].map(({ entity, onClick }) => {
+              const Icon = entity.icon;
+              return (
+                <button
+                  key={entity.type}
+                  onClick={() => { onShowNewMenuChange(false); onClick(); }}
+                  disabled={creating}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors disabled:opacity-50"
+                >
+                  <Icon className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
+                  {t(entity.createLabelKey)}
+                </button>
+              );
+            })}
             <div className="border-t border-black/10 dark:border-border my-1" />
             <button
               onClick={() => { onShowNewMenuChange(false); router.push('/contacts'); }}
@@ -705,14 +694,3 @@ export function ContentSidebar({
   );
 }
 
-function formatNotifTime(ts: number | string): string {
-  const time = typeof ts === 'string' ? new Date(ts).getTime() : ts;
-  const diff = Date.now() - time;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}

@@ -28,6 +28,7 @@ import {
   findTable,
 } from 'prosemirror-tables';
 import { getT } from '@/lib/i18n';
+import { PALETTES } from '@/actions/color-palettes';
 
 export const tableMenuKey = new PluginKey('tableMenu');
 
@@ -512,17 +513,7 @@ export function tableMenuPlugin(onCellToolbar?: (info: TableToolbarInfo | null) 
       return; // toggle off
     }
 
-    const colors = [
-      { label: 'None', css: '' },
-      { label: 'Light Yellow', css: '#fef3c7' },
-      { label: 'Light Blue', css: '#bfdbfe' },
-      { label: 'Light Green', css: '#d1fae5' },
-      { label: 'Light Pink', css: '#fce7f3' },
-      { label: 'Light Purple', css: '#e9d5ff' },
-      { label: 'Light Orange', css: '#fed7aa' },
-      { label: 'Light Gray', css: '#e5e7eb' },
-      { label: 'Light Red', css: '#fecaca' },
-    ];
+    const colors = PALETTES.cellBackground.map(c => ({ label: c.name, css: c.value }));
 
     colorPicker = el('div', `${P}-color-picker`);
     colorPicker.style.position = 'absolute';
@@ -1322,13 +1313,8 @@ export function tableMenuPlugin(onCellToolbar?: (info: TableToolbarInfo | null) 
       return;
     }
     const highlightColors = [
-      { label: 'None', css: '' },
-      { label: 'Yellow', css: 'hsl(50 100% 70% / 0.4)' },
-      { label: 'Orange', css: 'hsl(30 100% 65% / 0.3)' },
-      { label: 'Pink', css: 'hsl(330 80% 65% / 0.3)' },
-      { label: 'Purple', css: 'hsl(270 60% 60% / 0.3)' },
-      { label: 'Blue', css: 'hsl(210 70% 55% / 0.3)' },
-      { label: 'Green', css: 'hsl(142 50% 50% / 0.3)' },
+      { label: getT()('toolbar.common.none'), css: '' },
+      ...PALETTES.highlight.map(c => ({ label: c.name, css: c.value })),
     ];
 
     colorPicker = el('div', `${P}-color-picker`);

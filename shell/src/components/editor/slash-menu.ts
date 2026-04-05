@@ -158,7 +158,7 @@ function buildSlashItems(getDocId?: () => string | undefined): SlashMenuItem[] {
     },
     // --- Content Link ---
     {
-      label: 'Content Link', description: 'Insert a link to a doc, table, or diagram', icon: '🔗', keywords: 'link content doc table embed reference',
+      label: t('editor.contentLink'), description: t('editor.contentLinkDesc'), icon: '🔗', keywords: 'link content doc table embed reference',
       command: (view) => {
         // Dispatch custom event — Editor.tsx listens and shows ContentLinkPicker
         const coords = view.coordsAtPos(view.state.selection.from);
@@ -170,7 +170,7 @@ function buildSlashItems(getDocId?: () => string | undefined): SlashMenuItem[] {
     },
     // --- Diagram Embed ---
     {
-      label: 'Embed Diagram', description: 'Embed a diagram with live preview', icon: '\u{1F500}', keywords: 'diagram embed flowchart graph x6',
+      label: t('editor.embedDiagram'), description: t('editor.embedDiagramDesc'), icon: '\u{1F500}', keywords: 'diagram embed flowchart graph x6',
       command: (view) => {
         const coords = view.coordsAtPos(view.state.selection.from);
         view.dom.dispatchEvent(new CustomEvent('open-diagram-picker', {

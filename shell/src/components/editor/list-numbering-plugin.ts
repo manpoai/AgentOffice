@@ -12,6 +12,7 @@ import { Plugin, PluginKey } from 'prosemirror-state';
 import type { EditorState, Transaction } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { getT } from '@/lib/i18n';
 
 const listNumberingKey = new PluginKey('list-numbering');
 
@@ -73,9 +74,10 @@ function createMenu(view: EditorView, olPos: number, olNode: any, anchorRect: DO
   const currentOrder = olNode.attrs.order;
   const prevCount = getPrevListItemCount(view.state, olPos);
 
+  const t = getT();
   const items = [
     {
-      label: `Continue numbering (from ${prevCount + 1})`,
+      label: t('editor.listNumbering.continueFrom', { n: prevCount + 1 }),
       action: () => {
         const tr = view.state.tr.setNodeMarkup(olPos, undefined, { ...olNode.attrs, order: prevCount + 1 });
         view.dispatch(tr);
@@ -83,7 +85,7 @@ function createMenu(view: EditorView, olPos: number, olNode: any, anchorRect: DO
       disabled: prevCount === 0,
     },
     {
-      label: 'Start new list (from 1)',
+      label: t('editor.listNumbering.startNew'),
       action: () => {
         const tr = view.state.tr.setNodeMarkup(olPos, undefined, { ...olNode.attrs, order: 1 });
         view.dispatch(tr);

@@ -167,7 +167,30 @@
     "checkboxList": "待办列表",
     "copy": "复制",
     "loading": "加载编辑器...",
-    "initFailed": "编辑器初始化失败"
+    "initFailed": "编辑器初始化失败",
+    "blockType": {
+      "text": "正文",
+      "h1": "标题1",
+      "h2": "标题2",
+      "h3": "标题3",
+      "todo": "待办",
+      "ordered": "有序列表",
+      "bullet": "无序列表",
+      "quote": "引用",
+      "code": "代码",
+      "info": "信息",
+      "success": "成功",
+      "warning": "警告",
+      "tip": "提示"
+    },
+    "contentLink": "内容链接",
+    "contentLinkDesc": "插入文档、表格或图表的链接",
+    "embedDiagram": "嵌入图表",
+    "embedDiagramDesc": "嵌入带实时预览的图表",
+    "listNumbering": {
+      "continueFrom": "继续编号（从{n}开始）",
+      "startNew": "开始新列表（从1开始）"
+    }
   },
   "comments": {
     "title": "评论",
@@ -383,8 +406,29 @@
     "mappedCols": "已映射 {mapped}/{total} 列",
     "importing": "导入中...",
     "importNRows": "导入 {n} 行",
-    "weekdays": ["日", "一", "二", "三", "四", "五", "六"],
-    "monthNames": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+    "weekdays": [
+      "日",
+      "一",
+      "二",
+      "三",
+      "四",
+      "五",
+      "六"
+    ],
+    "monthNames": [
+      "1月",
+      "2月",
+      "3月",
+      "4月",
+      "5月",
+      "6月",
+      "7月",
+      "8月",
+      "9月",
+      "10月",
+      "11月",
+      "12月"
+    ],
     "today": "今天",
     "yearMonth": "{year}年{month}月",
     "clickToUpload": "点击上传",
@@ -521,7 +565,13 @@
     "notFound": "未找到流程图",
     "empty": "空白流程图",
     "editDiagram": "编辑流程图",
-    "searchDiagrams": "搜索流程图..."
+    "searchDiagrams": "搜索流程图...",
+    "shortcuts": {
+      "addChild": "添加子节点",
+      "addSibling": "添加兄弟节点",
+      "editLabel": "编辑标签",
+      "selectAll": "全选"
+    }
   },
   "toolbar": {
     "fonts": {
@@ -631,7 +681,8 @@
     "minutesAgo": "{n}分钟前",
     "hoursAgo": "{n}小时前",
     "daysAgo": "{n}天前",
-    "editedAt": "编辑于"
+    "editedAt": "编辑于",
+    "monthsAgo": "{n}个月前"
   },
   "errors": {
     "createViewFailed": "创建视图失败",
@@ -721,7 +772,8 @@
     "copyPrompt": "复制",
     "resetToken": "重置 Token",
     "resetTokenConfirm": "这将使当前 Token 失效，确认继续？",
-    "newTokenWarning": "请立即保存此 Token，关闭后不可再查看。"
+    "newTokenWarning": "请立即保存此 Token，关闭后不可再查看。",
+    "duplicate": "复制"
   },
   "notification": {
     "noNotifications": "暂无通知",

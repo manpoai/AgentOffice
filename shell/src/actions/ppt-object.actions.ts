@@ -59,6 +59,23 @@ export const pptObjectActions: ActionDef<PPTObjectCtx>[] = [
     },
   },
   {
+    id: 'ppt-duplicate',
+    label: t => t('actions.duplicate'),
+    icon: Copy,
+    shortcut: '⌘D',
+    group: 'clipboard',
+    execute: async ctx => {
+      const { canvas, activeObject } = ctx;
+      const cloned = await activeObject.clone();
+      canvas.fire('before:modified', { target: cloned });
+      cloned.set({ left: (cloned.left || 0) + 20, top: (cloned.top || 0) + 20 });
+      canvas.add(cloned);
+      canvas.setActiveObject(cloned);
+      canvas.renderAll();
+      canvas.fire('object:modified', { target: cloned });
+    },
+  },
+  {
     id: 'ppt-delete',
     label: t => t('actions.delete'),
     icon: Trash2,
