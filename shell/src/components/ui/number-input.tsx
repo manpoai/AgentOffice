@@ -17,7 +17,6 @@ export interface NumberInputProps {
 }
 
 export function NumberInput({
-  const { t } = useT();
   value,
   onChange,
   min,
@@ -27,6 +26,7 @@ export function NumberInput({
   suffix,
   className,
 }: NumberInputProps) {
+  const { t } = useT();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const clamp = useCallback((v: number) => {

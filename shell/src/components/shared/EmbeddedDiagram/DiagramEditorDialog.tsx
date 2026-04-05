@@ -4,12 +4,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import dynamic from 'next/dynamic';
-<<<<<<< Updated upstream
 import { useT } from '@/lib/i18n';
-=======
 import type { DiagramEditorHandle } from '@/components/diagram-editor/X6DiagramEditor';
 import { EditorSkeleton } from '@/components/shared/Skeleton';
->>>>>>> Stashed changes
 
 const X6DiagramEditor = dynamic(
   () => import('@/components/diagram-editor/X6DiagramEditor').then((m) => ({ default: m.default })),

@@ -22,7 +22,8 @@ interface MobileCommentBarProps {
  * Matches Figma: rounded pill input with "Add comments" placeholder + send arrow.
  */
 export function MobileCommentBar({
-  const { t } = useT(); targetType, targetId, rowId, rightSlot }: MobileCommentBarProps) {
+  targetType, targetId, rowId, rightSlot }: MobileCommentBarProps) {
+  const { t } = useT();
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const isTable = targetType === 'table';

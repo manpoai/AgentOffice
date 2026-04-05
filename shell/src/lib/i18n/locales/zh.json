@@ -717,5 +717,15 @@
   "icon": {
     "changeIcon": "修改图标",
     "addIcon": "添加图标"
+  },
+  "profile": {
+    "title": "个人资料"
+  },
+  "trash": {
+    "restore": "恢复",
+    "deletePermanently": "永久删除"
+  },
+  "tree": {
+    "addChild": "添加子项"
   }
 }

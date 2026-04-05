@@ -717,5 +717,15 @@
   "icon": {
     "changeIcon": "Change icon",
     "addIcon": "Add icon"
+  },
+  "profile": {
+    "title": "Profile"
+  },
+  "trash": {
+    "restore": "Restore",
+    "deletePermanently": "Delete permanently"
+  },
+  "tree": {
+    "addChild": "Add child"
   }
 }

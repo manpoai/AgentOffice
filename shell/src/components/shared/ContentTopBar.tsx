@@ -161,7 +161,7 @@ export function ContentTopBar({
           <button
             onClick={onToggleDocList}
             className="hidden md:flex p-1.5 -ml-2 mr-2 text-black/40 dark:text-white/40 hover:text-foreground rounded transition-colors"
-            title={docListVisible ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={docListVisible ? t('toolbar.collapseSidebar') : t('toolbar.expandSidebar')}
           >
             {docListVisible ? <ArrowLeftToLine className="h-4 w-4" /> : <ArrowRightToLine className="h-4 w-4" />}
           </button>

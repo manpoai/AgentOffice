@@ -663,5 +663,15 @@
   "icon": {
     "changeIcon": "アイコンを変更",
     "addIcon": "アイコンを追加"
+  },
+  "profile": {
+    "title": "プロフィール"
+  },
+  "trash": {
+    "restore": "復元",
+    "deletePermanently": "完全に削除"
+  },
+  "tree": {
+    "addChild": "子項目を追加"
   }
 }

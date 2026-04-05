@@ -51,13 +51,13 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export function RevisionHistory({
-  const { t } = useT();
   contentType,
   contentId,
   onRestore,
   className,
   onClose,
 }: RevisionHistoryProps) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const [selectedId, setSelectedId] = useState<string | null>(null);

@@ -1427,7 +1427,7 @@ export default function ContentPage() {
       />
 
       {/* Mobile profile BottomSheet */}
-      <BottomSheet open={showMobileProfile} onClose={() => { setShowMobileProfile(false); setMobileEditingName(false); setMobileShowLang(false); }} title="Profile">
+      <BottomSheet open={showMobileProfile} onClose={() => { setShowMobileProfile(false); setMobileEditingName(false); setMobileShowLang(false); }} title={t('profile.title')}>
         {mobileShowLang ? (
           /* Language sub-view */
           <div className="py-2">
@@ -1575,7 +1575,7 @@ export default function ContentPage() {
       </BottomSheet>
 
       {/* Mobile agents BottomSheet */}
-      <BottomSheet open={showMobileAgents} onClose={() => setShowMobileAgents(false)} title="Agents">
+      <BottomSheet open={showMobileAgents} onClose={() => setShowMobileAgents(false)} title={t('toolbar.agents')}>
         <div className="py-2 px-4">
           {(() => {
             const connected = mobileAgents?.filter(a => !a.pending_approval) || [];
@@ -1877,7 +1877,7 @@ function DraggableTreeNode({
               e.stopPropagation(); setShowIconPicker(v => !v);
             }}
             className="shrink-0 hover:opacity-70 transition-opacity"
-            title="Change icon"
+            title={t('icon.changeIcon')}
           >
             {node.emoji ? (
               node.emoji.startsWith('/api/') || node.emoji.startsWith('http') ? (
@@ -1945,7 +1945,7 @@ function DraggableTreeNode({
               ref={addBtnRef}
               onClick={(e) => { e.stopPropagation(); setShowAddMenu(v => !v); }}
               className="p-0.5 text-muted-foreground hover:text-foreground rounded"
-              title="Add child"
+              title={t('tree.addChild')}
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -1994,7 +1994,7 @@ function DraggableTreeNode({
               ref={moreBtnRef}
               onClick={(e) => { e.stopPropagation(); setShowMoreMenu(v => !v); }}
               className="p-0.5 text-muted-foreground hover:text-foreground rounded"
-              title="More"
+              title={t('toolbar.more')}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
             </button>
@@ -2097,6 +2097,7 @@ function TrashItem({ title, icon, deletedAt, onRestore, onPermanentDelete }: {
   onPermanentDelete: () => Promise<void>;
 }) {
   const [loading, setLoading] = useState(false);
+  const { t } = useT();
 
   const handleAction = async (action: () => Promise<void>) => {
     if (loading) return;
@@ -2123,7 +2124,7 @@ function TrashItem({ title, icon, deletedAt, onRestore, onPermanentDelete }: {
           onClick={() => handleAction(onRestore)}
           disabled={loading}
           className="p-1 text-muted-foreground hover:text-foreground rounded"
-          title="Restore"
+          title={t('trash.restore')}
         >
           <RotateCcw className="h-3.5 w-3.5" />
         </button>
@@ -2131,7 +2132,7 @@ function TrashItem({ title, icon, deletedAt, onRestore, onPermanentDelete }: {
           onClick={() => handleAction(onPermanentDelete)}
           disabled={loading}
           className="p-1 text-destructive hover:text-destructive/80 rounded"
-          title="Delete permanently"
+          title={t('trash.deletePermanently')}
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>

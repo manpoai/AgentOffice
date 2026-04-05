@@ -21,8 +21,8 @@ interface NotificationBellProps {
  * Desktop: sidebar header (default variant)
  * Mobile: 44x44 circular button (mobile variant)
  */
-export function NotificationBell({
-  const { t } = useT(); className, variant = 'default' }: NotificationBellProps) {
+export function NotificationBell({ className, variant = 'default' }: NotificationBellProps) {
+  const { t } = useT();
   const [showPanel, setShowPanel] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
 

@@ -22,13 +22,13 @@ const LINE_STYLES: { value: 'solid' | 'dashed' | 'dotted'; label: string; dashAr
 const LINE_WIDTHS = [1, 2, 3, 4, 6];
 
 export function LinePicker({
-  const { t } = useT();
   style,
   width,
   onStyleChange,
   onWidthChange,
   className,
 }: LinePickerProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);

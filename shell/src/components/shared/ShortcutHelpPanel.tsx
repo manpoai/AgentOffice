@@ -4,12 +4,9 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { KeyboardManager } from '@/lib/keyboard';
-<<<<<<< Updated upstream
 import { useT } from '@/lib/i18n';
-=======
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { BottomSheet } from '@/components/shared/BottomSheet';
->>>>>>> Stashed changes
 
 function formatKey(shortcut: { key: string; modifiers?: { meta?: boolean; ctrl?: boolean; shift?: boolean; alt?: boolean } }): string {
   const parts: string[] = [];

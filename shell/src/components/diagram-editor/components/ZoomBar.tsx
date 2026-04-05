@@ -9,8 +9,8 @@ interface ZoomBarProps {
   graph: Graph | null;
 }
 
-export function ZoomBar({
-  const { t } = useT(); graph }: ZoomBarProps) {
+export function ZoomBar({ graph }: ZoomBarProps) {
+  const { t } = useT();
   const [zoom, setZoom] = useState(100);
 
   useEffect(() => {

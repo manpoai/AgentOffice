@@ -15,7 +15,7 @@ import { EditFAB } from '@/components/shared/EditFAB';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { useT, getT } from '@/lib/i18n';
-// ContentTopBar is now rendered by DiagramPanel in content/page.tsx
+import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { useX6Graph } from './hooks/useX6Graph';
 import { useAutoSave } from './hooks/useAutoSave';
 import { usePinchZoom } from '@/lib/hooks/use-pinch-zoom';
@@ -86,6 +86,14 @@ interface X6DiagramEditorProps {
   showHistory?: boolean;
   /** Called when comment/history panels should close */
   onClosePanel?: () => void;
+  /** Breadcrumb navigation items */
+  breadcrumb?: { id: string; title: string }[];
+  /** Called when back button is pressed */
+  onBack?: () => void;
+  /** Whether doc list is visible */
+  docListVisible?: boolean;
+  /** Toggle doc list visibility */
+  onToggleDocList?: () => void;
 }
 
 let nodeIdCounter = 0;
@@ -362,6 +370,7 @@ const DIAGRAM_SHORTCUTS: ShortcutRegistration[] = [
 function X6DiagramEditorInner({
   diagramId, editorRef, onSaveStatusChange, onDeleted, embedded,
   showComments: showCommentsProp, showHistory: showHistoryProp, onClosePanel,
+  breadcrumb, onBack, docListVisible, onToggleDocList,
 }: X6DiagramEditorProps) {
   const { t } = useT();
 
@@ -1671,7 +1680,6 @@ function X6DiagramEditorInner({
   }, [graph, activeTool]);
 
   return (
-<<<<<<< Updated upstream
     <div className="flex flex-row h-full bg-muted">
       {/* Left column: Header + canvas + toolbar */}
       <div className="flex-1 flex flex-col h-full min-w-0">
@@ -1694,14 +1702,14 @@ function X6DiagramEditorInner({
             <button
               className="p-1.5 rounded hover:bg-muted text-muted-foreground"
               onClick={() => graph?.undo()}
-              title="撤销 (Cmd+Z)"
+              title={t('toolbar.undo')}
             >
               <Undo2 size={16} />
             </button>
             <button
               className="p-1.5 rounded hover:bg-muted text-muted-foreground"
               onClick={() => graph?.redo()}
-              title="重做 (Cmd+Shift+Z)"
+              title={t('toolbar.redo')}
             >
               <Redo2 size={16} />
             </button>
@@ -1735,11 +1743,6 @@ function X6DiagramEditorInner({
         />
       </div>
       )}
-=======
-    <div className="flex flex-row flex-1 min-h-0 h-full">
-      {/* Left column: canvas + toolbar */}
-      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
->>>>>>> Stashed changes
 
       {/* ── Migration banner ── */}
       {migrationNeeded && (
@@ -1897,7 +1900,6 @@ function X6DiagramEditorInner({
       </div>{/* end left column */}
 
       {/* Sidebar — full height on desktop, BottomSheet on mobile */}
-<<<<<<< Updated upstream
       {showComments && !showHistory && !embedded && (
         <>
           <div className="hidden md:flex w-80 border-l border-border bg-card flex-col shrink-0 overflow-hidden h-full">
@@ -1949,9 +1951,6 @@ function X6DiagramEditorInner({
           </div>
         </>
       )}
-=======
-      {/* Comments/History panels are now rendered by DiagramPanel for full-height layout */}
->>>>>>> Stashed changes
     </div>
   );
 }

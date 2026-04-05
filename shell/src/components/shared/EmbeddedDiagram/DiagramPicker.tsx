@@ -5,12 +5,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listContentItems, createContentItem, type ContentItem } from '@/lib/api/gateway';
 import { Plus, Search, X } from 'lucide-react';
-<<<<<<< Updated upstream
 import { useT } from '@/lib/i18n';
-=======
 import { showError } from '@/lib/utils/error';
 import { formatRelativeTime } from '@/lib/utils/time';
->>>>>>> Stashed changes
 
 interface DiagramPickerProps {
   onSelect: (diagramId: string, item: ContentItem) => void;
@@ -19,12 +16,8 @@ interface DiagramPickerProps {
   embedded?: boolean;
 }
 
-<<<<<<< Updated upstream
-export function DiagramPicker({ onSelect, onCancel }: DiagramPickerProps) {
-  const { t } = useT();
-=======
 export function DiagramPicker({ onSelect, onCancel, embedded }: DiagramPickerProps) {
->>>>>>> Stashed changes
+  const { t } = useT();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [creating, setCreating] = useState(false);

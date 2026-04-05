@@ -180,32 +180,6 @@ export function ContentSidebar({
         collapsed ? 'w-14' : 'w-[232px]'
       )}
     >
-<<<<<<< Updated upstream
-      {/* Top: Logo + action buttons */}
-      <div className="h-[52px] flex items-center px-3 gap-2 shrink-0">
-        <span
-          className={cn(
-            'text-xl text-foreground font-[family-name:var(--font-allura)] whitespace-nowrap transition-opacity duration-200 flex-1 min-w-0',
-            collapsed ? 'opacity-0 w-0' : 'opacity-100'
-          )}
-        >
-          Asuite
-        </span>
-        {!collapsed && (
-          <div className="flex items-center gap-0.5 shrink-0">
-            <button
-              onClick={() => searchInputRef.current?.focus()}
-              className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-              title={t('toolbar.search')}
-            >
-              <Search className="h-4 w-4" />
-            </button>
-            <button
-              ref={bellRef}
-              onClick={() => setShowNotifications(v => !v)}
-              className="relative p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-              title={t('toolbar.notifications')}
-=======
       {/* ─── Top: Profile row ─── */}
       {!collapsed ? (
         <div className="px-3 pt-4 pb-2 shrink-0">
@@ -228,7 +202,6 @@ export function ContentSidebar({
                 setShowProfileMenu(v => !v);
               }}
               className="flex items-center gap-1 text-sm font-medium text-foreground/70 hover:text-foreground transition-colors min-w-0"
->>>>>>> Stashed changes
             >
               <span className="truncate">{actor?.display_name || actor?.username || 'User'}</span>
               <ChevronDown className="h-3 w-3 shrink-0 opacity-0 group-hover/header:opacity-50 transition-opacity" />
@@ -417,13 +390,8 @@ export function ContentSidebar({
           <button
             ref={cSearchBtnRef}
             onClick={() => searchInputRef.current?.focus()}
-<<<<<<< Updated upstream
-            className="p-1.5 text-muted-foreground hover:text-foreground rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-            title={t('toolbar.search')}
-=======
             className="p-2 text-[#939493] dark:text-[#818181] hover:text-foreground hover:bg-black/[0.04] rounded-lg transition-colors"
             title={t('toolbar.search')}
->>>>>>> Stashed changes
           >
             <Search className="h-5 w-5" />
           </button>
@@ -500,7 +468,7 @@ export function ContentSidebar({
             }}
           >
             <AtSign className="h-4 w-4" />
-            Agents
+            {t('toolbar.agents')}
           </button>
           <button
             ref={messageBtnRef}
@@ -511,7 +479,7 @@ export function ContentSidebar({
             className="flex items-center justify-center gap-1.5 h-8 flex-1 rounded-lg text-xs font-medium text-foreground/70 bg-white dark:bg-card border border-black/10 dark:border-white/10 hover:bg-black/[0.02] transition-colors relative"
           >
             <Bell className="h-4 w-4" />
-            Message
+            {t('toolbar.message')}
             {unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-medium flex items-center justify-center px-1">
                 {unreadCount > 99 ? '99+' : unreadCount}
@@ -779,20 +747,6 @@ export function ContentSidebar({
       {/* ─── Bottom: Logo + Help + Collapse ─── */}
       <div className="mt-auto shrink-0 pl-6 pr-3 py-6">
         {!collapsed ? (
-<<<<<<< Updated upstream
-          <div className="px-2 pt-2 pb-1">
-            <button
-              onClick={() => router.push('/contacts')}
-              className="w-full flex items-center justify-center gap-2 h-9 rounded-lg text-sm font-semibold transition-colors"
-              style={{
-                backgroundColor: 'hsl(var(--sidebar-primary))',
-                color: 'hsl(var(--sidebar-primary-foreground))',
-              }}
-            >
-              <Link2 className="h-4 w-4" />
-              {t('toolbar.connectAgents')}
-            </button>
-=======
           <div className="flex items-center">
             {/* @suite logo — Figma: 56×24 image, 24px from left/top/bottom */}
             <img src="/logo.png" alt="@suite" className="h-6 object-contain object-left" style={{ maxWidth: '56px' }} />
@@ -814,24 +768,13 @@ export function ContentSidebar({
                 <PanelLeftClose className="h-4 w-4" />
               </button>
             </div>
->>>>>>> Stashed changes
           </div>
         ) : (
           <div className="flex justify-center">
             <button
-<<<<<<< Updated upstream
-              onClick={() => router.push('/contacts')}
-              className="flex items-center justify-center h-8 w-8 rounded-lg transition-colors"
-              style={{
-                backgroundColor: 'hsl(var(--sidebar-primary))',
-                color: 'hsl(var(--sidebar-primary-foreground))',
-              }}
-              title={t('toolbar.connectAgents')}
-=======
               onClick={onToggleCollapse}
               className="p-1.5 text-black/30 dark:text-white/30 hover:text-foreground rounded transition-colors"
               title={t('toolbar.expandSidebar')}
->>>>>>> Stashed changes
             >
               <ChevronRight className="h-4 w-4" />
             </button>

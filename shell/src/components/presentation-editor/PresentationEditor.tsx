@@ -1500,14 +1500,8 @@ export function PresentationEditor({
             canRedo={redoStackRef.current.length > 0}
             metaLine={
               <button
-<<<<<<< Updated upstream
-                onClick={startPresentation}
-                className="flex items-center gap-1 px-2 py-1 rounded text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                title={t('toolbar.present')}
-=======
                 onClick={() => { setShowHistory(true); setShowComments(false); }}
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
->>>>>>> Stashed changes
               >
                 Last modified: {formatRelativeTime(presentation.updated_at)}
                 {presentation.updated_by && <span> by {presentation.updated_by}</span>}
@@ -1597,14 +1591,8 @@ export function PresentationEditor({
           canRedo={redoStackRef.current.length > 0}
           metaLine={
             <button
-<<<<<<< Updated upstream
-              onClick={startPresentation}
-              className="flex items-center gap-1 px-2 py-1 rounded text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-              title={t('toolbar.present')}
-=======
               onClick={() => { setShowHistory(true); setShowComments(false); }}
               className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
->>>>>>> Stashed changes
             >
               Last modified: {formatRelativeTime(presentation.updated_at)}
               {presentation.updated_by && <span> by {presentation.updated_by}</span>}
@@ -1631,11 +1619,7 @@ export function PresentationEditor({
             {/* Present button — Figma: black bg, Slides-only */}
             <button onClick={startPresentation} className="flex items-center gap-1.5 h-8 px-3 ml-1 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
               <Play className="h-3.5 w-3.5" />
-<<<<<<< Updated upstream
               <span className="hidden sm:inline">{t('toolbar.present')}</span>
-=======
-              Present
->>>>>>> Stashed changes
             </button>
             {/* Share button */}
             <button className="flex items-center gap-1.5 h-8 px-3 ml-1 border border-black/20 dark:border-white/20 rounded-lg text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors">
@@ -1654,139 +1638,6 @@ export function PresentationEditor({
         />
       </div>
 
-<<<<<<< Updated upstream
-      {/* ─── Toolbar (simplified) ──────────────────────── */}
-      <div className="flex items-center gap-1 px-3 py-1.5 border-b border-border shrink-0 bg-muted/30">
-        <ToolBtn icon={MousePointer2} active={selectedTool === 'select'} onClick={() => setSelectedTool('select')} title={t('toolbar.select')} />
-        <div className="w-px h-5 bg-border mx-1" />
-        <ToolBtn icon={Type} onClick={addTextbox} title={t('toolbar.text')} />
-        <div className="relative">
-          <ToolBtn icon={Hexagon} active={showShapePicker} onClick={() => setShowShapePicker(v => !v)} title={t('toolbar.shapes')} />
-          {showShapePicker && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowShapePicker(false)} />
-              <div className="absolute left-0 top-full mt-1 z-20">
-                <ShapePicker onSelect={addShape} columns={6} />
-              </div>
-            </>
-          )}
-        </div>
-        <ToolBtn icon={ImageIcon} onClick={addImage} title={t('toolbar.image')} />
-        <ToolBtn icon={Table2} onClick={() => addTable(3, 3)} title={t('toolbar.table')} />
-        <ToolBtn icon={Workflow} onClick={insertDiagram} title={t('toolbar.insertDiagram')} />
-        <div className="w-px h-5 bg-border mx-1" />
-        {/* Spacer to push format toggle to the right */}
-        <div className="flex-1" />
-        <button
-          onClick={() => setShowPropertyPanel(v => !v)}
-          className={cn(
-            'p-1 rounded transition-colors',
-            showPropertyPanel ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'
-          )}
-          title={showPropertyPanel ? 'Hide properties' : 'Show properties'}
-        >
-          {showPropertyPanel ? <PanelRightClose className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
-        </button>
-      </div>
-
-      {/* ─── Main Area: Slide List + Canvas + Property Panel ── */}
-      <div className="flex-1 flex min-h-0">
-        {/* Slide List (left) — hidden on mobile */}
-        <div className="w-[220px] border-r border-border flex-col shrink-0 bg-muted/20 hidden md:flex">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-            <span className="text-xs font-medium text-muted-foreground">Slides ({slides.length})</span>
-            <button onClick={addSlide} className="p-1 text-muted-foreground hover:text-foreground" title={t('toolbar.addSlide')}>
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-2">
-            {slides.map((slide, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  if (i !== currentSlideIndex) {
-                    saveCurrentSlideToState();
-                    setCurrentSlideIndex(i);
-                  }
-                }}
-                className={cn(
-                  'w-full rounded-lg border-2 transition-all overflow-hidden',
-                  i === currentSlideIndex
-                    ? 'border-primary shadow-sm'
-                    : 'border-transparent hover:border-border'
-                )}
-              >
-                <div className="flex items-center gap-2 px-2">
-                  <span className="text-[10px] text-muted-foreground shrink-0 w-4 text-right">{i + 1}</span>
-                  <div
-                    className="flex-1 rounded overflow-hidden my-1"
-                    style={{
-                      aspectRatio: `${SLIDE_WIDTH}/${SLIDE_HEIGHT}`,
-                      backgroundColor: slide.background || '#fff',
-                    }}
-                  >
-                    <SlideThumb slide={slide} />
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-          {/* Slide actions */}
-          <div className="flex items-center justify-center gap-1 px-2 py-1.5 border-t border-border">
-            <button onClick={duplicateSlide} className="p-1 text-muted-foreground hover:text-foreground" title={t('toolbar.duplicateSlide')}>
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={() => moveSlide(-1)} disabled={currentSlideIndex === 0} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" title={t('toolbar.moveUp')}>
-              <ChevronUp className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={() => moveSlide(1)} disabled={currentSlideIndex >= slides.length - 1} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" title={t('toolbar.moveDown')}>
-              <ChevronDown className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={deleteSlide} disabled={slides.length <= 1} className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-30" title={t('toolbar.deleteSlide')}>
-              <Minus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Canvas Area (center) */}
-        <div ref={canvasContainerRef} className="flex-1 min-w-0 overflow-hidden bg-[#f0f0f0] dark:bg-zinc-900 relative">
-          <div className="canvas-wrapper absolute">
-            <div ref={canvasHostRef} className="shadow-xl rounded-sm" />
-          </div>
-          {/* Floating toolbar — adapts to object type */}
-          {selectedObj && canvasRef.current && canvasContainerRef.current && (() => {
-            const objType = getObjType(selectedObj);
-            if (objType === 'table') return null; // table handled by PPTTableOverlay
-
-            const canvas = canvasRef.current!;
-            const container = canvasContainerRef.current!;
-            const zoom = canvas.getZoom() || 1;
-            const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
-            const containerRect = container.getBoundingClientRect();
-            const wrapperLeft = wrapper ? parseFloat(wrapper.style.marginLeft || '0') : 0;
-            const wrapperTop = wrapper ? parseFloat(wrapper.style.marginTop || '0') : 0;
-            const objLeft = (selectedObj.left || 0) * zoom + wrapperLeft;
-            const objTop = (selectedObj.top || 0) * zoom + wrapperTop;
-            const objWidth = (selectedObj.width || 0) * (selectedObj.scaleX || 1) * zoom;
-            const anchor = {
-              top: containerRect.top + objTop,
-              left: containerRect.left + objLeft,
-              width: objWidth,
-            };
-
-            let items, handler;
-            if (objType === 'textbox') {
-              items = PPT_TEXT_ITEMS;
-              handler = createPPTTextHandler({ obj: selectedObj, canvas });
-            } else if (objType === 'image') {
-              items = PPT_IMAGE_ITEMS;
-              handler = createPPTImageHandler({ obj: selectedObj, canvas });
-            } else if (objType === 'rect' || objType === 'circle' || objType === 'triangle') {
-              items = PPT_SHAPE_ITEMS;
-              handler = createPPTShapeHandler({ obj: selectedObj, canvas });
-            } else {
-              return null;
-=======
       {/* ─── Main Area: Slide List + Canvas + Property Panel ── */}
       <div className="flex-1 flex min-h-0">
         {/* Slide List (left) — hidden on mobile */}
@@ -1797,7 +1648,6 @@ export function PresentationEditor({
           onSlideSelect={(i) => {
             if (i !== currentSlideIndex) {
               saveCurrentSlideToState();
->>>>>>> Stashed changes
             }
             setCurrentSlideIndex(i);
             setSelectedSlideIndices(new Set([i]));
@@ -1920,7 +1770,6 @@ export function PresentationEditor({
     </div>
   );
 }
-<<<<<<< Updated upstream
 
 // ─── Property Panel ─────────────────────────────────
 function PropertyPanel({
@@ -3249,5 +3098,3 @@ function PresenterMode({
     </div>
   );
 }
-=======
->>>>>>> Stashed changes

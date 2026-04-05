@@ -29,12 +29,12 @@ interface ContentLinkPickerProps {
 }
 
 export function ContentLinkPicker({
-  const { t } = useT();
   onSelect,
   onCancel,
   filterType,
   className,
 }: ContentLinkPickerProps) {
+  const { t } = useT();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);

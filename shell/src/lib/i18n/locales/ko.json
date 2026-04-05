@@ -663,5 +663,15 @@
   "icon": {
     "changeIcon": "아이콘 변경",
     "addIcon": "아이콘 추가"
+  },
+  "profile": {
+    "title": "프로필"
+  },
+  "trash": {
+    "restore": "복원",
+    "deletePermanently": "영구 삭제"
+  },
+  "tree": {
+    "addChild": "하위 항목 추가"
   }
 }
