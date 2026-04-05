@@ -320,6 +320,7 @@ interface TableEditorProps {
   onCopyLink?: () => void;
   docListVisible?: boolean;
   onToggleDocList?: () => void;
+  onNavigate?: (rawId: string) => void;
 }
 
 // Error Boundary to prevent white-screen crashes

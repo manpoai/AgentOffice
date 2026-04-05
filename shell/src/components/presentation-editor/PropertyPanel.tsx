@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
-import { getT } from '@/lib/i18n';
+import { useT, getT } from '@/lib/i18n';
 import { ColorPicker } from '@/components/ui/color-picker';
 import * as gw from '@/lib/api/gateway';
 import { SlideData, FONT_FAMILIES, getObjType } from './types';

@@ -8,7 +8,20 @@ import {
   Play,
   MessageSquare, Clock,
   ExternalLink, AtSign, Share2, Pin, Search,
+  X, Bold, Italic, Underline, Strikethrough, Table2,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  Image as ImageIcon, Copy, ChevronUp, ChevronDown,
+  ArrowUpToLine, ArrowDownToLine, MoveUp, MoveDown,
+  Plus, Minus, Type, Maximize2, RotateCcw,
+  ChevronLeft, ChevronRight,
+  FlipHorizontal2, FlipVertical2,
+  Replace, PanelRightClose, PanelRight,
 } from 'lucide-react';
+import { RichTable } from '@/components/shared/RichTable';
+import { FloatingToolbar } from '@/components/shared/FloatingToolbar';
+import { getPptTextItems, getPptImageItems, getPptShapeItems, getDocsTableItems } from '@/components/shared/FloatingToolbar/presets';
+import { createDocsTableHandler } from '@/components/editor/docs-toolbar-handler';
+import { ColorPicker } from '@/components/ui/color-picker';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
@@ -39,8 +52,6 @@ import {
 } from './types';
 import { SlidePanel } from './SlidePanel';
 import { SlideCanvas } from './SlideCanvas';
-import { PropertyPanel } from './PropertyPanel';
-import { PresenterMode } from './PresenterMode';
 
 const pptObjectActionMap = buildActionMap(pptObjectActions);
 const pptCanvasActionMap = buildActionMap(pptCanvasActions);
@@ -77,6 +88,20 @@ const PPT_SHORTCUTS: ShortcutRegistration[] = [
 ];
 // NOTE: ⌘C/⌘X/⌘V/Delete/Backspace are handled in onKeyDown (capture phase)
 // via action maps — not registered here because they require canvasRef.
+
+const THUMB_WIDTH = 180;
+const THUMB_HEIGHT = Math.round(THUMB_WIDTH * (SLIDE_HEIGHT / SLIDE_WIDTH));
+
+interface PresentationEditorProps {
+  presentationId: string;
+  breadcrumb?: { id: string; title: string }[];
+  onBack?: () => void;
+  onDeleted?: () => void;
+  onCopyLink?: () => void;
+  docListVisible?: boolean;
+  onToggleDocList?: () => void;
+  onNavigate?: (rawId: string) => void;
+}
 
 // ─── Fabric.js Dynamic Import ───────────────────────
 let fabricModule: any = null;
@@ -1771,6 +1796,21 @@ export function PresentationEditor({
   );
 }
 
+const FONT_FAMILIES = [
+  { label: 'Inter', value: 'Inter, system-ui, sans-serif' },
+  { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+  { label: 'Trebuchet MS', value: '"Trebuchet MS", sans-serif' },
+  { label: 'Comic Sans MS', value: '"Comic Sans MS", cursive' },
+  { label: '思源黑体', value: '"Noto Sans SC", "Source Han Sans SC", sans-serif' },
+  { label: '思源宋体', value: '"Noto Serif SC", "Source Han Serif SC", serif' },
+  { label: '微软雅黑', value: '"Microsoft YaHei", sans-serif' },
+  { label: '苹果苹方', value: '"PingFang SC", sans-serif' },
+];
+
 // ─── Property Panel ─────────────────────────────────
 function PropertyPanel({
   selectedObj,
@@ -1791,6 +1831,7 @@ function PropertyPanel({
   propVersion: number;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const objType = selectedObj ? getObjType(selectedObj) : null;
 
   const updateProp = (prop: string, val: any) => {
@@ -1887,6 +1928,7 @@ function SlidePropertiesSection({
   onBackgroundImageChange: (bgImage: string | undefined) => void;
   onApplyToAll: () => void;
 }) {
+  const { t } = useT();
   const handleUploadBgImage = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1984,6 +2026,7 @@ function CommonPropertiesSection({
   updateAndSave: (prop: string, val: any) => void;
   propVersion: number;
 }) {
+  const { t } = useT();
   return (
     <>
       <SectionLabel label="Position" />
@@ -2083,6 +2126,7 @@ function TextPropertiesSection({
   updateAndSave: (prop: string, val: any) => void;
   propVersion: number;
 }) {
+  const { t } = useT();
   return (
     <>
       <SectionLabel label="Text" />
@@ -2775,7 +2819,7 @@ function PPTTableOverlay({ obj, canvas, containerRef, propVersion, isSelected }:
       </div>
       {tableToolbarInfo && editing && (
         <FloatingToolbar
-          items={DOCS_TABLE_ITEMS}
+          items={getDocsTableItems()}
           handler={createDocsTableHandler(tableToolbarInfo.view)}
           anchor={tableToolbarInfo.anchor}
           visible={true}

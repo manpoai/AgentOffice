@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n';
 import { getDiagram } from '@/lib/api/gateway';
 import { DiagramPreview, type DiagramData } from './DiagramPreview';
 
@@ -54,6 +55,7 @@ export function EmbeddedDiagram({
   className,
   onChange: _onChange,
 }: EmbeddedDiagramProps) {
+  const { t } = useT();
   const router = useRouter();
   const rawId = getRawId(diagramId);
   const { data, isLoading, isError, refetch } = useQuery({

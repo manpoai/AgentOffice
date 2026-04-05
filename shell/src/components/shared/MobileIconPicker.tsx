@@ -15,6 +15,7 @@ import Picker from '@emoji-mart/react';
 import { useTheme } from 'next-themes';
 import { Upload, Trash2 } from 'lucide-react';
 import { BottomSheet } from './BottomSheet';
+import { useT } from '@/lib/i18n';
 import { showError } from '@/lib/utils/error';
 
 interface MobileIconPickerProps {
@@ -25,6 +26,7 @@ interface MobileIconPickerProps {
 }
 
 export function MobileIconPicker({ onSelect, onRemove, onUploadImage, onClose }: MobileIconPickerProps) {
+  const { t } = useT();
   const { resolvedTheme } = useTheme();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
