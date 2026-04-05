@@ -29,7 +29,50 @@
     "dataTable": "데이터 테이블",
     "nextCol": "다음 열",
     "nextRow": "다음 행",
-    "cancel": "편집 취소"
+    "cancel": "편집 취소",
+    "globalKeys": {
+      "openSearch": "검색 열기",
+      "createNew": "새 항목 만들기",
+      "save": "저장",
+      "undo": "실행 취소",
+      "redo": "다시 실행",
+      "toggleSidebar": "사이드바 전환",
+      "showShortcuts": "단축키 보기"
+    },
+    "ppt": {
+      "deleteSelected": "선택 항목 삭제",
+      "duplicate": "복제",
+      "copy": "복사",
+      "cut": "잘라내기",
+      "paste": "붙여넣기",
+      "group": "그룹화",
+      "ungroup": "그룹 해제",
+      "nudgeLeft": "왼쪽 이동",
+      "nudgeRight": "오른쪽 이동",
+      "nudgeUp": "위로 이동",
+      "nudgeDown": "아래로 이동"
+    },
+    "diagram": {
+      "deleteSelected": "선택 항목 삭제",
+      "copy": "복사",
+      "paste": "붙여넣기",
+      "addChild": "자식 노드 추가",
+      "addSibling": "형제 노드 추가",
+      "editLabel": "레이블 편집",
+      "selectAll": "모두 선택",
+      "selectTool": "선택 도구",
+      "textTool": "텍스트 도구",
+      "rectTool": "사각형 도구",
+      "mindmapTool": "마인드맵 도구",
+      "toggleCollapse": "접기/펼치기"
+    },
+    "table": {
+      "editCell": "셀 편집",
+      "exitEdit": "편집 종료",
+      "nextCell": "다음 셀",
+      "prevCell": "이전 셀",
+      "deleteRow": "행 삭제"
+    }
   },
   "command": {
     "placeholder": "작업, 문서, Agent 검색 또는 이동...",
@@ -594,6 +637,36 @@
       "dottedLine": "점선",
       "none": "없음"
     },
+    "docs": {
+      "highlight": "강조",
+      "inlineCode": "인라인 코드",
+      "quote": "인용",
+      "heading1": "제목 1",
+      "heading2": "제목 2",
+      "heading3": "제목 3",
+      "checkboxList": "체크박스 목록",
+      "orderedList": "번호 목록",
+      "bulletList": "글머리 기호 목록",
+      "link": "링크",
+      "comment": "댓글",
+      "toggleHeaderRow": "헤더 행 전환",
+      "toggleHeaderCol": "헤더 열 전환",
+      "mergeCells": "셀 병합",
+      "splitCell": "셀 분할",
+      "cellBackground": "셀 배경",
+      "heading": "제목",
+      "heading1Short": "H1",
+      "heading2Short": "H2",
+      "heading3Short": "H3",
+      "paragraph": "본문",
+      "list": "목록",
+      "deleteRow": "행 삭제",
+      "deleteCol": "열 삭제",
+      "fullWidth": "전체 너비",
+      "fitWidth": "너비에 맞춤",
+      "download": "다운로드",
+      "altText": "대체 텍스트"
+    },
     "ppt": {
       "shape": "도형",
       "fillColor": "채우기 색상",
@@ -601,7 +674,10 @@
       "borderWidth": "테두리 너비",
       "borderStyle": "테두리 스타일",
       "textColor": "글자 색상",
-      "cornerRadius": "모서리 반경"
+      "cornerRadius": "모서리 반경",
+      "font": "글꼴",
+      "fontSize": "크기",
+      "alignment": "정렬"
     },
     "diagram": {
       "shape": "도형",

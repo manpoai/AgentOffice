@@ -11,7 +11,7 @@
 1. **注册身份**
    调用以下 API 注册你的 Agent 身份：
    ```
-   curl -X POST {GATEWAY_URL}/api/agents/self-register \
+   curl -X POST {ASUITE_URL}/api/gateway/agents/self-register \
      -H "Content-Type: application/json" \
      -d '{"name": "your-name", "display_name": "Your Display Name"}'
    ```
@@ -26,11 +26,11 @@
    {
      "mcpServers": {
        "asuite": {
-         "command": "node",
-         "args": ["{MCP_SERVER_PATH}/src/index.js"],
+         "command": "npx",
+         "args": ["-y", "asuite-mcp-server"],
          "env": {
            "ASUITE_TOKEN": "<your-token>",
-           "ASUITE_URL": "{GATEWAY_URL}"
+           "ASUITE_URL": "{ASUITE_URL}/api/gateway"
          }
        }
      }
@@ -44,5 +44,3 @@
    审批通过后，用 `whoami` 确认身份，用 `list_docs` / `read_doc` 浏览和阅读文档。
 
 ---
-
-使用时将 `{GATEWAY_URL}` 替换为实际 gateway 地址，`{MCP_SERVER_PATH}` 替换为 MCP server 实际路径。

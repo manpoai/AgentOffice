@@ -3,12 +3,8 @@
  * Extracted from TableEditor.tsx during refactoring — no behavior changes.
  */
 
-import React from 'react';
-import {
-  Type, Hash, Calendar, CheckSquare, Link, Mail, AlignLeft, Phone,
-  List, Tags, Braces, Paperclip, User, Sigma, Link2, Search, GitBranch,
-  UserCheck, DollarSign, Percent, Star,
-} from 'lucide-react';
+import { Type } from 'lucide-react';
+import { ColumnTypeDef, COLUMN_TYPES, COLUMN_TYPE_GROUPS } from '@/lib/shared/table-types';
 
 // ── Content Link detection ──
 export const CONTENT_LINK_RE = /(?:https?:\/\/[^/]+)?\/content\?id=((?:doc|table|presentation|diagram)(?::|%3A)([a-zA-Z0-9_-]+))/i;
@@ -21,52 +17,16 @@ export function extractContentId(text: string): string | null {
 
 // ── Column type config ──
 
-export interface ColTypeDef {
-  value: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  group: 'text' | 'number' | 'datetime' | 'select' | 'relation' | 'other';
-}
+/** @deprecated Use ColumnTypeDef from lib/shared/table-types */
+export type ColTypeDef = ColumnTypeDef;
 
-export const COLUMN_TYPES: ColTypeDef[] = [
-  // Text
-  { value: 'SingleLineText', label: 'SingleLineText', icon: Type, group: 'text' },
-  { value: 'LongText', label: 'LongText', icon: AlignLeft, group: 'text' },
-  { value: 'Email', label: 'Email', icon: Mail, group: 'text' },
-  { value: 'URL', label: 'URL', icon: Link, group: 'text' },
-  { value: 'PhoneNumber', label: 'PhoneNumber', icon: Phone, group: 'text' },
-  // Number
-  { value: 'Number', label: 'Number', icon: Hash, group: 'number' },
-  { value: 'Decimal', label: 'Decimal', icon: Hash, group: 'number' },
-  { value: 'Currency', label: 'Currency', icon: DollarSign, group: 'number' },
-  { value: 'Percent', label: 'Percent', icon: Percent, group: 'number' },
-  { value: 'Rating', label: 'Rating', icon: Star, group: 'number' },
-  { value: 'AutoNumber', label: 'AutoNumber', icon: Hash, group: 'number' },
-  // Date & Time
-  { value: 'Date', label: 'Date', icon: Calendar, group: 'datetime' },
-  { value: 'DateTime', label: 'DateTime', icon: Calendar, group: 'datetime' },
-  // Selection
-  { value: 'Checkbox', label: 'Checkbox', icon: CheckSquare, group: 'select' },
-  { value: 'SingleSelect', label: 'SingleSelect', icon: List, group: 'select' },
-  { value: 'MultiSelect', label: 'MultiSelect', icon: Tags, group: 'select' },
-  // Relation & Computed
-  { value: 'Links', label: 'Links', icon: Link2, group: 'relation' },
-  { value: 'Lookup', label: 'Lookup', icon: Search, group: 'relation' },
-  { value: 'Rollup', label: 'Rollup', icon: Sigma, group: 'relation' },
-  { value: 'Formula', label: 'Formula', icon: GitBranch, group: 'relation' },
-  // Other
-  { value: 'Attachment', label: 'Attachment', icon: Paperclip, group: 'other' },
-  { value: 'JSON', label: 'JSON', icon: Braces, group: 'other' },
-  { value: 'User', label: 'User', icon: User, group: 'other' },
-  { value: 'CreatedBy', label: 'CreatedBy', icon: UserCheck, group: 'other' },
-  { value: 'LastModifiedBy', label: 'LastModifiedBy', icon: UserCheck, group: 'other' },
-];
+export { COLUMN_TYPES };
 
 export function tColType(t: (key: string) => string, ct: ColTypeDef): string {
   return t(`dataTable.colTypes.${ct.value}`);
 }
 
-export const GROUP_KEYS = ['text', 'number', 'datetime', 'select', 'relation', 'other'] as const;
+export const GROUP_KEYS = COLUMN_TYPE_GROUPS;
 
 export function getColIcon(uidt: string) {
   return COLUMN_TYPES.find(c => c.value === uidt)?.icon || Type;

@@ -216,12 +216,6 @@ export default function ContentPage() {
     refetchInterval: 30_000,
   });
 
-  const { data: mobileAgents } = useQuery({
-    queryKey: ['admin-agents'],
-    queryFn: gw.listAllAgents,
-    enabled: showMobileAgents,
-  });
-
   // Hydrate client-only state after mount (avoid SSR mismatch)
   useEffect(() => {
     const fromURL = selectionFromURL();
@@ -1579,7 +1573,7 @@ export default function ContentPage() {
       {/* Mobile agents BottomSheet */}
       <BottomSheet open={showMobileAgents} onClose={() => setShowMobileAgents(false)} title={t('toolbar.agents')}>
         <div className="py-2 px-4">
-          <AgentPanelContent variant="bottomsheet" allAgents={mobileAgents} />
+          <AgentPanelContent variant="bottomsheet" />
         </div>
       </BottomSheet>
     </div>

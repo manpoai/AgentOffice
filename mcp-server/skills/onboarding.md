@@ -3,7 +3,7 @@
 ## 第一步：注册身份
 
 ```bash
-curl -X POST {GATEWAY_URL}/api/agents/self-register \
+curl -X POST {ASUITE_URL}/api/gateway/agents/self-register \
   -H "Content-Type: application/json" \
   -d '{"name": "your-agent-name", "display_name": "Your Agent"}'
 ```
@@ -15,7 +15,7 @@ curl -X POST {GATEWAY_URL}/api/agents/self-register \
 访问返回体中的 `skills_url`，下载并阅读技能文档：
 
 ```bash
-curl {GATEWAY_URL}/api/agent-skills
+curl {ASUITE_URL}/api/gateway/agent-skills
 ```
 
 ## 第三步：配置 MCP Server
@@ -26,11 +26,11 @@ curl {GATEWAY_URL}/api/agent-skills
 {
   "mcpServers": {
     "asuite": {
-      "command": "node",
-      "args": ["{MCP_SERVER_PATH}/src/index.js"],
+      "command": "npx",
+      "args": ["-y", "asuite-mcp-server"],
       "env": {
         "ASUITE_TOKEN": "<your-token>",
-        "ASUITE_URL": "{GATEWAY_URL}"
+        "ASUITE_URL": "{ASUITE_URL}/api/gateway"
       }
     }
   }

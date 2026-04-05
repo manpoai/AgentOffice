@@ -29,7 +29,50 @@
     "dataTable": "Data Table",
     "nextCol": "Next column",
     "nextRow": "Next row",
-    "cancel": "Cancel edit"
+    "cancel": "Cancel edit",
+    "globalKeys": {
+      "openSearch": "Open search",
+      "createNew": "Create new item",
+      "save": "Save",
+      "undo": "Undo",
+      "redo": "Redo",
+      "toggleSidebar": "Toggle sidebar",
+      "showShortcuts": "Show shortcuts"
+    },
+    "ppt": {
+      "deleteSelected": "Delete selected",
+      "duplicate": "Duplicate",
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
+      "group": "Group",
+      "ungroup": "Ungroup",
+      "nudgeLeft": "Nudge left",
+      "nudgeRight": "Nudge right",
+      "nudgeUp": "Nudge up",
+      "nudgeDown": "Nudge down"
+    },
+    "diagram": {
+      "deleteSelected": "Delete selected",
+      "copy": "Copy",
+      "paste": "Paste",
+      "addChild": "Add child node",
+      "addSibling": "Add sibling node",
+      "editLabel": "Edit label",
+      "selectAll": "Select all",
+      "selectTool": "Select tool",
+      "textTool": "Text tool",
+      "rectTool": "Rectangle tool",
+      "mindmapTool": "Mindmap tool",
+      "toggleCollapse": "Toggle collapse"
+    },
+    "table": {
+      "editCell": "Edit cell",
+      "exitEdit": "Exit editing",
+      "nextCell": "Next cell",
+      "prevCell": "Previous cell",
+      "deleteRow": "Delete row"
+    }
   },
   "command": {
     "placeholder": "Search tasks, docs, Agents, or jump to...",
@@ -594,6 +637,36 @@
       "dottedLine": "Dotted",
       "none": "None"
     },
+    "docs": {
+      "highlight": "Highlight",
+      "inlineCode": "Inline code",
+      "quote": "Quote",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "heading3": "Heading 3",
+      "checkboxList": "Checkbox list",
+      "orderedList": "Ordered list",
+      "bulletList": "Bullet list",
+      "link": "Link",
+      "comment": "Comment",
+      "toggleHeaderRow": "Toggle header row",
+      "toggleHeaderCol": "Toggle header column",
+      "mergeCells": "Merge cells",
+      "splitCell": "Split cell",
+      "cellBackground": "Cell background",
+      "heading": "Heading",
+      "heading1Short": "H1",
+      "heading2Short": "H2",
+      "heading3Short": "H3",
+      "paragraph": "Paragraph",
+      "list": "List",
+      "deleteRow": "Delete row",
+      "deleteCol": "Delete column",
+      "fullWidth": "Full width",
+      "fitWidth": "Fit width",
+      "download": "Download",
+      "altText": "Alt text"
+    },
     "ppt": {
       "shape": "Shape",
       "fillColor": "Fill color",
@@ -601,7 +674,10 @@
       "borderWidth": "Border width",
       "borderStyle": "Border style",
       "textColor": "Text color",
-      "cornerRadius": "Corner radius"
+      "cornerRadius": "Corner radius",
+      "font": "Font",
+      "fontSize": "Size",
+      "alignment": "Alignment"
     },
     "diagram": {
       "shape": "Shape",

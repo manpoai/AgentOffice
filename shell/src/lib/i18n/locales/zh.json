@@ -29,7 +29,50 @@
     "dataTable": "数据表",
     "nextCol": "下一列",
     "nextRow": "下一行",
-    "cancel": "取消编辑"
+    "cancel": "取消编辑",
+    "globalKeys": {
+      "openSearch": "打开搜索",
+      "createNew": "新建",
+      "save": "保存",
+      "undo": "撤销",
+      "redo": "重做",
+      "toggleSidebar": "切换侧栏",
+      "showShortcuts": "显示快捷键"
+    },
+    "ppt": {
+      "deleteSelected": "删除选中",
+      "duplicate": "复制",
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
+      "group": "组合",
+      "ungroup": "取消组合",
+      "nudgeLeft": "左移",
+      "nudgeRight": "右移",
+      "nudgeUp": "上移",
+      "nudgeDown": "下移"
+    },
+    "diagram": {
+      "deleteSelected": "删除选中",
+      "copy": "复制",
+      "paste": "粘贴",
+      "addChild": "添加子节点",
+      "addSibling": "添加兄弟节点",
+      "editLabel": "编辑标签",
+      "selectAll": "全选",
+      "selectTool": "选择工具",
+      "textTool": "文字工具",
+      "rectTool": "矩形工具",
+      "mindmapTool": "思维导图工具",
+      "toggleCollapse": "折叠/展开"
+    },
+    "table": {
+      "editCell": "编辑单元格",
+      "exitEdit": "退出编辑",
+      "nextCell": "下一单元格",
+      "prevCell": "上一单元格",
+      "deleteRow": "删除行"
+    }
   },
   "command": {
     "placeholder": "搜索任务、文档、Agent，或跳转...",
@@ -594,6 +637,36 @@
       "dottedLine": "点线",
       "none": "无"
     },
+    "docs": {
+      "highlight": "高亮",
+      "inlineCode": "行内代码",
+      "quote": "引用",
+      "heading1": "标题 1",
+      "heading2": "标题 2",
+      "heading3": "标题 3",
+      "checkboxList": "复选框列表",
+      "orderedList": "有序列表",
+      "bulletList": "无序列表",
+      "link": "链接",
+      "comment": "评论",
+      "toggleHeaderRow": "切换标题行",
+      "toggleHeaderCol": "切换标题列",
+      "mergeCells": "合并单元格",
+      "splitCell": "拆分单元格",
+      "cellBackground": "单元格背景",
+      "heading": "标题",
+      "heading1Short": "H1",
+      "heading2Short": "H2",
+      "heading3Short": "H3",
+      "paragraph": "正文",
+      "list": "列表",
+      "deleteRow": "删除行",
+      "deleteCol": "删除列",
+      "fullWidth": "全宽",
+      "fitWidth": "适应宽度",
+      "download": "下载",
+      "altText": "替代文本"
+    },
     "ppt": {
       "shape": "形状",
       "fillColor": "填充色",
@@ -601,7 +674,10 @@
       "borderWidth": "边框宽度",
       "borderStyle": "边框样式",
       "textColor": "文字颜色",
-      "cornerRadius": "圆角"
+      "cornerRadius": "圆角",
+      "font": "字体",
+      "fontSize": "字号",
+      "alignment": "对齐"
     },
     "diagram": {
       "shape": "形状",

@@ -22,17 +22,17 @@ export function getDocsTextItems(): ToolbarItem[] {
     { key: 'italic', type: 'toggle', icon: icon(Italic), label: t('toolbar.italic'), group: 'inline' },
     { key: 'strikethrough', type: 'toggle', icon: icon(Strikethrough), label: t('toolbar.strikethrough'), group: 'inline' },
     { key: 'underline', type: 'toggle', icon: icon(Underline), label: t('toolbar.underline'), group: 'inline' },
-    { key: 'highlight', type: 'color', icon: icon(Highlighter), label: 'Highlight', group: 'style', colors: PALETTES.highlight, colorClearable: true },
-    { key: 'code', type: 'toggle', icon: icon(Code2), label: 'Inline code', group: 'style' },
-    { key: 'blockquote', type: 'toggle', icon: icon(Quote), label: 'Quote', group: 'style' },
-    { key: 'heading1', type: 'toggle', icon: icon(Heading1), label: 'Heading 1', group: 'heading' },
-    { key: 'heading2', type: 'toggle', icon: icon(Heading2), label: 'Heading 2', group: 'heading' },
-    { key: 'heading3', type: 'toggle', icon: icon(Heading3), label: 'Heading 3', group: 'heading' },
-    { key: 'checkboxList', type: 'toggle', icon: icon(ListTodo), label: 'Checkbox list', group: 'list' },
-    { key: 'orderedList', type: 'toggle', icon: icon(ListOrdered), label: 'Ordered list', group: 'list' },
-    { key: 'bulletList', type: 'toggle', icon: icon(List), label: 'Bullet list', group: 'list' },
-    { key: 'link', type: 'action', icon: icon(Link), label: 'Link', group: 'insert' },
-    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: 'Comment', group: 'insert' },
+    { key: 'highlight', type: 'color', icon: icon(Highlighter), label: t('toolbar.docs.highlight'), group: 'style', colors: PALETTES.highlight, colorClearable: true },
+    { key: 'code', type: 'toggle', icon: icon(Code2), label: t('toolbar.docs.inlineCode'), group: 'style' },
+    { key: 'blockquote', type: 'toggle', icon: icon(Quote), label: t('toolbar.docs.quote'), group: 'style' },
+    { key: 'heading1', type: 'toggle', icon: icon(Heading1), label: t('toolbar.docs.heading1'), group: 'heading' },
+    { key: 'heading2', type: 'toggle', icon: icon(Heading2), label: t('toolbar.docs.heading2'), group: 'heading' },
+    { key: 'heading3', type: 'toggle', icon: icon(Heading3), label: t('toolbar.docs.heading3'), group: 'heading' },
+    { key: 'checkboxList', type: 'toggle', icon: icon(ListTodo), label: t('toolbar.docs.checkboxList'), group: 'list' },
+    { key: 'orderedList', type: 'toggle', icon: icon(ListOrdered), label: t('toolbar.docs.orderedList'), group: 'list' },
+    { key: 'bulletList', type: 'toggle', icon: icon(List), label: t('toolbar.docs.bulletList'), group: 'list' },
+    { key: 'link', type: 'action', icon: icon(Link), label: t('toolbar.docs.link'), group: 'insert' },
+    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: t('toolbar.docs.comment'), group: 'insert' },
   ];
 }
 
@@ -42,34 +42,34 @@ export function getDocsTextItems(): ToolbarItem[] {
 export function getDocsTableItems(): ToolbarItem[] {
   const t = getT();
   return [
-    { key: 'toggleHeaderRow', type: 'action', icon: icon(TableProperties), label: 'Toggle header row', group: 'table' },
-    { key: 'toggleHeaderCol', type: 'action', icon: icon(Columns), label: 'Toggle header column', group: 'table' },
-    { key: 'mergeCells', type: 'action', icon: icon(Merge), label: 'Merge cells', group: 'table' },
-    { key: 'splitCell', type: 'action', icon: icon(Split), label: 'Split cell', group: 'table' },
-    { key: 'cellBgColor', type: 'color', icon: icon(Paintbrush), label: 'Cell background', group: 'cellStyle', colors: PALETTES.cellBackground, colorClearable: true },
+    { key: 'toggleHeaderRow', type: 'action', icon: icon(TableProperties), label: t('toolbar.docs.toggleHeaderRow'), group: 'table' },
+    { key: 'toggleHeaderCol', type: 'action', icon: icon(Columns), label: t('toolbar.docs.toggleHeaderCol'), group: 'table' },
+    { key: 'mergeCells', type: 'action', icon: icon(Merge), label: t('toolbar.docs.mergeCells'), group: 'table' },
+    { key: 'splitCell', type: 'action', icon: icon(Split), label: t('toolbar.docs.splitCell'), group: 'table' },
+    { key: 'cellBgColor', type: 'color', icon: icon(Paintbrush), label: t('toolbar.docs.cellBackground'), group: 'cellStyle', colors: PALETTES.cellBackground, colorClearable: true },
     { key: 'bold', type: 'toggle', icon: icon(Bold), label: t('toolbar.bold'), group: 'format' },
     { key: 'italic', type: 'toggle', icon: icon(Italic), label: t('toolbar.italic'), group: 'format' },
     { key: 'strikethrough', type: 'toggle', icon: icon(Strikethrough), label: t('toolbar.strikethrough'), group: 'format' },
     { key: 'underline', type: 'toggle', icon: icon(Underline), label: t('toolbar.underline'), group: 'format' },
-    { key: 'highlight', type: 'color', icon: icon(Highlighter), label: 'Highlight', group: 'style', colors: PALETTES.highlight, colorClearable: true },
-    { key: 'code', type: 'toggle', icon: icon(Code2), label: 'Code', group: 'style' },
-    { key: 'blockquote', type: 'toggle', icon: icon(Quote), label: 'Quote', group: 'style' },
-    { key: 'heading', type: 'dropdown', icon: icon(Heading1), label: 'Heading', group: 'block',
+    { key: 'highlight', type: 'color', icon: icon(Highlighter), label: t('toolbar.docs.highlight'), group: 'style', colors: PALETTES.highlight, colorClearable: true },
+    { key: 'code', type: 'toggle', icon: icon(Code2), label: t('toolbar.docs.inlineCode'), group: 'style' },
+    { key: 'blockquote', type: 'toggle', icon: icon(Quote), label: t('toolbar.docs.quote'), group: 'style' },
+    { key: 'heading', type: 'dropdown', icon: icon(Heading1), label: t('toolbar.docs.heading'), group: 'block',
       options: [
-        { value: '1', label: 'H1', icon: icon(Heading1) },
-        { value: '2', label: 'H2', icon: icon(Heading2) },
-        { value: '3', label: 'H3', icon: icon(Heading3) },
-        { value: 'paragraph', label: 'Paragraph', icon: icon(Type) },
+        { value: '1', label: t('toolbar.docs.heading1Short'), icon: icon(Heading1) },
+        { value: '2', label: t('toolbar.docs.heading2Short'), icon: icon(Heading2) },
+        { value: '3', label: t('toolbar.docs.heading3Short'), icon: icon(Heading3) },
+        { value: 'paragraph', label: t('toolbar.docs.paragraph'), icon: icon(Type) },
       ]},
-    { key: 'list', type: 'dropdown', icon: icon(List), label: 'List', group: 'block',
+    { key: 'list', type: 'dropdown', icon: icon(List), label: t('toolbar.docs.list'), group: 'block',
       options: [
-        { value: 'checkbox', label: 'Checkbox', icon: icon(ListTodo) },
-        { value: 'ordered', label: 'Ordered', icon: icon(ListOrdered) },
-        { value: 'bullet', label: 'Bullet', icon: icon(List) },
+        { value: 'checkbox', label: t('toolbar.docs.checkboxList'), icon: icon(ListTodo) },
+        { value: 'ordered', label: t('toolbar.docs.orderedList'), icon: icon(ListOrdered) },
+        { value: 'bullet', label: t('toolbar.docs.bulletList'), icon: icon(List) },
       ]},
-    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: 'Comment', group: 'insert' },
-    { key: 'deleteRow', type: 'action', icon: icon(Trash2), label: 'Delete row', group: 'delete' },
-    { key: 'deleteCol', type: 'action', icon: icon(Trash2), label: 'Delete column', group: 'delete' },
+    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: t('toolbar.docs.comment'), group: 'insert' },
+    { key: 'deleteRow', type: 'action', icon: icon(Trash2), label: t('toolbar.docs.deleteRow'), group: 'delete' },
+    { key: 'deleteCol', type: 'action', icon: icon(Trash2), label: t('toolbar.docs.deleteCol'), group: 'delete' },
   ];
 }
 
@@ -79,18 +79,18 @@ export function getDocsTableItems(): ToolbarItem[] {
 export function getSimpleTableItems(): ToolbarItem[] {
   const t = getT();
   return [
-    { key: 'toggleHeaderRow', type: 'action', icon: icon(TableProperties), label: 'Toggle header row', group: 'table' },
-    { key: 'toggleHeaderCol', type: 'action', icon: icon(Columns), label: 'Toggle header column', group: 'table' },
-    { key: 'mergeCells', type: 'action', icon: icon(Merge), label: 'Merge cells', group: 'table' },
-    { key: 'splitCell', type: 'action', icon: icon(Split), label: 'Split cell', group: 'table' },
-    { key: 'cellBgColor', type: 'color', icon: icon(Paintbrush), label: 'Cell background', group: 'cellStyle', colors: PALETTES.cellBackground, colorClearable: true },
+    { key: 'toggleHeaderRow', type: 'action', icon: icon(TableProperties), label: t('toolbar.docs.toggleHeaderRow'), group: 'table' },
+    { key: 'toggleHeaderCol', type: 'action', icon: icon(Columns), label: t('toolbar.docs.toggleHeaderCol'), group: 'table' },
+    { key: 'mergeCells', type: 'action', icon: icon(Merge), label: t('toolbar.docs.mergeCells'), group: 'table' },
+    { key: 'splitCell', type: 'action', icon: icon(Split), label: t('toolbar.docs.splitCell'), group: 'table' },
+    { key: 'cellBgColor', type: 'color', icon: icon(Paintbrush), label: t('toolbar.docs.cellBackground'), group: 'cellStyle', colors: PALETTES.cellBackground, colorClearable: true },
     { key: 'bold', type: 'toggle', icon: icon(Bold), label: t('toolbar.bold'), group: 'format' },
     { key: 'italic', type: 'toggle', icon: icon(Italic), label: t('toolbar.italic'), group: 'format' },
     { key: 'strikethrough', type: 'toggle', icon: icon(Strikethrough), label: t('toolbar.strikethrough'), group: 'format' },
     { key: 'underline', type: 'toggle', icon: icon(Underline), label: t('toolbar.underline'), group: 'format' },
-    { key: 'highlight', type: 'color', icon: icon(Highlighter), label: 'Highlight', group: 'style', colors: PALETTES.highlight, colorClearable: true },
-    { key: 'deleteRow', type: 'action', icon: icon(Trash2), label: 'Delete row', group: 'delete' },
-    { key: 'deleteCol', type: 'action', icon: icon(Trash2), label: 'Delete column', group: 'delete' },
+    { key: 'highlight', type: 'color', icon: icon(Highlighter), label: t('toolbar.docs.highlight'), group: 'style', colors: PALETTES.highlight, colorClearable: true },
+    { key: 'deleteRow', type: 'action', icon: icon(Trash2), label: t('toolbar.docs.deleteRow'), group: 'delete' },
+    { key: 'deleteCol', type: 'action', icon: icon(Trash2), label: t('toolbar.docs.deleteCol'), group: 'delete' },
   ];
 }
 
@@ -100,16 +100,16 @@ export function getSimpleTableItems(): ToolbarItem[] {
 export function getDocsImageItems(): ToolbarItem[] {
   const t = getT();
   return [
-    { key: 'alignLeft', type: 'action', icon: icon(AlignLeft), label: 'Left', group: 'align' },
-    { key: 'alignCenter', type: 'action', icon: icon(AlignCenter), label: 'Center', group: 'align' },
-    { key: 'alignRight', type: 'action', icon: icon(AlignRight), label: 'Right', group: 'align' },
-    { key: 'alignFull', type: 'action', icon: icon(Maximize), label: 'Full width', group: 'align' },
-    { key: 'alignFit', type: 'action', icon: icon(Minimize), label: 'Fit width', group: 'align' },
-    { key: 'replace', type: 'action', icon: icon(ImageIcon), label: 'Replace', group: 'action' },
-    { key: 'download', type: 'action', icon: icon(Download), label: 'Download', group: 'action' },
-    { key: 'delete', type: 'action', icon: icon(Trash2), label: 'Delete', group: 'action' },
-    { key: 'altText', type: 'action', icon: icon(Pencil), label: 'Alt text', group: 'action' },
-    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: 'Comment', group: 'action' },
+    { key: 'alignLeft', type: 'action', icon: icon(AlignLeft), label: t('toolbar.alignLeft'), group: 'align' },
+    { key: 'alignCenter', type: 'action', icon: icon(AlignCenter), label: t('toolbar.alignCenter'), group: 'align' },
+    { key: 'alignRight', type: 'action', icon: icon(AlignRight), label: t('toolbar.alignRight'), group: 'align' },
+    { key: 'alignFull', type: 'action', icon: icon(Maximize), label: t('toolbar.docs.fullWidth'), group: 'align' },
+    { key: 'alignFit', type: 'action', icon: icon(Minimize), label: t('toolbar.docs.fitWidth'), group: 'align' },
+    { key: 'replace', type: 'action', icon: icon(ImageIcon), label: t('toolbar.common.replace'), group: 'action' },
+    { key: 'download', type: 'action', icon: icon(Download), label: t('toolbar.docs.download'), group: 'action' },
+    { key: 'delete', type: 'action', icon: icon(Trash2), label: t('toolbar.common.delete'), group: 'action' },
+    { key: 'altText', type: 'action', icon: icon(Pencil), label: t('toolbar.docs.altText'), group: 'action' },
+    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: t('toolbar.docs.comment'), group: 'action' },
   ];
 }
 
@@ -139,19 +139,19 @@ const FONT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 
 export function getPptTextItems(): ToolbarItem[] {
   const t = getT();
   return [
-    { key: 'fontFamily', type: 'dropdown', icon: null, label: 'Font', group: 'font', options: getFontFamilies(t) },
-    { key: 'fontSize', type: 'dropdown', icon: null, label: 'Size', group: 'font', options: FONT_SIZES },
+    { key: 'fontFamily', type: 'dropdown', icon: null, label: t('toolbar.ppt.font'), group: 'font', options: getFontFamilies(t) },
+    { key: 'fontSize', type: 'dropdown', icon: null, label: t('toolbar.ppt.fontSize'), group: 'font', options: FONT_SIZES },
     { key: 'bold', type: 'toggle', icon: icon(Bold), label: t('toolbar.bold'), group: 'format' },
     { key: 'italic', type: 'toggle', icon: icon(Italic), label: t('toolbar.italic'), group: 'format' },
     { key: 'underline', type: 'toggle', icon: icon(Underline), label: t('toolbar.underline'), group: 'format' },
     { key: 'strikethrough', type: 'toggle', icon: icon(Strikethrough), label: t('toolbar.strikethrough'), group: 'format' },
-    { key: 'align', type: 'dropdown', icon: icon(AlignLeft), label: 'Alignment', group: 'align',
+    { key: 'align', type: 'dropdown', icon: icon(AlignLeft), label: t('toolbar.ppt.alignment'), group: 'align',
       options: [
-        { value: 'left', label: 'Left', icon: icon(AlignLeft) },
-        { value: 'center', label: 'Center', icon: icon(AlignCenter) },
-        { value: 'right', label: 'Right', icon: icon(AlignRight) },
+        { value: 'left', label: t('toolbar.alignLeft'), icon: icon(AlignLeft) },
+        { value: 'center', label: t('toolbar.alignCenter'), icon: icon(AlignCenter) },
+        { value: 'right', label: t('toolbar.alignRight'), icon: icon(AlignRight) },
       ]},
-    { key: 'textColor', type: 'color', icon: icon(Palette), label: 'Text color', group: 'color', colors: PALETTES.text },
+    { key: 'textColor', type: 'color', icon: icon(Palette), label: t('toolbar.ppt.textColor'), group: 'color', colors: PALETTES.text },
   ];
 }
 
@@ -161,7 +161,7 @@ export function getPptTextItems(): ToolbarItem[] {
 export function getPptImageItems(): ToolbarItem[] {
   const t = getT();
   return [
-    { key: 'replace', type: 'action', icon: icon(ImageIcon), label: 'Replace', group: 'action' },
+    { key: 'replace', type: 'action', icon: icon(ImageIcon), label: t('toolbar.common.replace'), group: 'action' },
     { key: 'copy', type: 'action', icon: icon(Copy), label: t('toolbar.common.copy'), group: 'action' },
     { key: 'delete', type: 'action', icon: icon(Trash2), label: t('toolbar.common.delete'), group: 'action' },
     { key: 'zOrder', type: 'dropdown', icon: icon(Layers), label: t('toolbar.common.zOrder'), group: 'action',
@@ -271,9 +271,9 @@ export function getDiagramNodeItems(): ToolbarItem[] {
     { key: 'underline', type: 'toggle', icon: icon(Underline), label: t('toolbar.underline'), group: 'format' },
     { key: 'align', type: 'dropdown', icon: icon(AlignLeft), label: t('toolbar.diagram.alignment'), group: 'align',
       options: [
-        { value: 'left', label: 'Left', icon: icon(AlignLeft) },
-        { value: 'center', label: 'Center', icon: icon(AlignCenter) },
-        { value: 'right', label: 'Right', icon: icon(AlignRight) },
+        { value: 'left', label: t('toolbar.alignLeft'), icon: icon(AlignLeft) },
+        { value: 'center', label: t('toolbar.alignCenter'), icon: icon(AlignCenter) },
+        { value: 'right', label: t('toolbar.alignRight'), icon: icon(AlignRight) },
       ]},
     { key: 'copy', type: 'action', icon: icon(Copy), label: t('toolbar.common.copy'), group: 'action' },
     { key: 'delete', type: 'action', icon: icon(Trash2), label: t('toolbar.common.delete'), group: 'action' },

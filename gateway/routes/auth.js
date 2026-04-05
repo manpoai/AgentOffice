@@ -251,7 +251,11 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
           now);
     }
 
-    const skillsUrl = `${req.protocol}://${req.get('host')}/api/agent-skills`;
+    const origin = req.headers['x-forwarded-host']
+      ? `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host']}`
+      : `${req.protocol}://${req.get('host')}`;
+    const gatewayBase = `${origin}/api/gateway`;
+    const skillsUrl = `${gatewayBase}/agent-skills`;
     res.status(201).json({
       agent_id: agentId,
       token,
@@ -261,7 +265,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
       skills_url: skillsUrl,
       mcp_server: {
         install: 'npx -y asuite-mcp-server',
-        env: { ASUITE_TOKEN: token, ASUITE_URL: `${req.protocol}://${req.get('host')}` },
+        env: { ASUITE_TOKEN: token, ASUITE_URL: gatewayBase },
       },
       message: 'Registration received. Fetch skills from skills_url and configure MCP server.',
       created_at: now,

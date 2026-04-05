@@ -5,6 +5,13 @@
  * (table views, content links, search results, etc.).
  */
 
+import type React from 'react';
+import {
+  Type, Hash, Calendar, CheckSquare, Link, Mail, AlignLeft, Phone,
+  List, Tags, Braces, Paperclip, User, Sigma, Link2, Search, GitBranch,
+  UserCheck, DollarSign, Percent, Star,
+} from 'lucide-react';
+
 // ── Column types (matching Baserow field type values) ──
 
 export type ColumnType =
@@ -42,42 +49,43 @@ export interface ColumnTypeDef {
   value: ColumnType;
   label: string;
   group: ColumnTypeGroup;
+  icon: React.ComponentType<{ className?: string }>;
 }
 
 export const COLUMN_TYPE_GROUPS: ColumnTypeGroup[] = ['text', 'number', 'datetime', 'select', 'relation', 'other'];
 
 export const COLUMN_TYPES: ColumnTypeDef[] = [
   // Text
-  { value: 'SingleLineText', label: 'SingleLineText', group: 'text' },
-  { value: 'LongText',       label: 'LongText',       group: 'text' },
-  { value: 'Email',          label: 'Email',           group: 'text' },
-  { value: 'URL',            label: 'URL',             group: 'text' },
-  { value: 'PhoneNumber',    label: 'PhoneNumber',     group: 'text' },
+  { value: 'SingleLineText', label: 'SingleLineText', icon: Type,      group: 'text' },
+  { value: 'LongText',       label: 'LongText',       icon: AlignLeft, group: 'text' },
+  { value: 'Email',          label: 'Email',           icon: Mail,      group: 'text' },
+  { value: 'URL',            label: 'URL',             icon: Link,      group: 'text' },
+  { value: 'PhoneNumber',    label: 'PhoneNumber',     icon: Phone,     group: 'text' },
   // Number
-  { value: 'Number',         label: 'Number',          group: 'number' },
-  { value: 'Decimal',        label: 'Decimal',         group: 'number' },
-  { value: 'Currency',       label: 'Currency',        group: 'number' },
-  { value: 'Percent',        label: 'Percent',         group: 'number' },
-  { value: 'Rating',         label: 'Rating',          group: 'number' },
-  { value: 'AutoNumber',     label: 'AutoNumber',      group: 'number' },
+  { value: 'Number',         label: 'Number',          icon: Hash,        group: 'number' },
+  { value: 'Decimal',        label: 'Decimal',         icon: Hash,        group: 'number' },
+  { value: 'Currency',       label: 'Currency',        icon: DollarSign,  group: 'number' },
+  { value: 'Percent',        label: 'Percent',         icon: Percent,     group: 'number' },
+  { value: 'Rating',         label: 'Rating',          icon: Star,        group: 'number' },
+  { value: 'AutoNumber',     label: 'AutoNumber',      icon: Hash,        group: 'number' },
   // Date & Time
-  { value: 'Date',           label: 'Date',            group: 'datetime' },
-  { value: 'DateTime',       label: 'DateTime',        group: 'datetime' },
+  { value: 'Date',           label: 'Date',            icon: Calendar, group: 'datetime' },
+  { value: 'DateTime',       label: 'DateTime',        icon: Calendar, group: 'datetime' },
   // Selection
-  { value: 'Checkbox',       label: 'Checkbox',        group: 'select' },
-  { value: 'SingleSelect',   label: 'SingleSelect',    group: 'select' },
-  { value: 'MultiSelect',    label: 'MultiSelect',     group: 'select' },
+  { value: 'Checkbox',       label: 'Checkbox',      icon: CheckSquare, group: 'select' },
+  { value: 'SingleSelect',   label: 'SingleSelect',  icon: List,        group: 'select' },
+  { value: 'MultiSelect',    label: 'MultiSelect',   icon: Tags,        group: 'select' },
   // Relation & Computed
-  { value: 'Links',          label: 'Links',           group: 'relation' },
-  { value: 'Lookup',         label: 'Lookup',          group: 'relation' },
-  { value: 'Rollup',         label: 'Rollup',          group: 'relation' },
-  { value: 'Formula',        label: 'Formula',         group: 'relation' },
+  { value: 'Links',          label: 'Links',    icon: Link2,     group: 'relation' },
+  { value: 'Lookup',         label: 'Lookup',   icon: Search,    group: 'relation' },
+  { value: 'Rollup',         label: 'Rollup',   icon: Sigma,     group: 'relation' },
+  { value: 'Formula',        label: 'Formula',  icon: GitBranch, group: 'relation' },
   // Other
-  { value: 'Attachment',     label: 'Attachment',      group: 'other' },
-  { value: 'JSON',           label: 'JSON',            group: 'other' },
-  { value: 'User',           label: 'User',            group: 'other' },
-  { value: 'CreatedBy',      label: 'CreatedBy',       group: 'other' },
-  { value: 'LastModifiedBy', label: 'LastModifiedBy',  group: 'other' },
+  { value: 'Attachment',     label: 'Attachment',      icon: Paperclip,  group: 'other' },
+  { value: 'JSON',           label: 'JSON',            icon: Braces,     group: 'other' },
+  { value: 'User',           label: 'User',            icon: User,       group: 'other' },
+  { value: 'CreatedBy',      label: 'CreatedBy',       icon: UserCheck,  group: 'other' },
+  { value: 'LastModifiedBy', label: 'LastModifiedBy',  icon: UserCheck,  group: 'other' },
 ];
 
 // ── Column definition ──

@@ -29,7 +29,50 @@
     "dataTable": "データテーブル",
     "nextCol": "次の列",
     "nextRow": "次の行",
-    "cancel": "編集をキャンセル"
+    "cancel": "編集をキャンセル",
+    "globalKeys": {
+      "openSearch": "検索を開く",
+      "createNew": "新規作成",
+      "save": "保存",
+      "undo": "元に戻す",
+      "redo": "やり直す",
+      "toggleSidebar": "サイドバーの切り替え",
+      "showShortcuts": "ショートカットを表示"
+    },
+    "ppt": {
+      "deleteSelected": "選択を削除",
+      "duplicate": "複製",
+      "copy": "コピー",
+      "cut": "切り取り",
+      "paste": "貼り付け",
+      "group": "グループ化",
+      "ungroup": "グループ解除",
+      "nudgeLeft": "左に微移動",
+      "nudgeRight": "右に微移動",
+      "nudgeUp": "上に微移動",
+      "nudgeDown": "下に微移動"
+    },
+    "diagram": {
+      "deleteSelected": "選択を削除",
+      "copy": "コピー",
+      "paste": "貼り付け",
+      "addChild": "子ノードを追加",
+      "addSibling": "兄弟ノードを追加",
+      "editLabel": "ラベルを編集",
+      "selectAll": "すべて選択",
+      "selectTool": "選択ツール",
+      "textTool": "テキストツール",
+      "rectTool": "矩形ツール",
+      "mindmapTool": "マインドマップツール",
+      "toggleCollapse": "折りたたみの切り替え"
+    },
+    "table": {
+      "editCell": "セルを編集",
+      "exitEdit": "編集を終了",
+      "nextCell": "次のセル",
+      "prevCell": "前のセル",
+      "deleteRow": "行を削除"
+    }
   },
   "command": {
     "placeholder": "タスク、ドキュメント、Agentを検索、または移動...",
@@ -594,6 +637,36 @@
       "dottedLine": "点線",
       "none": "なし"
     },
+    "docs": {
+      "highlight": "ハイライト",
+      "inlineCode": "インラインコード",
+      "quote": "引用",
+      "heading1": "見出し 1",
+      "heading2": "見出し 2",
+      "heading3": "見出し 3",
+      "checkboxList": "チェックボックスリスト",
+      "orderedList": "番号付きリスト",
+      "bulletList": "箇条書きリスト",
+      "link": "リンク",
+      "comment": "コメント",
+      "toggleHeaderRow": "ヘッダー行の切り替え",
+      "toggleHeaderCol": "ヘッダー列の切り替え",
+      "mergeCells": "セルの結合",
+      "splitCell": "セルの分割",
+      "cellBackground": "セルの背景",
+      "heading": "見出し",
+      "heading1Short": "H1",
+      "heading2Short": "H2",
+      "heading3Short": "H3",
+      "paragraph": "段落",
+      "list": "リスト",
+      "deleteRow": "行を削除",
+      "deleteCol": "列を削除",
+      "fullWidth": "全幅",
+      "fitWidth": "幅に合わせる",
+      "download": "ダウンロード",
+      "altText": "代替テキスト"
+    },
     "ppt": {
       "shape": "図形",
       "fillColor": "塗りつぶし色",
@@ -601,7 +674,10 @@
       "borderWidth": "枠線の幅",
       "borderStyle": "枠線のスタイル",
       "textColor": "文字色",
-      "cornerRadius": "角丸"
+      "cornerRadius": "角丸",
+      "font": "フォント",
+      "fontSize": "サイズ",
+      "alignment": "配置"
     },
     "diagram": {
       "shape": "図形",

@@ -86,9 +86,6 @@ export function ContentSidebar({
   const cAgentsBtnRef = useRef<HTMLButtonElement>(null);
   const cMessageBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<Record<string, { top: number; left: number }>>({});
-  const [showOnboardingPrompt, setShowOnboardingPrompt] = useState(false);
-  const [onboardingPromptText, setOnboardingPromptText] = useState('');
-
   /** Calculate dropdown position: 8px below the trigger button, left-aligned.
    *  In collapsed mode (toRight=true): menu appears 8px to the right of button, top-aligned. */
   const calcMenuPos = (btnRef: React.RefObject<HTMLElement | null>, menuWidth: number, alignLeft = true, toRight = false) => {
@@ -102,26 +99,6 @@ export function ContentSidebar({
       left: alignLeft ? rect.left : Math.max(0, rect.right - menuWidth),
     };
   };
-
-  // Fetch onboarding prompt when agents panel opens
-  useEffect(() => {
-    if (!showAgentsMenu || onboardingPromptText) return;
-    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:4000';
-    gw.getAgentSkills()
-      .then(data => {
-        const raw = data.onboarding_prompt || '';
-        setOnboardingPromptText(raw.replace(/\{GATEWAY_URL\}/g, gatewayUrl));
-      })
-      .catch(() => {});
-  }, [showAgentsMenu]);
-
-  // Agents data — use admin endpoint for pending agents
-  const { data: allAgents } = useQuery({
-    queryKey: ['admin-agents'],
-    queryFn: gw.listAllAgents,
-    refetchInterval: 10_000,
-    enabled: showAgentsMenu,
-  });
 
   // Notifications for message dropdown
   const { data: notifications = [] } = useQuery({
@@ -516,11 +493,7 @@ export function ContentSidebar({
             style={{ top: `${menuPos.agents?.top ?? 136}px`, left: `${menuPos.agents?.left ?? 8}px`, width: '320px', maxHeight: '499px' }}
           >
             <ScrollArea className="h-full" style={{ maxHeight: '499px' }}>
-              <AgentPanelContent
-                variant="popover"
-                allAgents={allAgents}
-                onboardingPromptText={onboardingPromptText}
-              />
+              <AgentPanelContent variant="popover" />
             </ScrollArea>
           </div>
         </>

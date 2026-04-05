@@ -1,9 +1,14 @@
 import type { ShortcutDef } from '@/lib/keyboard/types';
 import { pptObjectActions, pptCanvasActions, type PPTObjectCtx, type PPTCanvasCtx } from '@/actions/ppt-object.actions';
 import { buildActionMap } from '@/actions/types';
+import { getT } from '@/lib/i18n';
 
 const pptObjectActionMap = buildActionMap(pptObjectActions);
 const pptCanvasActionMap = buildActionMap(pptCanvasActions);
+
+function dispatch(eventName: string) {
+  window.dispatchEvent(new CustomEvent(eventName));
+}
 
 /**
  * Presentation editor context shortcuts.
@@ -21,126 +26,131 @@ export function setPPTShortcutContext(
   _getCanvasCtx = getCanvasCtx;
 }
 
-export const PPT_SHORTCUTS: ShortcutDef[] = [
-  {
-    id: 'ppt-delete',
-    key: 'Delete',
-    handler: () => {
-      const ctx = _getObjectCtx?.();
-      if (ctx) pptObjectActionMap['ppt-delete'].execute(ctx);
+export function buildPPTShortcuts(): ShortcutDef[] {
+  const t = getT();
+  return [
+    {
+      id: 'ppt-delete',
+      key: 'Delete',
+      handler: () => {
+        const ctx = _getObjectCtx?.();
+        if (ctx) pptObjectActionMap['ppt-delete'].execute(ctx);
+      },
+      label: t('shortcuts.ppt.deleteSelected'),
+      category: 'Presentation',
+      priority: 5,
     },
-    label: 'Delete selected',
-    category: 'Presentation',
-    priority: 5,
-  },
-  {
-    id: 'ppt-backspace',
-    key: 'Backspace',
-    handler: () => {
-      const ctx = _getObjectCtx?.();
-      if (ctx) pptObjectActionMap['ppt-delete'].execute(ctx);
+    {
+      id: 'ppt-backspace',
+      key: 'Backspace',
+      handler: () => {
+        const ctx = _getObjectCtx?.();
+        if (ctx) pptObjectActionMap['ppt-delete'].execute(ctx);
+      },
+      label: t('shortcuts.ppt.deleteSelected'),
+      category: 'Presentation',
+      priority: 5,
     },
-    label: 'Delete selected',
-    category: 'Presentation',
-    priority: 5,
-  },
-  {
-    id: 'ppt-duplicate',
-    key: 'd',
-    modifiers: { meta: true },
-    handler: (e) => {
-      e.preventDefault();
-      const ctx = _getObjectCtx?.();
-      if (ctx) pptObjectActionMap['ppt-duplicate'].execute(ctx);
+    {
+      id: 'ppt-duplicate',
+      key: 'd',
+      modifiers: { meta: true },
+      handler: (e) => {
+        e.preventDefault();
+        const ctx = _getObjectCtx?.();
+        if (ctx) pptObjectActionMap['ppt-duplicate'].execute(ctx);
+      },
+      label: t('shortcuts.ppt.duplicate'),
+      category: 'Presentation',
+      priority: 8,
     },
-    label: 'Duplicate',
-    category: 'Presentation',
-    priority: 8,
-  },
-  {
-    id: 'ppt-copy',
-    key: 'c',
-    modifiers: { meta: true },
-    handler: () => {
-      const ctx = _getObjectCtx?.();
-      if (ctx) pptObjectActionMap['ppt-copy'].execute(ctx);
+    {
+      id: 'ppt-copy',
+      key: 'c',
+      modifiers: { meta: true },
+      handler: () => {
+        const ctx = _getObjectCtx?.();
+        if (ctx) pptObjectActionMap['ppt-copy'].execute(ctx);
+      },
+      label: t('shortcuts.ppt.copy'),
+      category: 'Presentation',
+      priority: 8,
     },
-    label: 'Copy',
-    category: 'Presentation',
-    priority: 8,
-  },
-  {
-    id: 'ppt-cut',
-    key: 'x',
-    modifiers: { meta: true },
-    handler: () => {
-      const ctx = _getObjectCtx?.();
-      if (ctx) pptObjectActionMap['ppt-cut'].execute(ctx);
+    {
+      id: 'ppt-cut',
+      key: 'x',
+      modifiers: { meta: true },
+      handler: () => {
+        const ctx = _getObjectCtx?.();
+        if (ctx) pptObjectActionMap['ppt-cut'].execute(ctx);
+      },
+      label: t('shortcuts.ppt.cut'),
+      category: 'Presentation',
+      priority: 8,
     },
-    label: 'Cut',
-    category: 'Presentation',
-    priority: 8,
-  },
-  {
-    id: 'ppt-paste',
-    key: 'v',
-    modifiers: { meta: true },
-    handler: () => {
-      const ctx = _getCanvasCtx?.();
-      if (ctx) pptCanvasActionMap['ppt-canvas-paste'].execute(ctx);
+    {
+      id: 'ppt-paste',
+      key: 'v',
+      modifiers: { meta: true },
+      handler: () => {
+        const ctx = _getCanvasCtx?.();
+        if (ctx) pptCanvasActionMap['ppt-canvas-paste'].execute(ctx);
+      },
+      label: t('shortcuts.ppt.paste'),
+      category: 'Presentation',
+      priority: 8,
     },
-    label: 'Paste',
-    category: 'Presentation',
-    priority: 8,
-  },
-  {
-    id: 'ppt-group',
-    key: 'g',
-    modifiers: { meta: true },
-    handler: (e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('ppt:group')); },
-    label: 'Group',
-    category: 'Presentation',
-    priority: 8,
-  },
-  {
-    id: 'ppt-ungroup',
-    key: 'g',
-    modifiers: { meta: true, shift: true },
-    handler: (e) => { e.preventDefault(); window.dispatchEvent(new CustomEvent('ppt:ungroup')); },
-    label: 'Ungroup',
-    category: 'Presentation',
-    priority: 9,
-  },
-  {
-    id: 'ppt-nudge-left',
-    key: 'ArrowLeft',
-    handler: () => window.dispatchEvent(new CustomEvent('ppt:nudge-left')),
-    label: 'Nudge left',
-    category: 'Presentation',
-    priority: 3,
-  },
-  {
-    id: 'ppt-nudge-right',
-    key: 'ArrowRight',
-    handler: () => window.dispatchEvent(new CustomEvent('ppt:nudge-right')),
-    label: 'Nudge right',
-    category: 'Presentation',
-    priority: 3,
-  },
-  {
-    id: 'ppt-nudge-up',
-    key: 'ArrowUp',
-    handler: () => window.dispatchEvent(new CustomEvent('ppt:nudge-up')),
-    label: 'Nudge up',
-    category: 'Presentation',
-    priority: 3,
-  },
-  {
-    id: 'ppt-nudge-down',
-    key: 'ArrowDown',
-    handler: () => window.dispatchEvent(new CustomEvent('ppt:nudge-down')),
-    label: 'Nudge down',
-    category: 'Presentation',
-    priority: 3,
-  },
-];
+    {
+      id: 'ppt-group',
+      key: 'g',
+      modifiers: { meta: true },
+      handler: (e) => { e.preventDefault(); dispatch('ppt:group'); },
+      label: t('shortcuts.ppt.group'),
+      category: 'Presentation',
+      priority: 8,
+    },
+    {
+      id: 'ppt-ungroup',
+      key: 'g',
+      modifiers: { meta: true, shift: true },
+      handler: (e) => { e.preventDefault(); dispatch('ppt:ungroup'); },
+      label: t('shortcuts.ppt.ungroup'),
+      category: 'Presentation',
+      priority: 9,
+    },
+    {
+      id: 'ppt-nudge-left',
+      key: 'ArrowLeft',
+      handler: () => dispatch('ppt:nudge-left'),
+      label: t('shortcuts.ppt.nudgeLeft'),
+      category: 'Presentation',
+      priority: 3,
+    },
+    {
+      id: 'ppt-nudge-right',
+      key: 'ArrowRight',
+      handler: () => dispatch('ppt:nudge-right'),
+      label: t('shortcuts.ppt.nudgeRight'),
+      category: 'Presentation',
+      priority: 3,
+    },
+    {
+      id: 'ppt-nudge-up',
+      key: 'ArrowUp',
+      handler: () => dispatch('ppt:nudge-up'),
+      label: t('shortcuts.ppt.nudgeUp'),
+      category: 'Presentation',
+      priority: 3,
+    },
+    {
+      id: 'ppt-nudge-down',
+      key: 'ArrowDown',
+      handler: () => dispatch('ppt:nudge-down'),
+      label: t('shortcuts.ppt.nudgeDown'),
+      category: 'Presentation',
+      priority: 3,
+    },
+  ];
+}
+
+export const PPT_SHORTCUTS: ShortcutDef[] = buildPPTShortcuts();

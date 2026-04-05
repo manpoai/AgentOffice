@@ -24,7 +24,7 @@ import { createDocsTableHandler } from '@/components/editor/docs-toolbar-handler
 import { ColorPicker } from '@/components/ui/color-picker';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
-import { useT } from '@/lib/i18n';
+import { useT, getT } from '@/lib/i18n';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
@@ -63,7 +63,7 @@ const PPT_SHORTCUTS: ShortcutRegistration[] = [
     key: 'g',
     modifiers: { meta: true },
     handler: () => window.dispatchEvent(new CustomEvent('ppt:group')),
-    label: 'Group',
+    label: getT()('shortcuts.ppt.group'),
     category: 'Presentation',
     priority: 5,
   },
@@ -72,7 +72,7 @@ const PPT_SHORTCUTS: ShortcutRegistration[] = [
     key: 'g',
     modifiers: { meta: true, shift: true },
     handler: () => window.dispatchEvent(new CustomEvent('ppt:ungroup')),
-    label: 'Ungroup',
+    label: getT()('shortcuts.ppt.ungroup'),
     category: 'Presentation',
     priority: 6,
   },
