@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { useT, getT } from '@/lib/i18n';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { BottomSheet } from '@/components/shared/BottomSheet';
@@ -1531,14 +1532,23 @@ export function PresentationEditor({
             onHistory={() => { setShowHistory(true); setShowComments(false); }}
             onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
             menuItems={[
-              { icon: Link2, label: t('actions.copyLink'), shortcut: '⌘⇧L', onClick: () => onCopyLink?.() },
-              { icon: Pin, label: t('actions.pin'), onClick: () => {} },
-              { icon: Download, label: t('actions.download'), onClick: () => handleDownload() },
-              { icon: Share2, label: t('actions.share'), onClick: () => {} },
-              { icon: Trash2, label: t('actions.moveToTrash'), danger: true, onClick: handleDelete },
-              { icon: Clock, label: t('content.versionHistory'), separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
-              { icon: MessageSquare, label: t('content.comments'), shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
-              { icon: Search, label: t('common.search'), shortcut: '⌘F', onClick: () => {} },
+              ...buildContentTopBarCommonMenuItems(t, {
+                id: presentationId,
+                type: 'presentation',
+                title: currentTitle || '',
+                pinned: false,
+                url: '',
+                startRename: () => {},
+                openIconPicker: () => {},
+                togglePin: () => {},
+                deleteItem: handleDelete,
+                downloadItem: () => handleDownload(),
+                shareItem: () => {},
+                copyLink: () => onCopyLink?.(),
+                showHistory: () => { setShowHistory(true); setShowComments(false); },
+                showComments: () => { setShowComments(true); setShowHistory(false); },
+                search: () => {},
+              }),
               { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
             ]}
           />
@@ -1622,14 +1632,23 @@ export function PresentationEditor({
           onHistory={() => { setShowHistory(true); setShowComments(false); }}
           onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
           menuItems={[
-            { icon: Link2, label: t('actions.copyLink'), shortcut: '⌘⇧L', onClick: () => onCopyLink?.() },
-            { icon: Pin, label: t('actions.pin'), onClick: () => {} },
-            { icon: Download, label: t('actions.download'), onClick: () => handleDownload() },
-            { icon: Share2, label: t('actions.share'), onClick: () => {} },
-            { icon: Trash2, label: t('actions.moveToTrash'), danger: true, onClick: handleDelete },
-            { icon: Clock, label: t('content.versionHistory'), separator: true, shortcut: '⌘⇧H', onClick: () => { setShowHistory(true); setShowComments(false); } },
-            { icon: MessageSquare, label: t('content.comments'), shortcut: '⌘J', onClick: () => { setShowComments(true); setShowHistory(false); } },
-            { icon: Search, label: t('common.search'), shortcut: '⌘F', onClick: () => {} },
+            ...buildContentTopBarCommonMenuItems(t, {
+              id: presentationId,
+              type: 'presentation',
+              title: currentTitle || '',
+              pinned: false,
+              url: '',
+              startRename: () => {},
+              openIconPicker: () => {},
+              togglePin: () => {},
+              deleteItem: handleDelete,
+              downloadItem: () => handleDownload(),
+              shareItem: () => {},
+              copyLink: () => onCopyLink?.(),
+              showHistory: () => { setShowHistory(true); setShowComments(false); },
+              showComments: () => { setShowComments(true); setShowHistory(false); },
+              search: () => {},
+            }),
             { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
           ]}
           actions={<>
