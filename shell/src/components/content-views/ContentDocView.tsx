@@ -423,13 +423,14 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
           docListVisible={docListVisible}
           onToggleDocList={onToggleDocList}
           title={title || breadcrumb?.[breadcrumb.length - 1]?.title || ''}
+          titlePlaceholder={t('content.untitled')}
           metaLine={
             <button
               onClick={() => setShowHistory(true)}
               className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
             >
-              Last modified: {formatRelativeTime(doc.updated_at)}
-              {doc.updated_by && <span> by {doc.updated_by}</span>}
+              {t('content.lastModified')}: {formatRelativeTime(doc.updated_at)}
+              {doc.updated_by && <span> {t('content.by')} {doc.updated_by}</span>}
             </button>
           }
           statusText={statusText}
@@ -502,14 +503,14 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
             <div className="flex items-center gap-3 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 shrink-0">
               <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <span className="text-sm text-amber-800 dark:text-amber-300 flex-1">
-                {t('content.previewingVersion') || 'Previewing historical version'} — {formatDateTime(previewRevision.createdAt)}
+                {t('content.previewingVersion')} — {formatDateTime(previewRevision.createdAt)}
               </span>
               <button
                 onClick={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
               >
                 <X className="h-3.5 w-3.5" />
-                {t('content.exitPreview') || 'Exit preview'}
+                {t('content.exitPreview')}
               </button>
             </div>
           )}

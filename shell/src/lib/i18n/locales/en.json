@@ -144,7 +144,9 @@
     "viewerInsights": "Enable viewer insights",
     "enableEmbeds": "Enable embeds",
     "fullWidth": "Full width",
-    "searchContent": "Search content..."
+    "searchContent": "Search content...",
+    "lastModified": "Last modified",
+    "by": "by"
   },
   "contacts": {
     "title": "Agent Management",

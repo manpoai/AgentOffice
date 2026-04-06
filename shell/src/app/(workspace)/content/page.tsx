@@ -23,8 +23,7 @@ import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from 'next-themes';
 import { LogOut, Key, Globe, Camera, ChevronRight } from 'lucide-react';
-import { DocPanel } from './components/DocPanel';
-import { DiagramPanel } from './components/DiagramPanel';
+import { ContentDocView, ContentDiagramView } from '@/components/content-views';
 
 const TableEditor = dynamic(
   () => import('@/components/table-editor/TableEditor').then(m => ({ default: m.TableEditor })),
@@ -1276,7 +1275,7 @@ export default function ContentPage() {
         mobileView === 'list' ? 'hidden md:flex' : 'flex'
       )}>
         {selectedDoc && selection?.type === 'doc' ? (
-          <DocPanel
+          <ContentDocView
             key={selectedDoc.id}
             doc={selectedDoc}
             customIcon={customIcons?.[selectedDoc.id]}
@@ -1341,7 +1340,7 @@ export default function ContentPage() {
             onNavigate={navigateToBreadcrumb}
           />
         ) : selectedDiagramId ? (
-          <DiagramPanel
+          <ContentDiagramView
             diagramId={selectedDiagramId}
             breadcrumb={(() => {
               const path: { id: string; title: string }[] = [];
@@ -2106,6 +2105,5 @@ function TrashItem({ title, icon, deletedAt, onRestore, onPermanentDelete }: {
   );
 }
 
-// DocPanel and DiagramPanel have been extracted to ./components/
 // formatDate and formatRelativeTime are now imported from @/lib/utils/time
 // END_OF_EXTRACTED_MARKER

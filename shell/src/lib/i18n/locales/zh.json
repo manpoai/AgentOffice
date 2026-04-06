@@ -144,7 +144,9 @@
     "viewerInsights": "启用查看者洞察",
     "enableEmbeds": "启用嵌入",
     "fullWidth": "全宽",
-    "searchContent": "搜索内容..."
+    "searchContent": "搜索内容...",
+    "lastModified": "最后修改",
+    "by": "由"
   },
   "contacts": {
     "title": "Agent 管理",

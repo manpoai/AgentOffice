@@ -75,7 +75,7 @@ export function ContentTopBar({
   docListVisible,
   onToggleDocList,
   title,
-  titlePlaceholder = 'Untitled',
+  titlePlaceholder,
   onTitleChange,
   metaLine,
   actions,
@@ -370,7 +370,7 @@ export function ContentTopBar({
                 onClick={() => setShowMobileMenu(false)}
                 className="w-full flex items-center justify-center px-4 py-3 text-base font-medium text-muted-foreground rounded-lg active:bg-accent min-h-[44px]"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
