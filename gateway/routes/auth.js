@@ -304,7 +304,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   // Admin: list all agents
   app.get('/api/admin/agents', authenticateAdmin, (req, res) => {
     const agents = db.prepare("SELECT id, username, display_name, capabilities, online, last_seen_at, pending_approval, created_at FROM actors WHERE type = 'agent'").all();
-    res.json({ agents: agents.map(a => ({ ...a, name: a.username, capabilities: JSON.parse(a.capabilities || '[]'), pending_approval: !!a.pending_approval })) });
+    res.json({ agents: agents.map(a => ({ ...a, agent_id: a.id, name: a.username, capabilities: JSON.parse(a.capabilities || '[]'), pending_approval: !!a.pending_approval })) });
   });
 
   // Agent-facing: list other agents (public info only)
