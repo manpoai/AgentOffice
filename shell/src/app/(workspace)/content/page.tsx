@@ -1972,13 +1972,17 @@ function DraggableTreeNode({
                     title: node.title,
                     pinned: node.pinned ?? false,
                     url: `${window.location.origin}/content?id=${node.type}:${node.rawId}`,
-                    startRename: () => {},
-                    openIconPicker: () => {},
+                    startRename: () => {
+                      setRenameValue(node.title);
+                      setIsRenaming(true);
+                      setTimeout(() => renameInputRef.current?.select(), 30);
+                    },
+                    openIconPicker: () => setShowIconPicker(true),
                     togglePin: () => onTogglePin(nodeId),
                     deleteItem: () => onRequestDelete(nodeId),
                     downloadItem: () => {},
                     shareItem: () => {},
-                  }, t).map((item, i) => (
+                  }, t, isMobile).map((item, i) => (
                     <React.Fragment key={i}>
                       {item.separator && <div className="border-t border-black/10 dark:border-white/10 my-0.5" />}
                       <button
