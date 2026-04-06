@@ -17,6 +17,7 @@ import {
   CreditCard, Image, MessageSquare, UserCheck, RotateCcw,
 } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { ContentTopBarCommonActions } from '@/components/shared/ContentTopBarActions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
 import { DndContext, closestCenter, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
@@ -325,6 +326,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const { t } = useT();
   const isMobile = useIsMobile();
   const [mobileEditing, setMobileEditing] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   // On mobile, default to read-only preview; on desktop always editable
   const mobilePreview = isMobile && !mobileEditing;
   const [page, setPage] = useState(1);
@@ -1841,7 +1843,16 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             showComments: () => setShowTableComments(v => !v),
             search: () => {},
           })}
-          actions={null}
+          actions={
+            <ContentTopBarCommonActions
+              onSearch={() => setShowSearch(v => !v)}
+              onShare={() => {}}
+              onHistory={() => setShowHistory(true)}
+              onComments={() => setShowTableComments(v => !v)}
+              showHistory={showHistory}
+              showComments={showTableComments}
+            />
+          }
         />
       </div>
 
