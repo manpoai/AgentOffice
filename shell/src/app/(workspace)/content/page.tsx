@@ -1708,27 +1708,28 @@ function DraggableTreeNode({
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const iconPickerRef = useRef<HTMLDivElement>(null);
 
+  const buildContentItemCtx = useCallback((): ContentItemCtx => ({
+    id: nodeId,
+    type: node.type,
+    title: node.title,
+    pinned: node.pinned ?? false,
+    url: `${window.location.origin}/content?id=${node.type}:${node.rawId}`,
+    startRename: () => {
+      setRenameValue(node.title);
+      setIsRenaming(true);
+      setTimeout(() => renameInputRef.current?.select(), 30);
+    },
+    openIconPicker: () => setShowIconPicker(true),
+    togglePin: () => onTogglePin(nodeId),
+    deleteItem: () => onRequestDelete(nodeId),
+    downloadItem: () => {},
+    shareItem: () => {},
+  }), [node.pinned, node.rawId, node.type, node.title, nodeId, onTogglePin, onRequestDelete]);
+
   // Right-click context menu
   const getContextMenuItems = useCallback((): ContextMenuItem[] => {
-    const ctx: ContentItemCtx = {
-      id: nodeId,
-      type: node.type,
-      title: node.title,
-      pinned: node.pinned ?? false,
-      url: `${window.location.origin}/content?id=${node.type}:${node.rawId}`,
-      startRename: () => {
-        setRenameValue(node.title);
-        setIsRenaming(true);
-        setTimeout(() => renameInputRef.current?.select(), 30);
-      },
-      openIconPicker: () => setShowIconPicker(true),
-      togglePin: () => onTogglePin(nodeId),
-      deleteItem: () => onRequestDelete(nodeId),
-      downloadItem: () => {},
-      shareItem: () => {},
-    };
-    return toContextMenuItems(contentItemSurfaces.contextMenu, contentActionMap, ctx, t, isMobile);
-  }, [node.pinned, node.rawId, node.type, node.title, nodeId, isMobile, onTogglePin, onRequestDelete, t]);
+    return toContextMenuItems(contentItemSurfaces.contextMenu, contentActionMap, buildContentItemCtx(), t, isMobile);
+  }, [buildContentItemCtx, isMobile, t]);
 
   const { onContextMenu: handleContextMenu, onTouchStart: handleLongPressStart, onTouchEnd: handleLongPressEnd, onTouchMove: handleLongPressMove } = useContextMenu(getContextMenuItems);
 
@@ -1966,23 +1967,7 @@ function DraggableTreeNode({
               <>
                 <div className="fixed inset-0 z-10" onClick={(e) => { e.stopPropagation(); setShowMoreMenu(false); }} />
                 <div ref={moreMenuRef} className="fixed z-50 bg-white dark:bg-card border border-black/10 dark:border-white/10 rounded-lg shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] py-1 w-[172px] overflow-y-auto" style={getMenuPos(moreBtnRef, moreMenuRef, 172)}>
-                  {toContentMenuItems(contentItemSurfaces.topBarMore, contentActionMap, {
-                    id: nodeId,
-                    type: node.type,
-                    title: node.title,
-                    pinned: node.pinned ?? false,
-                    url: `${window.location.origin}/content?id=${node.type}:${node.rawId}`,
-                    startRename: () => {
-                      setRenameValue(node.title);
-                      setIsRenaming(true);
-                      setTimeout(() => renameInputRef.current?.select(), 30);
-                    },
-                    openIconPicker: () => setShowIconPicker(true),
-                    togglePin: () => onTogglePin(nodeId),
-                    deleteItem: () => onRequestDelete(nodeId),
-                    downloadItem: () => {},
-                    shareItem: () => {},
-                  }, t, isMobile).map((item, i) => (
+                  {toContentMenuItems(contentItemSurfaces.topBarMore, contentActionMap, buildContentItemCtx(), t, isMobile).map((item, i) => (
                     <React.Fragment key={i}>
                       {item.separator && <div className="border-t border-black/10 dark:border-white/10 my-0.5" />}
                       <button
