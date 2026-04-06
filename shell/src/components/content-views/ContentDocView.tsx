@@ -6,6 +6,7 @@ import * as docApi from '@/lib/api/documents';
 import type { Document as DocType, Revision as DocRevision } from '@/lib/api/documents';
 import { X, Search, Clock, MessageSquare as MessageSquareIcon, Download, Smile, Maximize2, Link2, Pin, Undo2, Redo2, ExternalLink, AtSign, Share2, Pencil, Trash2 } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { ContentTopBarCommonActions } from '@/components/shared/ContentTopBarActions';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime, formatDateTime } from '@/lib/utils/time';
@@ -471,33 +472,16 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               }} />
             ) },
           ]}
-          actions={<>
-            <button
-              onClick={() => { setShowSearch(true); setSearchWithReplace(false); }}
-              className="p-2 text-black/70 dark:text-white/70 hover:text-foreground rounded transition-colors"
-              title={t('toolbar.search')}
-            >
-              <Search className="h-4 w-4" />
-            </button>
-            <button className="flex items-center gap-1.5 h-8 px-3 ml-1 border border-black/20 dark:border-white/20 rounded-lg text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors">
-              <ExternalLink className="h-4 w-4" />
-              {t('actions.share')}
-            </button>
-            <button
-              onClick={() => setShowHistory(v => !v)}
-              className={cn('flex items-center justify-center w-8 h-8 ml-1 border border-black/20 dark:border-white/20 rounded-lg transition-colors', showHistory ? 'text-sidebar-primary bg-sidebar-primary/10 border-sidebar-primary/20' : 'text-black/70 dark:text-white/70 hover:bg-black/[0.04]')}
-              title={t('content.versionHistory')}
-            >
-              <Clock className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setShowComments(v => !v)}
-              className={cn('flex items-center justify-center w-8 h-8 ml-1 rounded-lg transition-colors', showComments ? 'bg-sidebar-primary/80' : 'bg-sidebar-primary hover:bg-sidebar-primary/90')}
-              title={t('content.comments')}
-            >
-              <AtSign className="h-4 w-4 text-white" />
-            </button>
-          </>}
+          actions={
+            <ContentTopBarCommonActions
+              onSearch={() => { setShowSearch(true); setSearchWithReplace(false); }}
+              onShare={() => {}}
+              onHistory={() => setShowHistory(v => !v)}
+              onComments={() => setShowComments(v => !v)}
+              showHistory={showHistory}
+              showComments={showComments}
+            />
+          }
         />
       </div>
 

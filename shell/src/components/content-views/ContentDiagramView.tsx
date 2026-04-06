@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, Clock, MessageSquare as MessageSquareIcon, Download, Link2, Pin, ExternalLink, AtSign, Share2, Trash2 } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { ContentTopBarCommonActions } from '@/components/shared/ContentTopBarActions';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
 import dynamic from 'next/dynamic';
@@ -124,29 +125,16 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 search: () => {},
               }),
             ]}
-            actions={<>
-              <button className="p-2 text-black/70 dark:text-white/70 hover:text-foreground rounded transition-colors" title={t('toolbar.search')}>
-                <Search className="h-4 w-4" />
-              </button>
-              <button className="flex items-center gap-1.5 h-8 px-3 ml-1 border border-black/20 dark:border-white/20 rounded-lg text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors">
-                <ExternalLink className="h-4 w-4" />
-                {t('actions.share')}
-              </button>
-              <button
-                onClick={() => { setShowHistory(v => !v); setShowComments(false); }}
-                className={cn('flex items-center justify-center w-8 h-8 ml-1 border border-black/20 dark:border-white/20 rounded-lg transition-colors', showHistory ? 'text-sidebar-primary bg-sidebar-primary/10 border-sidebar-primary/20' : 'text-black/70 dark:text-white/70 hover:bg-black/[0.04]')}
-                title={t('content.versionHistory')}
-              >
-                <Clock className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => { setShowComments(v => !v); setShowHistory(false); }}
-                className={cn('flex items-center justify-center w-8 h-8 ml-1 rounded-lg transition-colors', showComments ? 'bg-sidebar-primary/80' : 'bg-sidebar-primary hover:bg-sidebar-primary/90')}
-                title={t('content.comments')}
-              >
-                <AtSign className="h-4 w-4 text-white" />
-              </button>
-            </>}
+            actions={
+              <ContentTopBarCommonActions
+                onSearch={() => {}}
+                onShare={() => {}}
+                onHistory={() => { setShowHistory(v => !v); setShowComments(false); }}
+                onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
+                showHistory={showHistory}
+                showComments={showComments}
+              />
+            }
           />
         </div>
 
