@@ -89,17 +89,17 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
             onBack={onBack}
             docListVisible={docListVisible}
             onToggleDocList={onToggleDocList}
-            title={title || 'Untitled Diagram'}
-            titlePlaceholder="Untitled Diagram"
+            title={title || t('content.untitledDiagram')}
+            titlePlaceholder={t('content.untitledDiagram')}
             onTitleChange={handleTitleChange}
-            statusText={saveStatus.saving ? 'Saving...' : saveStatus.lastSaved ? `Saved ${formatRelativeTime(saveStatus.lastSaved)}` : ''}
+            statusText={saveStatus.saving ? t('content.saving') : saveStatus.lastSaved ? `${t('content.saved')} ${formatRelativeTime(saveStatus.lastSaved)}` : ''}
             metaLine={
               <button
                 onClick={() => { setShowHistory(true); setShowComments(false); }}
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
               >
-                Last modified: {formatRelativeTime(diagramItem?.updated_at || diagramItem?.created_at)}
-                {diagramItem?.updated_by && <span> by {diagramItem.updated_by}</span>}
+                {t('content.lastModified')}: {formatRelativeTime(diagramItem?.updated_at || diagramItem?.created_at)}
+                {diagramItem?.updated_by && <span> {t('content.by')} {diagramItem.updated_by}</span>}
               </button>
             }
             onHistory={() => { setShowHistory(true); setShowComments(false); }}
@@ -122,7 +122,7 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
               {/* Share button */}
               <button className="flex items-center gap-1.5 h-8 px-3 ml-1 border border-black/20 dark:border-white/20 rounded-lg text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors">
                 <ExternalLink className="h-4 w-4" />
-                Share
+                {t('actions.share')}
               </button>
               {/* History */}
               <button
