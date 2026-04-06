@@ -715,6 +715,13 @@ export default function ContentPage() {
     }
   };
 
+  const handleCreateByType = (type: CreatableType, parentNodeId?: string) => {
+    if (type === 'doc') return handleCreateDoc(parentNodeId);
+    if (type === 'table') return handleCreateTable(parentNodeId);
+    if (type === 'presentation') return handleCreatePresentation(parentNodeId);
+    return handleCreateDiagram(parentNodeId);
+  };
+
   const updateTreeParent = (nodeId: string, parentId: string) => {
     setTreeState(prev => {
       const next = {
@@ -941,10 +948,7 @@ export default function ContentPage() {
         showNewMenu={showNewMenu}
         onShowNewMenuChange={setShowNewMenu}
         creating={creating}
-        onCreateDoc={() => handleCreateDoc()}
-        onCreateTable={() => handleCreateTable()}
-        onCreatePresentation={() => handleCreatePresentation()}
-        onCreateDiagram={() => handleCreateDiagram()}
+        onCreateByType={(type) => handleCreateByType(type)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       >
@@ -1013,10 +1017,7 @@ export default function ContentPage() {
                         expandedIds={expandedIds}
                         onSelect={handleSelect}
                         onToggle={toggleExpand}
-                        onCreateDoc={handleCreateDoc}
-                        onCreateTable={handleCreateTable}
-                        onCreatePresentation={handleCreatePresentation}
-                        onCreateDiagram={handleCreateDiagram}
+                        onCreateByType={handleCreateByType}
                         onRequestDelete={requestDelete}
                         onTogglePin={handleTogglePin}
                         depth={0}
@@ -1047,10 +1048,7 @@ export default function ContentPage() {
                     expandedIds={expandedIds}
                     onSelect={handleSelect}
                     onToggle={toggleExpand}
-                    onCreateDoc={handleCreateDoc}
-                    onCreateTable={handleCreateTable}
-                    onCreatePresentation={handleCreatePresentation}
-                    onCreateDiagram={handleCreateDiagram}
+                    onCreateByType={handleCreateByType}
                     onRequestDelete={requestDelete}
                     onTogglePin={handleTogglePin}
                     depth={0}
@@ -1238,10 +1236,7 @@ export default function ContentPage() {
                 const Icon = item.icon;
                 const onClick = () => {
                   setShowMobileFabMenu(false);
-                  if (item.type === 'doc') handleCreateDoc();
-                  else if (item.type === 'table') handleCreateTable();
-                  else if (item.type === 'presentation') handleCreatePresentation();
-                  else handleCreateDiagram();
+                  handleCreateByType(item.type);
                 };
                 return (
                   <button
@@ -1576,7 +1571,7 @@ export default function ContentPage() {
 
 function TreeNodeRecursive({
   nodeId, nodes, childrenMap, selection, expandedIds, onSelect, onToggle,
-  onCreateDoc, onCreateTable, onCreatePresentation, onCreateDiagram, onRequestDelete, onTogglePin, depth, creating, dropIntent, dragActiveId,
+  onCreateByType, onRequestDelete, onTogglePin, depth, creating, dropIntent, dragActiveId,
 }: {
   nodeId: string;
   nodes: Map<string, ContentNode>;
@@ -1585,10 +1580,7 @@ function TreeNodeRecursive({
   expandedIds: Set<string>;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
-  onCreateDoc: (parentId?: string) => void;
-  onCreateTable: (parentId?: string) => void;
-  onCreatePresentation: (parentId?: string) => void;
-  onCreateDiagram: (parentId?: string) => void;
+  onCreateByType: (type: CreatableType, parentId?: string) => void;
   onRequestDelete: (nodeId: string) => void;
   onTogglePin: (nodeId: string) => void;
   depth: number;
@@ -1620,10 +1612,7 @@ function TreeNodeRecursive({
         onToggle={() => onToggle(nodeId)}
         depth={depth}
         onCreateChild={(type) => {
-          if (type === 'doc') onCreateDoc(nodeId);
-          else if (type === 'table') onCreateTable(nodeId);
-          else if (type === 'presentation') onCreatePresentation(nodeId);
-          else onCreateDiagram(nodeId);
+          onCreateByType(type, nodeId);
         }}
         onRequestDelete={onRequestDelete}
         onTogglePin={onTogglePin}
@@ -1643,10 +1632,7 @@ function TreeNodeRecursive({
               expandedIds={expandedIds}
               onSelect={onSelect}
               onToggle={onToggle}
-              onCreateDoc={onCreateDoc}
-              onCreateTable={onCreateTable}
-              onCreatePresentation={onCreatePresentation}
-              onCreateDiagram={onCreateDiagram}
+              onCreateByType={onCreateByType}
               onRequestDelete={onRequestDelete}
               onTogglePin={onTogglePin}
               depth={depth + 1}

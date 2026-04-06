@@ -35,6 +35,11 @@ import TableHistory, { SnapshotPreview } from './TableHistory';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { EditFAB } from '@/components/shared/EditFAB';
+import { ContentMenuList } from '@/components/shared/ContentMenuList';
+import { buildActionMap } from '@/actions/types';
+import { tableColumnActions } from '@/actions/table-column.actions';
+import { tableSurfaces } from '@/surfaces/table.surfaces';
+import { toContentMenuItems } from '@/surfaces/bridge';
 
 // ── Column type config — imported from ./types ──
 
@@ -451,6 +456,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const newColRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const pageSize = 50;
+  const tableColumnActionMap = useMemo(() => buildActionMap(tableColumnActions), []);
 
   // Default sort by Id for stable row ordering.
   // New tables use auto-increment integer Id (uidt=ID), so numeric sort works correctly.
@@ -1285,6 +1291,62 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       console.error('Delete column failed:', e);
     }
   };
+
+  const buildHeaderMenuItems = (col: br.BRColumn) => toContentMenuItems(
+    tableSurfaces.headerMenu,
+    tableColumnActionMap,
+    {
+      colKey: col.column_id,
+      grouped: groupByCol === col.title,
+      freezeEnabled: frozenColCount > 1,
+      sortColumn: (colKey: string, dir: 'asc' | 'desc') => {
+        setColMenu(null);
+        handleColumnSort(colKey, dir);
+      },
+      hideColumn: (colKey: string) => {
+        setColMenu(null);
+        toggleColVisibility(colKey, true);
+      },
+      deleteColumn: (colKey: string) => {
+        setColMenu(null);
+        handleDeleteColumn(colKey);
+      },
+      editField: (colKey: string) => {
+        setColMenu(null);
+        const target = displayCols.find(c => c.column_id === colKey);
+        if (target) openEditField(target);
+      },
+      duplicateField: (colKey: string) => {
+        setColMenu(null);
+        const target = displayCols.find(c => c.column_id === colKey);
+        if (target) handleDuplicateColumn(target);
+      },
+      insertLeft: (colKey: string) => {
+        const target = displayCols.find(c => c.column_id === colKey);
+        if (target) handleInsertColumn('left', target);
+      },
+      insertRight: (colKey: string) => {
+        const target = displayCols.find(c => c.column_id === colKey);
+        if (target) handleInsertColumn('right', target);
+      },
+      freezeUpTo: (colKey: string) => {
+        setColMenu(null);
+        const idx = visibleCols.findIndex(c => c.column_id === colKey);
+        setFrozenColCount(idx + 1);
+      },
+      unfreezeAll: () => {
+        setColMenu(null);
+        setFrozenColCount(1);
+      },
+      toggleGroupBy: (colKey: string) => {
+        setColMenu(null);
+        const target = displayCols.find(c => c.column_id === colKey);
+        if (target) setGroupByCol(groupByCol === target.title ? null : target.title);
+      },
+    },
+    t,
+    isMobile,
+  );
 
   // ── Table operations ──
   // handleRenameTable now inlined in ContentTopBar onTitleChange
@@ -2934,35 +2996,8 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                         {colMenu === col.column_id && (
                           <>
                             <div className="fixed inset-0 z-10" onClick={() => setColMenu(null)} />
-                            <div className="absolute left-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-48">
-                              <button onClick={() => openEditField(col)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"><Pencil className="h-3 w-3" /> Edit Field</button>
-                              <button onClick={() => handleDuplicateColumn(col)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"><Copy className="h-3 w-3" /> Duplicate Field</button>
-                              <div className="border-t border-border my-1" />
-                              <button onClick={() => handleInsertColumn('right', col)} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"><ArrowRightFromLine className="h-3 w-3" /> Insert Right</button>
-                              <div className="border-t border-border my-1" />
-                              <button
-                                onClick={() => { setColMenu(null); const idx = visibleCols.findIndex(c => c.column_id === col.column_id); setFrozenColCount(idx + 1); }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                              >
-                                <Snowflake className="h-3 w-3" /> Freeze up to
-                              </button>
-                              {frozenColCount > 1 && (
-                                <button
-                                  onClick={() => { setColMenu(null); setFrozenColCount(1); }}
-                                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                                >
-                                  <Snowflake className="h-3 w-3 opacity-40" /> Unfreeze all
-                                </button>
-                              )}
-                              <button
-                                onClick={() => { setColMenu(null); setGroupByCol(groupByCol === col.title ? null : col.title); }}
-                                className={cn('w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent', groupByCol === col.title ? 'text-sidebar-primary font-medium' : 'text-foreground')}
-                              >
-                                <Group className="h-3 w-3" /> {groupByCol === col.title ? 'Remove Group By' : 'Group By'}
-                              </button>
-                              <div className="border-t border-border my-1" />
-                              <button onClick={() => { setColMenu(null); handleColumnSort(col.column_id, 'asc'); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"><ArrowUp className="h-3 w-3" /> Sort A → Z</button>
-                              <button onClick={() => { setColMenu(null); handleColumnSort(col.column_id, 'desc'); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"><ArrowDown className="h-3 w-3" /> Sort Z → A</button>
+                            <div className="absolute left-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-56">
+                              <ContentMenuList items={buildHeaderMenuItems(col)} onItemClick={(item) => item.onClick()} itemClassName="px-3 h-8 text-xs" />
                             </div>
                           </>
                         )}
@@ -3020,91 +3055,8 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                       {colMenu === col.column_id && (
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setColMenu(null)} />
-                          <div className="absolute left-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-48">
-                            <button
-                              onClick={() => openEditField(col)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                            >
-                              <Pencil className="h-3 w-3" /> Edit Field
-                            </button>
-                            <button
-                              onClick={() => handleDuplicateColumn(col)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                            >
-                              <Copy className="h-3 w-3" /> Duplicate Field
-                            </button>
-                            <button
-                              onClick={() => { setColMenu(null); toggleColVisibility(col.column_id, true); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                            >
-                              <EyeOff className="h-3 w-3" /> Hide Field
-                            </button>
-                            <div className="border-t border-border my-1" />
-                            {!col.primary_key && (
-                              <button
-                                onClick={() => handleInsertColumn('left', col)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                              >
-                                <ArrowLeftFromLine className="h-3 w-3" /> Insert Left
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleInsertColumn('right', col)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                            >
-                              <ArrowRightFromLine className="h-3 w-3" /> Insert Right
-                            </button>
-                            <div className="border-t border-border my-1" />
-                            <button
-                              onClick={() => {
-                                setColMenu(null);
-                                const colIdx = visibleCols.findIndex(c => c.column_id === col.column_id);
-                                setFrozenColCount(colIdx + 1);
-                              }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                            >
-                              <Snowflake className="h-3 w-3" /> Freeze up to
-                            </button>
-                            {frozenColCount > 1 && (
-                              <button
-                                onClick={() => { setColMenu(null); setFrozenColCount(1); }}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                              >
-                                <Snowflake className="h-3 w-3 opacity-40" /> Unfreeze all
-                              </button>
-                            )}
-                            <button
-                              onClick={() => {
-                                setColMenu(null);
-                                setGroupByCol(groupByCol === col.title ? null : col.title);
-                              }}
-                              className={cn(
-                                'w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent',
-                                groupByCol === col.title ? 'text-sidebar-primary font-medium' : 'text-foreground'
-                              )}
-                            >
-                              <Group className="h-3 w-3" /> {groupByCol === col.title ? 'Remove Group By' : 'Group By'}
-                            </button>
-                            <div className="border-t border-border my-1" />
-                            <button
-                              onClick={() => { setColMenu(null); handleColumnSort(col.column_id, 'asc'); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                            >
-                              <ArrowUp className="h-3 w-3" /> Sort A → Z
-                            </button>
-                            <button
-                              onClick={() => { setColMenu(null); handleColumnSort(col.column_id, 'desc'); }}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent"
-                            >
-                              <ArrowDown className="h-3 w-3" /> Sort Z → A
-                            </button>
-                            <div className="border-t border-border my-1" />
-                            <button
-                              onClick={() => handleDeleteColumn(col.column_id)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-destructive hover:bg-destructive/10"
-                            >
-                              <Trash2 className="h-3 w-3" /> Delete Field
-                            </button>
+                          <div className="absolute left-0 top-full mt-1 z-20 bg-card border border-border rounded-lg shadow-xl py-1 w-56">
+                            <ContentMenuList items={buildHeaderMenuItems(col)} onItemClick={(item) => item.onClick()} itemClassName="px-3 h-8 text-xs" />
                           </div>
                         </>
                       )}

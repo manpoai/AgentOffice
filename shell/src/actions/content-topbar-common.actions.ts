@@ -1,9 +1,10 @@
 import { Clock, MessageSquare as MessageSquareIcon, Search } from 'lucide-react';
-import type { ActionDef, TFunc } from './types';
-import type { ContentMenuItem } from '@/components/shared/ContentTopBar';
+import type { ActionDef } from './types';
 import type { ContentItemCtx } from './content-item.actions';
 import { buildActionMap } from './types';
 import { contentItemActions } from './content-item.actions';
+import { toContentMenuItems } from '@/surfaces/bridge';
+import { contentTopBarSurfaces } from '@/surfaces/content-topbar.surfaces';
 
 export interface ContentTopBarCommonCtx extends ContentItemCtx {
   showHistory: () => void;
@@ -40,18 +41,11 @@ export const contentTopBarCommonActions: ActionDef<ContentTopBarCommonCtx>[] = [
 
 const contentItemActionMap = buildActionMap(contentItemActions as ActionDef<ContentTopBarCommonCtx>[]);
 const topBarCommonActionMap = buildActionMap(contentTopBarCommonActions);
+const contentTopBarActionMap = {
+  ...contentItemActionMap,
+  ...topBarCommonActionMap,
+};
 
-export function buildContentTopBarCommonMenuItems(t: TFunc, ctx: ContentTopBarCommonCtx): ContentMenuItem[] {
-  const order = ['copy-link', 'pin', 'download', 'share', 'delete', 'history', 'comments', 'search'] as const;
-  return order.map((id) => {
-    const action = (contentItemActionMap as Record<string, ActionDef<ContentTopBarCommonCtx>>)[id] || topBarCommonActionMap[id];
-    return {
-      icon: action.icon as NonNullable<ActionDef<ContentTopBarCommonCtx>['icon']>,
-      label: action.label(t, ctx),
-      onClick: () => action.execute(ctx),
-      danger: action.danger,
-      shortcut: action.shortcut,
-      separator: id === 'history',
-    };
-  });
+export function buildContentTopBarCommonMenuItems(t: (key: string, params?: Record<string, string | number>) => string, ctx: ContentTopBarCommonCtx) {
+  return toContentMenuItems(contentTopBarSurfaces.moreMenu, contentTopBarActionMap, ctx, t);
 }

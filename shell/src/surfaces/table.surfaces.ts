@@ -9,8 +9,18 @@ export const tableSurfaces = {
     'table-delete-record',
   ] as SurfaceConfig,
 
-  /** Column header right-click */
+  /** Column header right-click / more menu */
   headerMenu: [
+    'table-edit-field',
+    'table-duplicate-field',
+    '---',
+    'table-insert-column-left',
+    'table-insert-column-right',
+    '---',
+    'table-freeze-up-to',
+    'table-unfreeze-all',
+    'table-toggle-group-by',
+    '---',
     'table-sort-asc',
     'table-sort-desc',
     '---',

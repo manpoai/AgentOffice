@@ -14,8 +14,8 @@ import { AgentPanelContent } from '@/components/shared/AgentPanelContent';
 import * as gw from '@/lib/api/gateway';
 import { showError } from '@/lib/utils/error';
 import { formatRelativeTime } from '@/lib/utils/time';
-import { ENTITY_NAMES } from '@/actions/entity-names';
 import { CREATE_CONTENT_ITEMS } from '@/actions/create-content.actions';
+import type { CreatableType } from '@/actions/entity-names';
 
 interface ContentSidebarProps {
   /** Whether the sidebar is collapsed (56px) or expanded (232px) */
@@ -31,10 +31,7 @@ interface ContentSidebarProps {
   showNewMenu: boolean;
   onShowNewMenuChange: (show: boolean) => void;
   creating: boolean;
-  onCreateDoc: () => void;
-  onCreateTable: () => void;
-  onCreatePresentation: () => void;
-  onCreateDiagram: () => void;
+  onCreateByType: (type: CreatableType) => void;
   /** Search */
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -50,10 +47,7 @@ export function ContentSidebar({
   showNewMenu,
   onShowNewMenuChange,
   creating,
-  onCreateDoc,
-  onCreateTable,
-  onCreatePresentation,
-  onCreateDiagram,
+  onCreateByType,
   searchQuery,
   onSearchChange,
 }: ContentSidebarProps) {
@@ -584,10 +578,7 @@ export function ContentSidebar({
               const Icon = item.icon;
               const onClick = () => {
                 onShowNewMenuChange(false);
-                if (item.type === 'doc') onCreateDoc();
-                else if (item.type === 'table') onCreateTable();
-                else if (item.type === 'presentation') onCreatePresentation();
-                else onCreateDiagram();
+                onCreateByType(item.type);
               };
               return (
                 <button
