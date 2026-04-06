@@ -15,6 +15,7 @@ import * as gw from '@/lib/api/gateway';
 import { showError } from '@/lib/utils/error';
 import { formatRelativeTime } from '@/lib/utils/time';
 import { ENTITY_NAMES } from '@/actions/entity-names';
+import { CREATE_CONTENT_ITEMS } from '@/actions/create-content.actions';
 
 interface ContentSidebarProps {
   /** Whether the sidebar is collapsed (56px) or expanded (232px) */
@@ -579,22 +580,24 @@ export function ContentSidebar({
           <div className="fixed z-50 bg-white dark:bg-card border border-black/10 dark:border-border rounded-lg shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] py-1 w-[168px]"
             style={{ top: `${menuPos.plus?.top ?? 52}px`, left: `${menuPos.plus?.left ?? 170}px` }}
           >
-            {[
-              { entity: ENTITY_NAMES.doc, onClick: onCreateDoc },
-              { entity: ENTITY_NAMES.table, onClick: onCreateTable },
-              { entity: ENTITY_NAMES.presentation, onClick: onCreatePresentation },
-              { entity: ENTITY_NAMES.diagram, onClick: onCreateDiagram },
-            ].map(({ entity, onClick }) => {
-              const Icon = entity.icon;
+            {CREATE_CONTENT_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const onClick = () => {
+                onShowNewMenuChange(false);
+                if (item.type === 'doc') onCreateDoc();
+                else if (item.type === 'table') onCreateTable();
+                else if (item.type === 'presentation') onCreatePresentation();
+                else onCreateDiagram();
+              };
               return (
                 <button
-                  key={entity.type}
-                  onClick={() => { onShowNewMenuChange(false); onClick(); }}
+                  key={item.type}
+                  onClick={onClick}
                   disabled={creating}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors disabled:opacity-50"
                 >
                   <Icon className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
-                  {t(entity.createLabelKey)}
+                  {item.label(t)}
                 </button>
               );
             })}
