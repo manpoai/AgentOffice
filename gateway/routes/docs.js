@@ -1,13 +1,20 @@
 /**
  * Document routes: /api/docs/*, /api/documents/*, /api/comments, document comments/revisions
  */
+import {
+  listUnifiedComments,
+  createUnifiedComment,
+  updateUnifiedCommentText,
+  deleteUnifiedComment,
+  setUnifiedCommentResolved,
+} from '../lib/comment-service.js';
 
 // Get display name for the authenticated actor (human or agent)
 function actorName(req) {
   return req.actor?.display_name || req.actor?.username || req.agent?.name || null;
 }
 
-export default function docsRoutes(app, { db, authenticateAgent, genId, contentItemsUpsert, pushEvent, deliverWebhook }) {
+export default function docsRoutes(app, { db, authenticateAgent, genId, contentItemsUpsert, pushEvent, pushHumanEvent, humanClients, deliverWebhook }) {
 
   // ─── Helper ─────────────────────────────────────
   function extractTextFromProseMirror(pmData) {
@@ -23,18 +30,24 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
   function formatDocComment(r) {
     let pmData = null;
     try { pmData = JSON.parse(r.data_json); } catch { /* ignore */ }
+    // Strip 'doc:' prefix for legacy documentId field (frontend expects raw ID)
+    const docId = r.target_id.startsWith('doc:') ? r.target_id.slice(4) : r.target_id;
+    const actorName = r.latest_name || r.actor || '';
     return {
       id: r.id,
-      documentId: r.target_id,
+      documentId: docId,
       parentCommentId: r.parent_id || null,
       data: pmData,
       createdById: r.actor_id || '',
-      createdBy: { id: r.actor_id || '', name: r.actor || '' },
+      createdBy: { id: r.actor_id || '', name: actorName, avatar_url: r.actor_avatar_url || null, platform: r.actor_platform || null },
       resolvedById: r.resolved_by || null,
       resolvedBy: r.resolved_by ? { id: r.resolved_by, name: r.resolved_by } : null,
       resolvedAt: r.resolved_at || null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
+      actor_avatar_url: r.actor_avatar_url || null,
+      actor_platform: r.actor_platform || null,
+      context_payload: r.context_payload ? (() => { try { return JSON.parse(r.context_payload); } catch { return null; } })() : null,
     };
   }
 
@@ -53,10 +66,11 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       .run(docId, title, content_markdown || '', agentName, agentName, now, now);
 
     const nodeId = `doc:${docId}`;
+    const actorId = req.actor?.id || req.agent?.id || null;
     contentItemsUpsert.run(
       nodeId, docId, 'doc', title,
       null, parent_id || null, collection_id || null,
-      agentName, agentName, now, now, null, Date.now()
+      agentName, agentName, now, now, null, actorId, Date.now()
     );
 
     res.status(201).json({
@@ -113,45 +127,36 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
     };
 
-    db.prepare(`INSERT INTO comments (id, target_type, target_id, parent_id, data_json, actor, actor_id, created_at, updated_at)
-      VALUES (?, 'doc', ?, ?, ?, ?, ?, ?, ?)`)
-      .run(commentId, doc_id, parent_comment_id || null, JSON.stringify(pmData),
-        displayName, actId, now, now);
-
-    // @mention detection
-    try {
-      const allAgents = db.prepare("SELECT * FROM actors WHERE type = 'agent'").all();
-      const nowMs = Date.now();
-      for (const target of allAgents) {
-        if (target.id === actId) continue;
-        const mentionName = new RegExp(`@${target.username}(?![\\w-])`, 'i');
-        const mentionDisplay = target.display_name ? new RegExp(`@${target.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i') : null;
-        if (!mentionName.test(text) && !(mentionDisplay && mentionDisplay.test(text))) continue;
-
-        const cleanText = text.replace(new RegExp(`@${target.username}(?![\\w-])\\s*`, 'gi'), '').trim();
-        const evt = {
-          event: 'doc.commented',
-          source: 'comments',
-          event_id: genId('evt'),
-          timestamp: nowMs,
-          data: {
-            comment_id: commentId,
-            doc_id,
-            parent_id: parent_comment_id || null,
-            text: cleanText,
-            raw_text: text,
-            sender: { name: displayName, type: req.actor?.type || 'agent' },
-          },
-        };
-        db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(evt.event_id, target.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), nowMs);
-        pushEvent(target.id, evt);
-        if (target.webhook_url) deliverWebhook(target, evt).catch(() => {});
-        console.log(`[gateway] Event ${evt.event} → ${target.username} (doc: ${doc_id})`);
-      }
-    } catch (e) {
-      console.error(`[gateway] Doc comment notification error: ${e.message}`);
-    }
+    // Store target_id in unified format 'doc:raw_id'
+    const unifiedDocId = doc_id.startsWith('doc:') ? doc_id : `doc:${doc_id}`;
+    const docOwner1 = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(unifiedDocId);
+    const contextPayload1 = buildContextPayload(db, {
+      targetType: 'doc', targetId: unifiedDocId, anchorType: null, anchorId: null,
+      text, actorName: displayName,
+    });
+    db.prepare(`INSERT INTO comments (id, target_type, target_id, parent_id, data_json, text, actor, actor_id, context_payload, created_at, updated_at)
+      VALUES (?, 'doc', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(commentId, unifiedDocId, parent_comment_id || null, JSON.stringify(pmData),
+        text, displayName, actId, JSON.stringify(contextPayload1), now, now);
+    emitCommentEvent(db, {
+      eventType: parent_comment_id ? 'comment.reply' : 'comment.created',
+      commentId,
+      targetType: 'doc',
+      targetId: unifiedDocId,
+      anchorType: null,
+      anchorId: null,
+      text,
+      parentId: parent_comment_id || null,
+      actorId: actId,
+      actorName: displayName,
+      ownerActorId: docOwner1?.owner_actor_id || null,
+      contextPayload: contextPayload1,
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      deliverWebhook,
+    });
+    if (humanClients) for (const [aId] of humanClients) pushHumanEvent(aId, { event: 'comment.changed', data: { target_id: unifiedDocId } });
 
     res.status(201).json({
       comment_id: commentId,
@@ -165,9 +170,11 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
 
   // GET /api/docs/:doc_id/comments — list comments for a document (agent-facing, simplified)
   app.get('/api/docs/:doc_id/comments', authenticateAgent, (req, res) => {
+    const rawId = req.params.doc_id;
+    const unifiedId = rawId.startsWith('doc:') ? rawId : `doc:${rawId}`;
     const rows = db.prepare(
-      "SELECT * FROM comments WHERE target_type = 'doc' AND target_id = ? ORDER BY created_at ASC"
-    ).all(req.params.doc_id);
+      "SELECT c.*, a.display_name AS latest_name, a.avatar_url AS actor_avatar_url, a.platform AS actor_platform FROM comments c LEFT JOIN actors a ON a.id = c.actor_id WHERE c.target_type = 'doc' AND c.target_id = ? ORDER BY c.created_at ASC"
+    ).all(unifiedId);
 
     const comments = rows.map(r => {
       let pmData = null;
@@ -175,7 +182,9 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       return {
         id: r.id,
         text: extractTextFromProseMirror(pmData),
-        actor: r.actor,
+        actor: r.latest_name || r.actor,
+        actor_avatar_url: r.actor_avatar_url || null,
+        actor_platform: r.actor_platform || null,
         parent_id: r.parent_id,
         created_at: r.created_at,
         updated_at: r.updated_at,
@@ -295,10 +304,11 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       .run(docId, title, text, data_json ? JSON.stringify(data_json) : null, icon || null, full_width ? 1 : 0, agentName, agentName, now, now);
 
     const nodeId = `doc:${docId}`;
+    const ownerId = req.actor?.id || req.agent?.id || null;
     contentItemsUpsert.run(
       nodeId, docId, 'doc', title,
       icon || null, parent_id || null, collection_id || null,
-      agentName, agentName, now, now, null, Date.now()
+      agentName, agentName, now, now, null, ownerId, Date.now()
     );
 
     const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(docId);
@@ -441,73 +451,49 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
 
   // GET /api/documents/:id/comments — list comments for a document
   app.get('/api/documents/:id/comments', authenticateAgent, (req, res) => {
-    const doc = db.prepare('SELECT id FROM documents WHERE id = ?').get(req.params.id);
+    const rawId = req.params.id;
+    const doc = db.prepare('SELECT id FROM documents WHERE id = ?').get(rawId);
     if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
 
+    const unifiedId = rawId.startsWith('doc:') ? rawId : `doc:${rawId}`;
     const rows = db.prepare(
-      "SELECT * FROM comments WHERE target_type = 'doc' AND target_id = ? ORDER BY created_at ASC"
-    ).all(req.params.id);
+      "SELECT c.*, a.display_name AS latest_name, a.avatar_url AS actor_avatar_url, a.platform AS actor_platform FROM comments c LEFT JOIN actors a ON a.id = c.actor_id WHERE c.target_type = 'doc' AND c.target_id = ? ORDER BY c.created_at ASC"
+    ).all(unifiedId);
 
     res.json({ data: rows.map(formatDocComment) });
   });
 
   // POST /api/documents/:id/comments — create comment
   app.post('/api/documents/:id/comments', authenticateAgent, (req, res) => {
-    const doc = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+    const rawId = req.params.id;
+    const doc = db.prepare('SELECT id FROM documents WHERE id = ? AND deleted_at IS NULL').get(rawId);
     if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const { data, parent_comment_id } = req.body;
     if (!data) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'data (ProseMirror JSON) required' });
 
+    const unifiedId = rawId.startsWith('doc:') ? rawId : `doc:${rawId}`;
     const displayName = actorName(req);
     const actId = req.actor?.id || req.agent?.id;
-    const commentId = genId('cmt');
-    const now = new Date().toISOString();
-    const nowMs = Date.now();
+    const commentText = extractTextFromProseMirror(data);
+    const created = createUnifiedComment(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, {
+      targetType: 'doc',
+      targetId: unifiedId,
+      text: commentText,
+      parentId: parent_comment_id || null,
+      actorId: actId,
+      actorName: displayName,
+      idPrefix: 'cmt',
+    });
 
-    db.prepare(`INSERT INTO comments (id, target_type, target_id, parent_id, data_json, actor, actor_id, created_at, updated_at)
-      VALUES (?, 'doc', ?, ?, ?, ?, ?, ?, ?)`)
-      .run(commentId, req.params.id, parent_comment_id || null, JSON.stringify(data),
-        displayName, actId, now, now);
-
-    // @mention detection
-    try {
-      const commentText = extractTextFromProseMirror(data);
-      const allAgents = db.prepare("SELECT * FROM actors WHERE type = 'agent'").all();
-      for (const target of allAgents) {
-        if (target.id === actId) continue;
-        const mentionName = new RegExp(`@${target.username}(?![\\w-])`, 'i');
-        const mentionDisplay = target.display_name
-          ? new RegExp(`@${target.display_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'i')
-          : null;
-        if (!mentionName.test(commentText) && !(mentionDisplay && mentionDisplay.test(commentText))) continue;
-
-        const cleanText = commentText.replace(new RegExp(`@${target.username}(?![\\w-])\\s*`, 'gi'), '').trim();
-        const evt = {
-          event: 'doc.commented',
-          source: 'comments',
-          event_id: genId('evt'),
-          timestamp: nowMs,
-          data: {
-            comment_id: commentId,
-            doc_id: req.params.id,
-            parent_id: parent_comment_id || null,
-            text: cleanText,
-            raw_text: commentText,
-            sender: { name: displayName, type: req.actor?.type || 'agent' },
-          },
-        };
-        db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(evt.event_id, target.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), nowMs);
-        pushEvent(target.id, evt);
-        if (target.webhook_url) deliverWebhook(target, evt).catch(() => {});
-        console.log(`[gateway] Event ${evt.event} → ${target.username} (doc: ${req.params.id})`);
-      }
-    } catch (e) {
-      console.error(`[gateway] Doc comment mention error: ${e.message}`);
-    }
-
-    const inserted = db.prepare("SELECT * FROM comments WHERE id = ?").get(commentId);
+    db.prepare('UPDATE comments SET data_json = ? WHERE id = ?').run(JSON.stringify(data), created.id);
+    const inserted = db.prepare("SELECT c.*, a.display_name AS latest_name, a.avatar_url AS actor_avatar_url, a.platform AS actor_platform FROM comments c LEFT JOIN actors a ON a.id = c.actor_id WHERE c.id = ?").get(created.id);
     res.status(201).json(formatDocComment(inserted));
   });
 
@@ -516,42 +502,51 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
     const { data } = req.body;
     if (!data) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'data (ProseMirror JSON) required' });
 
-    const now = new Date().toISOString();
-    const result = db.prepare(
-      "UPDATE comments SET data_json = ?, updated_at = ? WHERE id = ? AND target_type = 'doc'"
-    ).run(JSON.stringify(data), now, req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const text = extractTextFromProseMirror(data);
+    const updated = updateUnifiedCommentText(db, { humanClients, pushHumanEvent }, req.params.commentId, text);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
+    db.prepare('UPDATE comments SET data_json = ? WHERE id = ?').run(JSON.stringify(data), req.params.commentId);
 
-    const updated = db.prepare("SELECT * FROM comments WHERE id = ?").get(req.params.commentId);
-    res.json(formatDocComment(updated));
+    const hydrated = db.prepare("SELECT c.*, a.display_name AS latest_name, a.avatar_url AS actor_avatar_url, a.platform AS actor_platform FROM comments c LEFT JOIN actors a ON a.id = c.actor_id WHERE c.id = ?").get(req.params.commentId);
+    res.json(formatDocComment(hydrated));
   });
 
   // DELETE /api/documents/comments/:commentId — delete comment
   app.delete('/api/documents/comments/:commentId', authenticateAgent, (req, res) => {
-    const result = db.prepare("DELETE FROM comments WHERE id = ? AND target_type = 'doc'").run(req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const deleted = deleteUnifiedComment(db, { humanClients, pushHumanEvent }, req.params.commentId);
+    if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ deleted: true });
   });
 
   // POST /api/documents/comments/:commentId/resolve — mark resolved
   app.post('/api/documents/comments/:commentId/resolve', authenticateAgent, (req, res) => {
-    const now = new Date().toISOString();
-    const result = db.prepare(
-      "UPDATE comments SET resolved_by = ?, resolved_at = ?, updated_at = ? WHERE id = ? AND target_type = 'doc'"
-    ).run(actorName(req), now, now, req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
-    const updated = db.prepare("SELECT * FROM comments WHERE id = ?").get(req.params.commentId);
-    res.json(formatDocComment(updated));
+    const displayName = actorName(req);
+    const actId = req.actor?.id || req.agent?.id;
+    const updated = setUnifiedCommentResolved(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, req.params.commentId, true, actId, displayName);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
+    const hydrated = db.prepare("SELECT c.*, a.display_name AS latest_name, a.avatar_url AS actor_avatar_url, a.platform AS actor_platform FROM comments c LEFT JOIN actors a ON a.id = c.actor_id WHERE c.id = ?").get(req.params.commentId);
+    res.json(formatDocComment(hydrated));
   });
 
   // POST /api/documents/comments/:commentId/unresolve — unmark resolved
   app.post('/api/documents/comments/:commentId/unresolve', authenticateAgent, (req, res) => {
-    const now = new Date().toISOString();
-    const result = db.prepare(
-      "UPDATE comments SET resolved_by = NULL, resolved_at = NULL, updated_at = ? WHERE id = ? AND target_type = 'doc'"
-    ).run(now, req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
-    const updated = db.prepare("SELECT * FROM comments WHERE id = ?").get(req.params.commentId);
-    res.json(formatDocComment(updated));
+    const displayName = actorName(req);
+    const actId = req.actor?.id || req.agent?.id;
+    const updated = setUnifiedCommentResolved(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, req.params.commentId, false, actId, displayName);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
+    const hydrated = db.prepare("SELECT c.*, a.display_name AS latest_name, a.avatar_url AS actor_avatar_url, a.platform AS actor_platform FROM comments c LEFT JOIN actors a ON a.id = c.actor_id WHERE c.id = ?").get(req.params.commentId);
+    res.json(formatDocComment(hydrated));
   });
 }

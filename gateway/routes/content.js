@@ -3,6 +3,14 @@
  * boards, doc icons, preferences, search, content comments/revisions
  */
 import crypto from 'crypto';
+import {
+  formatUnifiedCommentRow,
+  listUnifiedComments,
+  createUnifiedComment,
+  updateUnifiedCommentText,
+  deleteUnifiedComment,
+  setUnifiedCommentResolved,
+} from '../lib/comment-service.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -21,7 +29,7 @@ function actorName(req) {
   return req.actor?.display_name || req.actor?.username || req.agent?.name || null;
 }
 
-export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID, authenticateAny, authenticateAgent, genId, contentItemsUpsert, syncContentItems }) {
+export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID, authenticateAny, authenticateAgent, genId, contentItemsUpsert, syncContentItems, pushEvent, pushHumanEvent, humanClients, deliverWebhook }) {
 
   // ─── Presentations ─────────────────────────────
   app.post('/api/presentations', authenticateAgent, (req, res) => {
@@ -36,10 +44,11 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
 
     const nodeId = `presentation:${id}`;
     const isoNow = new Date().toISOString();
+    const presActorId = req.actor?.id || req.agent?.id || null;
     contentItemsUpsert.run(
       nodeId, id, 'presentation', title || '',
       null, req.body.parent_id || null, null,
-      agentName, agentName, isoNow, isoNow, null, Date.now()
+      agentName, agentName, isoNow, isoNow, null, presActorId, Date.now()
     );
 
     const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
@@ -219,7 +228,19 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC').all();
       return res.json({ items: rows });
     }
-    const rows = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NULL ORDER BY pinned DESC, sort_order ASC, created_at ASC').all();
+    const rows = db.prepare(`
+      SELECT ci.*,
+        COALESCE(cc.unresolved_count, 0) AS unresolved_comment_count
+      FROM content_items ci
+      LEFT JOIN (
+        SELECT target_id, COUNT(*) AS unresolved_count
+        FROM comments
+        WHERE resolved_at IS NULL AND parent_id IS NULL
+        GROUP BY target_id
+      ) cc ON cc.target_id = ci.id
+      WHERE ci.deleted_at IS NULL
+      ORDER BY ci.pinned DESC, ci.sort_order ASC, ci.created_at ASC
+    `).all();
     res.json({ items: rows });
   });
 
@@ -237,6 +258,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
 
     const now = new Date().toISOString();
     const agentName = actorName(req);
+    const actorId = req.actor?.id || req.agent?.id || null;
 
     if (type === 'doc') {
       const docId = genId('doc');
@@ -248,7 +270,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       contentItemsUpsert.run(
         nodeId, docId, 'doc', title || '',
         null, parent_id, collection_id || null,
-        agentName, agentName, now, now, null, Date.now()
+        agentName, agentName, now, now, null, actorId, Date.now()
       );
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
       return res.status(201).json({ item });
@@ -295,7 +317,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         nodeId, tableId, 'table', tableTitle,
         null, parent_id, null,
         agentName, agentName,
-        now, now, null, Date.now()
+        now, now, null, actorId, Date.now()
       );
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
       return res.status(201).json({ item, table_id: tableId, columns: responseCols });
@@ -321,7 +343,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       contentItemsUpsert.run(
         nodeId, id, 'board', title || '',
         null, parent_id, null,
-        agentName, agentName, isoNow, isoNow, null, Date.now()
+        agentName, agentName, isoNow, isoNow, null, actorId, Date.now()
       );
 
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
@@ -341,7 +363,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       contentItemsUpsert.run(
         nodeId, id, 'presentation', title || '',
         null, parent_id, null,
-        agentName, agentName, isoNow, isoNow, null, Date.now()
+        agentName, agentName, isoNow, isoNow, null, actorId, Date.now()
       );
 
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
@@ -361,7 +383,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       contentItemsUpsert.run(
         nodeId, id, 'spreadsheet', title || '',
         null, parent_id, null,
-        agentName, agentName, isoNow, isoNow, null, Date.now()
+        agentName, agentName, isoNow, isoNow, null, actorId, Date.now()
       );
 
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
@@ -383,7 +405,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         contentItemsUpsert.run(
           nodeId, id, 'diagram', title || '',
           null, parent_id, null,
-          agentName, agentName, isoNow, isoNow, null, Date.now()
+          agentName, agentName, isoNow, isoNow, null, actorId, Date.now()
         );
       }
 
@@ -657,92 +679,92 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
   });
 
   // ─── Content Comments (Generic) ─────────────────
+  function formatContentComment(r) {
+    return formatUnifiedCommentRow(r);
+  }
+
   app.get('/api/content-items/:id/comments', authenticateAgent, (req, res) => {
     const contentId = decodeURIComponent(req.params.id);
-    // Derive target_type from contentId prefix (e.g., 'presentation:xxx' → 'presentation')
-    const colonIdx = contentId.indexOf(':');
-    const targetType = colonIdx > 0 ? contentId.substring(0, colonIdx) : 'content';
-    const rows = db.prepare(
-      'SELECT * FROM comments WHERE target_id = ? ORDER BY created_at ASC'
-    ).all(contentId);
-    const comments = rows.map(r => ({
-      id: r.id,
-      text: r.text,
-      actor: r.actor,
-      actor_id: r.actor_id,
-      parent_id: r.parent_id || null,
-      resolved_by: r.resolved_by ? { id: r.resolved_by, name: r.resolved_by } : null,
-      resolved_at: r.resolved_at || null,
-      created_at: r.created_at,
-      updated_at: r.updated_at,
-    }));
+    const { anchor_type, anchor_id } = req.query;
+    const comments = listUnifiedComments(db, contentId, {
+      anchorType: anchor_type || undefined,
+      anchorId: anchor_id || undefined,
+    });
     res.json({ comments });
   });
 
   app.post('/api/content-items/:id/comments', authenticateAgent, (req, res) => {
     const contentId = decodeURIComponent(req.params.id);
-    const { text, parent_comment_id } = req.body;
+    const { text, parent_comment_id, anchor_type, anchor_id, anchor_meta } = req.body;
     if (!text) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'text required' });
 
-    // Derive target_type from contentId prefix
     const colonIdx = contentId.indexOf(':');
     const targetType = colonIdx > 0 ? contentId.substring(0, colonIdx) : 'content';
-
     const displayName = actorName(req);
     const actorId = req.actor?.id || req.agent?.id;
-    const id = genId('ccmt');
-    const now = new Date().toISOString();
 
-    db.prepare(`INSERT INTO comments (id, target_type, target_id, text, actor, actor_id, parent_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, targetType, contentId, text, displayName, actorId, parent_comment_id || null, now, now);
-
-    res.status(201).json({
-      id,
+    const created = createUnifiedComment(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, {
+      targetType,
+      targetId: contentId,
       text,
-      actor: displayName,
-      actor_id: actorId,
-      parent_id: parent_comment_id || null,
-      resolved_by: null,
-      resolved_at: null,
-      created_at: now,
-      updated_at: now,
+      parentId: parent_comment_id || null,
+      anchorType: anchor_type || null,
+      anchorId: anchor_id || null,
+      anchorMeta: anchor_meta || null,
+      actorId,
+      actorName: displayName,
+      idPrefix: 'ccmt',
     });
+
+    res.status(201).json(created);
   });
 
   app.patch('/api/content-comments/:commentId', authenticateAgent, (req, res) => {
     const { text } = req.body;
     if (!text) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'text required' });
 
-    const now = new Date().toISOString();
-    const result = db.prepare(
-      'UPDATE comments SET text = ?, updated_at = ? WHERE id = ?'
-    ).run(text, now, req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const updated = updateUnifiedCommentText(db, { humanClients, pushHumanEvent }, req.params.commentId, text);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ updated: true });
   });
 
   app.delete('/api/content-comments/:commentId', authenticateAgent, (req, res) => {
-    const result = db.prepare('DELETE FROM comments WHERE id = ?').run(req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const deleted = deleteUnifiedComment(db, { humanClients, pushHumanEvent }, req.params.commentId);
+    if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ deleted: true });
   });
 
   app.post('/api/content-comments/:commentId/resolve', authenticateAgent, (req, res) => {
-    const now = new Date().toISOString();
-    const result = db.prepare(
-      'UPDATE comments SET resolved_by = ?, resolved_at = ?, updated_at = ? WHERE id = ?'
-    ).run(actorName(req), now, now, req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const displayName = actorName(req);
+    const actId = req.actor?.id || req.agent?.id;
+    const updated = setUnifiedCommentResolved(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, req.params.commentId, true, actId, displayName);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ resolved: true });
   });
 
   app.post('/api/content-comments/:commentId/unresolve', authenticateAgent, (req, res) => {
-    const now = new Date().toISOString();
-    const result = db.prepare(
-      'UPDATE comments SET resolved_by = NULL, resolved_at = NULL, updated_at = ? WHERE id = ?'
-    ).run(now, req.params.commentId);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const displayName = actorName(req);
+    const actId = req.actor?.id || req.agent?.id;
+    const updated = setUnifiedCommentResolved(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, req.params.commentId, false, actId, displayName);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ unresolved: true });
   });
 

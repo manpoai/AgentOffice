@@ -3,6 +3,13 @@
  * file upload/download proxy, table comments, snapshots
  */
 import crypto from 'crypto';
+import {
+  listUnifiedComments,
+  createUnifiedComment,
+  updateUnifiedCommentText,
+  deleteUnifiedComment,
+  setUnifiedCommentResolved,
+} from '../lib/comment-service.js';
 import multer from 'multer';
 import {
   BR_URL,
@@ -20,7 +27,7 @@ function actorName(req) {
   return req.actor?.display_name || req.actor?.username || req.agent?.name || null;
 }
 
-export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID, authenticateAgent, genId, contentItemsUpsert, pushEvent, deliverWebhook }) {
+export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID, authenticateAgent, genId, contentItemsUpsert, pushEvent, pushHumanEvent, humanClients, deliverWebhook }) {
 
   // Baserow doesn't need per-agent users
   async function createBrUser(agentName, displayName) {
@@ -851,11 +858,38 @@ export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE
 
     const displayName = actorName(req);
     const actId = req.actor?.id || req.agent?.id;
-    const commentId = genId('cmt');
+    const commentId = genId('ccmt');
     const now = new Date().toISOString();
+    const tableId = req.params.table_id;
+    const rowId = req.params.row_id;
+    const unifiedTableId = tableId.startsWith('table:') ? tableId : `table:${tableId}`;
+    const rowCommentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(unifiedTableId);
+    const rowContextPayload = buildContextPayload(db, {
+      targetType: 'table', targetId: unifiedTableId, anchorType: 'row', anchorId: rowId,
+      text, actorName: displayName,
+    });
     db.prepare(
-      "INSERT INTO comments (id, target_type, target_id, row_id, text, actor, actor_id, parent_id, created_at, updated_at) VALUES (?, 'table', ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(commentId, req.params.table_id, req.params.row_id, text, displayName, actId, null, now, now);
+      "INSERT INTO comments (id, target_type, target_id, row_id, anchor_type, anchor_id, text, actor, actor_id, parent_id, context_payload, created_at, updated_at) VALUES (?, 'table', ?, ?, 'row', ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run(commentId, unifiedTableId, rowId, rowId, text, displayName, actId, null, JSON.stringify(rowContextPayload), now, now);
+    emitCommentEvent(db, {
+      eventType: 'comment.created',
+      commentId,
+      targetType: 'table',
+      targetId: unifiedTableId,
+      anchorType: 'row',
+      anchorId: rowId,
+      text,
+      parentId: null,
+      actorId: actId,
+      actorName: displayName,
+      ownerActorId: rowCommentOwner?.owner_actor_id || null,
+      contextPayload: rowContextPayload,
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      deliverWebhook,
+    });
+    if (humanClients) for (const [aId] of humanClients) pushHumanEvent(aId, { event: 'comment.changed', data: { target_id: unifiedTableId } });
 
     res.status(201).json({
       comment_id: commentId,
@@ -1091,34 +1125,20 @@ export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE
 
   app.get('/api/data/tables/:table_id/commented-rows', authenticateAgent, (req, res) => {
     const { table_id } = req.params;
-    const rows = db.prepare("SELECT DISTINCT row_id, COUNT(*) as count FROM comments WHERE target_type = 'table' AND target_id = ? AND row_id IS NOT NULL GROUP BY row_id").all(table_id);
-    res.json({ rows: rows.map(r => ({ row_id: r.row_id, count: r.count })) });
+    const unifiedId = table_id.startsWith('table:') ? table_id : `table:${table_id}`;
+    const rows = db.prepare("SELECT DISTINCT anchor_id, COUNT(*) as count FROM comments WHERE target_type = 'table' AND target_id = ? AND anchor_type = 'row' GROUP BY anchor_id").all(unifiedId);
+    res.json({ rows: rows.map(r => ({ row_id: r.anchor_id, count: r.count })) });
   });
 
   app.get('/api/data/tables/:table_id/comments', authenticateAgent, (req, res) => {
     const { table_id } = req.params;
     const { row_id, include_all } = req.query;
-    let rows;
-    if (row_id) {
-      rows = db.prepare("SELECT * FROM comments WHERE target_type = 'table' AND target_id = ? AND row_id = ? ORDER BY created_at ASC").all(table_id, row_id);
-    } else if (include_all === '1' || include_all === 'true') {
-      rows = db.prepare("SELECT * FROM comments WHERE target_type = 'table' AND target_id = ? ORDER BY created_at ASC").all(table_id);
-    } else {
-      rows = db.prepare("SELECT * FROM comments WHERE target_type = 'table' AND target_id = ? AND row_id IS NULL ORDER BY created_at ASC").all(table_id);
-    }
-    const comments = rows.map(r => ({
-      id: r.id,
-      text: r.text,
-      actor: r.actor,
-      actor_id: r.actor_id,
-      parent_id: r.parent_id || null,
-      row_id: r.row_id || null,
-      resolved_by: r.resolved_by ? { id: r.resolved_by, name: r.resolved_by } : null,
-      resolved_at: r.resolved_at || null,
-      created_at: r.created_at,
-      updated_at: r.updated_at,
-    }));
-    res.json({ comments });
+    const unifiedId = table_id.startsWith('table:') ? table_id : `table:${table_id}`;
+    const comments = include_all === '1' || include_all === 'true'
+      ? listUnifiedComments(db, unifiedId)
+      : listUnifiedComments(db, unifiedId, row_id ? { anchorType: 'row', anchorId: row_id } : { anchorType: undefined, anchorId: undefined })
+          .filter(c => row_id ? true : !c.anchor_type);
+    res.json({ comments: comments.map(c => ({ ...c, row_id: c.anchor_id || null })) });
   });
 
   app.post('/api/data/tables/:table_id/comments', authenticateAgent, (req, res) => {
@@ -1126,63 +1146,28 @@ export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE
     const { text, parent_id, row_id } = req.body;
     if (!text) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'text required' });
 
+    const unifiedTableId = table_id.startsWith('table:') ? table_id : `table:${table_id}`;
     const displayName = actorName(req);
     const actId = req.actor?.id || req.agent?.id;
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    db.prepare(`INSERT INTO comments (id, target_type, target_id, row_id, parent_id, text, actor, actor_id, created_at, updated_at)
-      VALUES (?, 'table', ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      id, table_id, row_id || null, parent_id || null, text,
-      displayName, actId, now, now
-    );
-
-    // Notify agents mentioned via @agentname
-    try {
-      const allAgents = db.prepare("SELECT * FROM actors WHERE type = 'agent'").all();
-      const nowMs = Date.now();
-      for (const target of allAgents) {
-        if (target.id === actId) continue;
-        const mentionRegex = new RegExp(`@${target.username}(?![\\w-])`, 'i');
-        if (!mentionRegex.test(text)) continue;
-
-        const cleanText = text.replace(new RegExp(`@${target.username}(?![\\w-])\\s*`, 'gi'), '').trim();
-        const evt = {
-          event: 'data.commented',
-          source: 'comments',
-          event_id: genId('evt'),
-          timestamp: nowMs,
-          data: {
-            comment_id: id,
-            table_id,
-            row_id: row_id || null,
-            text: cleanText,
-            raw_text: text,
-            sender: { name: displayName, type: req.actor?.type || 'agent' },
-          },
-        };
-        db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`)
-          .run(evt.event_id, target.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), nowMs);
-        pushEvent(target.id, evt);
-        if (target.webhook_url) deliverWebhook(target, evt).catch(() => {});
-        console.log(`[gateway] Event ${evt.event} → ${target.username} (table: ${table_id}, row: ${row_id || 'none'})`);
-      }
-    } catch (e) {
-      console.error(`[gateway] Table comment notification error: ${e.message}`);
-    }
-
-    res.status(201).json({
-      id,
+    const created = createUnifiedComment(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, {
+      targetType: 'table',
+      targetId: unifiedTableId,
       text,
-      actor: displayName,
-      actor_id: actId,
-      parent_id: parent_id || null,
-      resolved_by: null,
-      resolved_at: null,
-      created_at: now,
-      updated_at: now,
+      parentId: parent_id || null,
+      anchorType: row_id ? 'row' : null,
+      anchorId: row_id || null,
+      actorId: actId,
+      actorName: displayName,
+      idPrefix: 'ccmt',
     });
+
+    res.status(201).json({ ...created, row_id: created.anchor_id || null });
   });
 
   app.patch('/api/data/table-comments/:comment_id', authenticateAgent, (req, res) => {
@@ -1190,32 +1175,43 @@ export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE
     const { text } = req.body;
     if (!text) return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'text required' });
 
-    const now = new Date().toISOString();
-    const result = db.prepare("UPDATE comments SET text = ?, updated_at = ? WHERE id = ? AND target_type = 'table'").run(text, now, comment_id);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const updated = updateUnifiedCommentText(db, { humanClients, pushHumanEvent }, comment_id, text);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ updated: true });
   });
 
   app.delete('/api/data/table-comments/:comment_id', authenticateAgent, (req, res) => {
     const { comment_id } = req.params;
-    const result = db.prepare("DELETE FROM comments WHERE id = ? AND target_type = 'table'").run(comment_id);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const deleted = deleteUnifiedComment(db, { humanClients, pushHumanEvent }, comment_id);
+    if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ deleted: true });
   });
 
   app.post('/api/data/table-comments/:comment_id/resolve', authenticateAgent, (req, res) => {
-    const now = new Date().toISOString();
-    const result = db.prepare("UPDATE comments SET resolved_by = ?, resolved_at = ?, updated_at = ? WHERE id = ? AND target_type = 'table'")
-      .run(actorName(req), now, now, req.params.comment_id);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const displayName = actorName(req);
+    const actId = req.actor?.id || req.agent?.id;
+    const updated = setUnifiedCommentResolved(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, req.params.comment_id, true, actId, displayName);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ resolved: true });
   });
 
   app.post('/api/data/table-comments/:comment_id/unresolve', authenticateAgent, (req, res) => {
-    const now = new Date().toISOString();
-    const result = db.prepare("UPDATE comments SET resolved_by = NULL, resolved_at = NULL, updated_at = ? WHERE id = ? AND target_type = 'table'")
-      .run(now, req.params.comment_id);
-    if (result.changes === 0) return res.status(404).json({ error: 'NOT_FOUND' });
+    const displayName = actorName(req);
+    const actId = req.actor?.id || req.agent?.id;
+    const updated = setUnifiedCommentResolved(db, {
+      genId,
+      pushEvent,
+      pushHumanEvent,
+      humanClients,
+      deliverWebhook,
+    }, req.params.comment_id, false, actId, displayName);
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ unresolved: true });
   });
 
