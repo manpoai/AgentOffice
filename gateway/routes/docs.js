@@ -456,11 +456,8 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
     if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const unifiedId = rawId.startsWith('doc:') ? rawId : `doc:${rawId}`;
-    const rows = db.prepare(
-      "SELECT c.*, a.display_name AS latest_name, a.avatar_url AS actor_avatar_url, a.platform AS actor_platform FROM comments c LEFT JOIN actors a ON a.id = c.actor_id WHERE c.target_type = 'doc' AND c.target_id = ? ORDER BY c.created_at ASC"
-    ).all(unifiedId);
-
-    res.json({ data: rows.map(formatDocComment) });
+    const comments = listUnifiedComments(db, unifiedId);
+    res.json({ data: comments.map(formatDocComment) });
   });
 
   // POST /api/documents/:id/comments — create comment
