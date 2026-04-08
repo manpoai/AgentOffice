@@ -109,8 +109,8 @@ export function EmbeddedDiagram({
     );
   }
 
-  const diagramData: DiagramData = data.data || { nodes: [], edges: [] };
-  const isEmpty = diagramData.nodes.length === 0;
+  const diagramData: DiagramData = data.data || { cells: [] };
+  const isEmpty = (diagramData.cells || []).filter((c: any) => !c.source && c.position).length === 0;
 
   return (
     <div

@@ -1,7 +1,7 @@
 /**
  * DiagramPreview — Static SVG preview of a diagram.
  *
- * Renders diagram nodes and edges as lightweight SVG without
+ * Renders diagram cells as lightweight SVG without
  * loading the full X6 graph library. Used for thumbnails,
  * embeds in documents, and presentation slides.
  */
@@ -9,34 +9,24 @@
 import React, { useId, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
-interface DiagramNode {
+interface DiagramCell {
   id: string;
   shape?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  label?: string;
-  data?: { label?: string; color?: string; backgroundColor?: string };
+  source?: string | { cell: string };
+  target?: string | { cell: string };
+  position?: { x: number; y: number };
+  size?: { width: number; height: number };
+  data?: { label?: string; bgColor?: string; borderColor?: string; textColor?: string; flowchartShape?: string };
   attrs?: {
     body?: { fill?: string; stroke?: string; rx?: number; ry?: number };
     label?: { text?: string; fill?: string; fontSize?: number };
-  };
-}
-
-interface DiagramEdge {
-  id: string;
-  source: string | { cell: string };
-  target: string | { cell: string };
-  attrs?: {
     line?: { stroke?: string; strokeWidth?: number; strokeDasharray?: string };
   };
   labels?: Array<{ attrs?: { label?: { text?: string } } }>;
 }
 
 export interface DiagramData {
-  nodes: DiagramNode[];
-  edges: DiagramEdge[];
+  cells: DiagramCell[];
   viewport?: { x: number; y: number; zoom: number };
 }
 
@@ -55,18 +45,26 @@ export function DiagramPreview({
 }: DiagramPreviewProps) {
   const reactId = useId();
   const markerId = `arrowhead-${reactId.replace(/:/g, '')}`;
+
   const { viewBox, nodes, edges } = useMemo(() => {
-    if (!data.nodes.length) {
+    const cells = data.cells || [];
+    const nodes = cells.filter(
+      c => c.shape !== 'edge' && c.shape !== 'flowchart-edge' && c.shape !== 'mindmap-edge' && !c.source && c.position,
+    );
+    const edges = cells.filter(
+      c => c.shape === 'edge' || c.shape === 'flowchart-edge' || c.shape === 'mindmap-edge' || !!c.source,
+    );
+
+    if (!nodes.length) {
       return { viewBox: `0 0 ${width} ${height}`, nodes: [], edges: [] };
     }
 
-    // Calculate bounding box
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const n of data.nodes) {
-      const x = n.x ?? 0;
-      const y = n.y ?? 0;
-      const w = n.width ?? 120;
-      const h = n.height ?? 60;
+    for (const n of nodes) {
+      const x = n.position!.x;
+      const y = n.position!.y;
+      const w = n.size?.width ?? 120;
+      const h = n.size?.height ?? 60;
       minX = Math.min(minX, x);
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x + w);
@@ -74,32 +72,27 @@ export function DiagramPreview({
     }
 
     const padding = 20;
-    minX -= padding;
-    minY -= padding;
-    maxX += padding;
-    maxY += padding;
-
     return {
-      viewBox: `${minX} ${minY} ${maxX - minX} ${maxY - minY}`,
-      nodes: data.nodes,
-      edges: data.edges,
+      viewBox: `${minX - padding} ${minY - padding} ${maxX - minX + padding * 2} ${maxY - minY + padding * 2}`,
+      nodes,
+      edges,
     };
   }, [data, width, height]);
 
-  // Build node position map for edge rendering
   const nodeMap = useMemo(() => {
-    const map = new Map<string, DiagramNode>();
+    const map = new Map<string, DiagramCell>();
     for (const n of nodes) map.set(n.id, n);
     return map;
   }, [nodes]);
 
-  const getNodeCenter = (ref: string | { cell: string }): { x: number; y: number } | null => {
+  const getNodeCenter = (ref: string | { cell: string } | undefined): { x: number; y: number } | null => {
+    if (!ref) return null;
     const id = typeof ref === 'string' ? ref : ref.cell;
     const node = nodeMap.get(id);
-    if (!node) return null;
+    if (!node?.position) return null;
     return {
-      x: (node.x ?? 0) + (node.width ?? 120) / 2,
-      y: (node.y ?? 0) + (node.height ?? 60) / 2,
+      x: node.position.x + (node.size?.width ?? 120) / 2,
+      y: node.position.y + (node.size?.height ?? 60) / 2,
     };
   };
 
@@ -111,6 +104,19 @@ export function DiagramPreview({
       className={cn('bg-white rounded', className)}
       preserveAspectRatio="xMidYMid meet"
     >
+      <defs>
+        <marker
+          id={markerId}
+          markerWidth="8"
+          markerHeight="6"
+          refX="8"
+          refY="3"
+          orient="auto"
+        >
+          <path d="M 0 0 L 8 3 L 0 6 Z" fill="#94a3b8" />
+        </marker>
+      </defs>
+
       {/* Edges */}
       {edges.map((edge) => {
         const from = getNodeCenter(edge.source);
@@ -150,29 +156,28 @@ export function DiagramPreview({
 
       {/* Nodes */}
       {nodes.map((node) => {
-        const x = node.x ?? 0;
-        const y = node.y ?? 0;
-        const w = node.width ?? 120;
-        const h = node.height ?? 60;
-        const fill = node.data?.backgroundColor || node.attrs?.body?.fill || '#ffffff';
-        const stroke = node.data?.color || node.attrs?.body?.stroke || '#374151';
+        const x = node.position!.x;
+        const y = node.position!.y;
+        const w = node.size?.width ?? 120;
+        const h = node.size?.height ?? 60;
+        const fill = node.data?.bgColor || node.attrs?.body?.fill || '#ffffff';
+        const stroke = node.data?.borderColor || node.attrs?.body?.stroke || '#374151';
+        const textColor = node.data?.textColor || node.attrs?.label?.fill || '#1f2937';
         const rx = node.attrs?.body?.rx ?? 4;
-        const label =
-          node.label || node.data?.label || node.attrs?.label?.text || '';
+        const label = node.data?.label || node.attrs?.label?.text || '';
+        const fShape = node.data?.flowchartShape || '';
 
         return (
           <g key={node.id}>
-            <rect
-              x={x}
-              y={y}
-              width={w}
-              height={h}
-              rx={rx}
-              ry={rx}
-              fill={fill}
-              stroke={stroke}
-              strokeWidth={1.5}
-            />
+            {fShape === 'circle' || fShape === 'ellipse' ? (
+              <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} fill={fill} stroke={stroke} strokeWidth={1.5} />
+            ) : fShape === 'diamond' ? (
+              <polygon points={`${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`} fill={fill} stroke={stroke} strokeWidth={1.5} />
+            ) : fShape === 'rounded-rect' ? (
+              <rect x={x} y={y} width={w} height={h} rx={8} fill={fill} stroke={stroke} strokeWidth={1.5} />
+            ) : (
+              <rect x={x} y={y} width={w} height={h} rx={rx} ry={rx} fill={fill} stroke={stroke} strokeWidth={1.5} />
+            )}
             {label && (
               <text
                 x={x + w / 2}
@@ -180,7 +185,7 @@ export function DiagramPreview({
                 textAnchor="middle"
                 dominantBaseline="central"
                 fontSize={12}
-                fill={node.attrs?.label?.fill || '#1f2937'}
+                fill={textColor}
                 className="select-none"
               >
                 {label.length > 20 ? label.slice(0, 18) + '...' : label}
@@ -189,20 +194,6 @@ export function DiagramPreview({
           </g>
         );
       })}
-
-      {/* Arrow marker definition */}
-      <defs>
-        <marker
-          id={markerId}
-          markerWidth="8"
-          markerHeight="6"
-          refX="8"
-          refY="3"
-          orient="auto"
-        >
-          <path d="M 0 0 L 8 3 L 0 6 Z" fill="#94a3b8" />
-        </marker>
-      </defs>
     </svg>
   );
 }

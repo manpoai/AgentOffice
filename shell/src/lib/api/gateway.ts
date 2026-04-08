@@ -390,10 +390,10 @@ export async function savePresentation(presId: string, data: { slides: any[] }):
   });
 }
 
-// ─── Diagrams (ReactFlow) ─────────────────────────
+// ─── Diagrams ─────────────────────────────────────
 export async function getDiagram(diagramId: string): Promise<{
   id: string;
-  data: { nodes: any[]; edges: any[]; viewport?: { x: number; y: number; zoom: number } };
+  data: { cells: any[]; viewport?: { x: number; y: number; zoom: number } };
   created_by: string | null;
   updated_by: string | null;
   created_at: number;
@@ -402,7 +402,7 @@ export async function getDiagram(diagramId: string): Promise<{
   return gwFetch(`/diagrams/${diagramId}`);
 }
 
-export async function saveDiagram(diagramId: string, data: { nodes: any[]; edges: any[]; viewport?: any }): Promise<{ saved: boolean; updated_at: number }> {
+export async function saveDiagram(diagramId: string, data: { cells: any[]; viewport?: any }): Promise<{ saved: boolean; updated_at: number }> {
   return gwFetch(`/diagrams/${diagramId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -507,6 +507,8 @@ export async function unresolveContentComment(commentId: string): Promise<void> 
 export interface ContentRevision {
   id: string;
   content_id: string;
+  trigger_type: string | null;
+  description: string | null;
   data: any;
   created_at: string;
   created_by: string | null;
@@ -529,5 +531,30 @@ export async function restoreContentRevision(contentId: string, revisionId: stri
   return gwFetch<{ data: any }>(`/content-items/${encodeURIComponent(contentId)}/revisions/${revisionId}/restore`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+export async function createManualRevision(contentId: string, data: any, description?: string): Promise<ContentRevision> {
+  return gwFetch<ContentRevision>(`/content-items/${encodeURIComponent(contentId)}/revisions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, trigger_type: 'manual', description }),
+  });
+}
+
+export async function createDocManualRevision(docId: string, description?: string): Promise<any> {
+  return gwFetch(`/documents/${encodeURIComponent(docId)}/revisions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  });
+}
+
+/** Server-side manual snapshot — reads current data from DB, works for any content type */
+export async function createContentManualSnapshot(contentId: string, description?: string): Promise<any> {
+  return gwFetch(`/content-items/${encodeURIComponent(contentId)}/revisions/manual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
   });
 }
