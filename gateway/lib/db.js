@@ -46,6 +46,9 @@ function runMigrations(db) {
     db.exec('CREATE INDEX IF NOT EXISTS idx_content_snapshots_content ON content_snapshots(content_type, content_id, created_at DESC)');
   } catch { /* already exists */ }
 
+  // Migrate: add description column to content_snapshots
+  try { db.exec('ALTER TABLE content_snapshots ADD COLUMN description TEXT'); } catch { /* already exists */ }
+
   // Migrate data from old table_snapshots to content_snapshots
   try {
     const hasOldTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='table_snapshots'").get();
@@ -233,6 +236,45 @@ function runMigrations(db) {
       LIMIT 1
     ) WHERE owner_actor_id IS NULL AND created_by IS NOT NULL`);
   } catch (e) { console.warn('[gateway] owner_actor_id backfill:', e.message); }
+
+  // Migrate: create content_pins table
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS content_pins (
+      id TEXT PRIMARY KEY,
+      actor_id TEXT NOT NULL,
+      content_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      UNIQUE(actor_id, content_id)
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_content_pins_actor ON content_pins(actor_id)');
+    console.log('[gateway] DB migrated: created content_pins table');
+  } catch { /* already exists */ }
+
+  // Migrate: old content_items.pinned=1 rows to content_pins
+  try {
+    const alreadyMigrated = db.prepare('SELECT COUNT(*) as n FROM content_pins').get();
+    if (alreadyMigrated.n === 0) {
+      const pinnedItems = db.prepare('SELECT id FROM content_items WHERE pinned = 1 AND deleted_at IS NULL').all();
+      for (const item of pinnedItems) {
+        const owner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(item.id);
+        if (owner?.owner_actor_id) {
+          try {
+            db.prepare('INSERT OR IGNORE INTO content_pins (id, actor_id, content_id, created_at) VALUES (?, ?, ?, ?)')
+              .run(`pin_migrated_${item.id.replace(/:/g, '_')}`, owner.owner_actor_id, item.id, Date.now());
+          } catch { /* ignore */ }
+        }
+      }
+      if (pinnedItems.length > 0) {
+        console.log(`[gateway] DB migrated: migrated ${pinnedItems.length} pinned items to content_pins table`);
+      }
+    }
+  } catch (e) { console.warn('[gateway] content_pins migration:', e.message); }
+
+  // Migrate: add meta column to notifications table
+  try {
+    db.exec('ALTER TABLE notifications ADD COLUMN meta TEXT');
+    console.log('[gateway] DB migrated: added meta column to notifications');
+  } catch { /* already exists */ }
 
   // Migrate: add anchor columns to comments (Phase 0)
   try { db.exec('ALTER TABLE comments ADD COLUMN anchor_type TEXT'); } catch { /* already exists */ }
