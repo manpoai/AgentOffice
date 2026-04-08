@@ -693,15 +693,12 @@ export default function ContentPage() {
     const node = effectiveNodes.get(nodeId);
     if (!node) return;
     const newPinned = !node.pinned;
-    // Optimistic update
-    queryClient.setQueryData(['content-items'], (old: { items: gw.ContentItem[] } | undefined) => {
+    // Optimistic update — queryData is ContentItem[] (listContentItems returns array directly)
+    queryClient.setQueryData(['content-items'], (old: gw.ContentItem[] | undefined) => {
       if (!old) return old;
-      return {
-        ...old,
-        items: old.items.map(item =>
-          item.id === nodeId ? { ...item, pinned: newPinned ? 1 : 0 } : item
-        ),
-      };
+      return old.map(item =>
+        item.id === nodeId ? { ...item, pinned: newPinned ? 1 : 0 } : item
+      );
     });
     try {
       if (newPinned) {
@@ -711,6 +708,7 @@ export default function ContentPage() {
       }
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (e) {
+      console.error('[pin] toggle failed:', e);
       // Revert optimistic update on error
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
       showError(t('errors.togglePinFailed'), e);
