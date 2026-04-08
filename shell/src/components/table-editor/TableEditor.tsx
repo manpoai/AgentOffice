@@ -303,6 +303,8 @@ interface TableEditorProps {
   onShowComments: () => void;
   onCloseComments: () => void;
   onToggleComments: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 // Error Boundary to prevent white-screen crashes
@@ -342,7 +344,7 @@ export function TableEditor(props: TableEditorProps) {
   );
 }
 
-function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate, onCopyLink, docListVisible, onToggleDocList, focusCommentId, showComments, onShowComments, onCloseComments, onToggleComments }: TableEditorProps) {
+function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate, onCopyLink, docListVisible, onToggleDocList, focusCommentId, showComments, onShowComments, onCloseComments, onToggleComments, isPinned, onTogglePin }: TableEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [mobileEditing, setMobileEditing] = useState(false);
@@ -1959,7 +1961,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             id: tableId,
             type: 'table',
             title: meta?.title || '',
-            pinned: false,
+            pinned: isPinned ?? false,
             url: typeof window !== 'undefined' ? (() => {
               const url = new URL(window.location.href);
               url.searchParams.set('id', `table:${tableId}`);
@@ -1967,7 +1969,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             })() : '',
             startRename: () => {},
             openIconPicker: () => {},
-            togglePin: () => {},
+            togglePin: () => onTogglePin?.(),
             deleteItem: handleDeleteTable,
             downloadItem: handleExportCSV,
             shareItem: () => {},
@@ -1988,7 +1990,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
               id: tableId,
               type: 'table',
               title: meta?.title || '',
-              pinned: false,
+              pinned: isPinned ?? false,
               url: typeof window !== 'undefined' ? (() => {
                 const url = new URL(window.location.href);
                 url.searchParams.set('id', `table:${tableId}`);
@@ -1996,7 +1998,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
               })() : '',
               startRename: () => {},
               openIconPicker: () => {},
-              togglePin: () => {},
+              togglePin: () => onTogglePin?.(),
               deleteItem: handleDeleteTable,
               downloadItem: handleExportCSV,
               shareItem: () => {},

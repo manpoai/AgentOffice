@@ -434,8 +434,8 @@ export function useContentTree(isMobilePage: boolean): UseContentTreeReturn {
     const pinned: string[] = [];
     const unpinned: string[] = [];
     for (const id of roots) {
-      if (effectiveNodes.get(id)?.pinned) pinned.push(id);
-      else unpinned.push(id);
+      unpinned.push(id); // always add to library
+      if (effectiveNodes.get(id)?.pinned) pinned.push(id); // also add to pinned section if pinned
     }
 
     return { childrenMap: cMap, rootIds: roots, pinnedIds: pinned, unpinnedIds: unpinned };
@@ -628,7 +628,11 @@ export function useContentTree(isMobilePage: boolean): UseContentTreeReturn {
     const node = effectiveNodes.get(nodeId);
     if (!node) return;
     try {
-      await gw.updateContentItem(nodeId, { pinned: !node.pinned });
+      if (node.pinned) {
+        await gw.unpinContentItem(nodeId);
+      } else {
+        await gw.pinContentItem(nodeId);
+      }
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (e) {
       showError(t('errors.togglePinFailed'), e);

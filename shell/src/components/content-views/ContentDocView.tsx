@@ -15,6 +15,7 @@ import dynamic from 'next/dynamic';
 import { SearchBar } from '@/components/editor';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
+import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
 import { EditorSkeleton } from '@/components/shared/Skeleton';
 import { EditFAB } from '@/components/shared/EditFAB';
 import { BottomSheet } from '@/components/shared/BottomSheet';
@@ -68,7 +69,7 @@ function DocMenuToggle({ icon: Icon, label, checked, onChange }: {
   );
 }
 
-export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onNavigate, docListVisible, onToggleDocList, focusCommentId: initialFocusCommentId, showComments, onShowComments, onCloseComments, onToggleComments }: {
+export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onNavigate, docListVisible, onToggleDocList, focusCommentId: initialFocusCommentId, showComments, onShowComments, onCloseComments, onToggleComments, isPinned, onTogglePin }: {
   doc: DocType;
   customIcon?: string;
   breadcrumb: { id: string; title: string }[];
@@ -83,6 +84,8 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
   onShowComments: () => void;
   onCloseComments: () => void;
   onToggleComments: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const { t } = useT();
 
@@ -188,6 +191,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
   const latestTitleRef = useRef(doc.title);
   const latestTextRef = useRef(doc.text);
   const latestEmojiRef = useRef((customIcon || doc.icon || null) as string | null);
+  const latestDocJsonRef = useRef<Record<string, unknown> | null>(doc.data_json || null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
@@ -292,6 +296,12 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  useEffect(() => {
+    const handler = () => { gw.createContentManualSnapshot(`doc:${doc?.id}`).catch(() => {}); };
+    window.addEventListener('save-current', handler);
+    return () => window.removeEventListener('save-current', handler);
+  }, [doc?.id]);
+
   // Reset local state and cancel pending saves when switching to a different document
   useEffect(() => {
     if (titleSaveTimerRef.current) { clearTimeout(titleSaveTimerRef.current); titleSaveTimerRef.current = null; }
@@ -334,7 +344,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
       const savingEmoji = latestEmojiRef.current;
       const docEmoji = savingEmoji && (savingEmoji.startsWith('/api/') || savingEmoji.startsWith('http')) ? null : savingEmoji;
       const titleToSave = savingTitle ?? '';
-      const savedDoc = await docApi.updateDocument(saveDocId, titleToSave, savingText, docEmoji);
+      const savedDoc = await docApi.updateDocument(saveDocId, titleToSave, savingText, docEmoji, undefined, latestDocJsonRef.current || undefined);
       if (titleVersionRef.current !== titleVersion || textVersionRef.current !== textVersion) return;
       const confirmedTitle = savedDoc.title;
       const confirmedEmoji = savingEmoji;
@@ -533,11 +543,11 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               id: doc.id,
               type: 'doc',
               title: title || doc.title || '',
-              pinned: false,
+              pinned: isPinned ?? false,
               url: buildContentLink({ type: 'doc', id: doc.id }),
               startRename: () => {},
               openIconPicker: () => {},
-              togglePin: () => {},
+              togglePin: () => onTogglePin?.(),
               deleteItem: handleDelete,
               downloadItem: () => {
                 const blob = new Blob([doc.text], { type: 'text/markdown' });
@@ -563,11 +573,11 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               id: doc.id,
               type: 'doc',
               title: doc.title,
-              pinned: false,
+              pinned: isPinned ?? false,
               url: typeof window !== 'undefined' ? window.location.href : '',
               startRename: () => {},
               openIconPicker: () => {},
-              togglePin: () => {},
+              togglePin: () => onTogglePin?.(),
               deleteItem: handleDelete,
               downloadItem: handleExport,
               shareItem: () => {},
@@ -586,21 +596,34 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
       {/* Content area */}
       <div className="flex-1 min-h-0 flex flex-row overflow-hidden">
         <div className={cn('flex-1 min-h-0 min-w-0 flex flex-col overflow-y-auto', fullWidth && 'doc-full-width')}>
-          {/* Revision preview banner with exit button */}
+          {/* Revision preview banner */}
           {previewRevision && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 shrink-0">
-              <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span className="text-sm text-amber-800 dark:text-amber-300 flex-1">
-                {t('content.previewingVersion')} — {formatDateTime(previewRevision.createdAt)}
-              </span>
-              <button
-                onClick={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-              >
-                <X className="h-3.5 w-3.5" />
-                {t('content.exitPreview')}
-              </button>
-            </div>
+            <RevisionPreviewBanner
+              createdAt={previewRevision.createdAt}
+              onExit={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+              onRestore={async () => {
+                if (!confirm(t('content.restoreVersionWarning', { type: t('content.typeDoc') }))) return;
+                try {
+                  await gw.restoreContentRevision(`doc:${doc.id}`, previewRevision.id);
+                  setShowHistory(false);
+                  setPreviewRevision(null);
+                  setPrevRevision(null);
+                  // Refresh editor in-place instead of full page reload
+                  await queryClient.invalidateQueries({ queryKey: ['document', doc.id] });
+                  await queryClient.invalidateQueries({ queryKey: ['content-items'] });
+                  const restored = await queryClient.fetchQuery({ queryKey: ['document', doc.id], queryFn: () => docApi.getDocument(doc.id) });
+                  setTitle(restored.title);
+                  setText(restored.text);
+                  latestTitleRef.current = restored.title;
+                  latestTextRef.current = restored.text;
+                  latestEmojiRef.current = (restored.icon || null) as string | null;
+                  setEditorKey(k => k + 1);
+                  onSaved();
+                } catch (e: unknown) {
+                  alert(e instanceof Error ? e.message : t('content.restoreVersionFailed'));
+                }
+              }}
+            />
           )}
           {/* Title area — emoji inline when set, hover icon positioned outside */}
           <div
@@ -704,7 +727,9 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               <Editor
                 key={`${doc.id}-${editorKey}${mobileReadOnly ? '-ro' : ''}`}
                 defaultValue={doc.text}
+                defaultDocJson={doc.data_json}
                 onChange={handleTextChange}
+                onDocJson={(json) => { latestDocJsonRef.current = json; }}
                 readOnly={mobileReadOnly}
                 placeholder={t('content.editorPlaceholder')}
                 documentId={doc.id}
@@ -781,7 +806,13 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               contentType="doc"
               contentId={doc.id}
               onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+              onCreateManualVersion={async () => { await gw.createContentManualSnapshot(`doc:${doc.id}`); }}
+              onSelectRevision={(rev) => {
+                if (!rev) { setPreviewRevision(null); setPrevRevision(null); return; }
+                setPreviewRevision({ id: rev.id, documentId: doc.id, title: '', trigger_type: rev.trigger_type || null, description: rev.description || null, data: rev.data, createdAt: rev.created_at, createdBy: { id: rev.created_by || '', name: rev.created_by || '' } });
+              }}
               onRestore={async () => {
+                setPreviewRevision(null); setPrevRevision(null);
                 await queryClient.invalidateQueries({ queryKey: ['document', doc.id] });
                 await queryClient.invalidateQueries({ queryKey: ['content-items'] });
                 const restored = await queryClient.fetchQuery({ queryKey: ['document', doc.id], queryFn: () => docApi.getDocument(doc.id) });
@@ -801,7 +832,13 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               contentType="doc"
               contentId={doc.id}
               onClose={() => { setShowHistory(false); setPreviewRevision(null); setPrevRevision(null); }}
+              onCreateManualVersion={async () => { await gw.createContentManualSnapshot(`doc:${doc.id}`); }}
+              onSelectRevision={(rev) => {
+                if (!rev) { setPreviewRevision(null); setPrevRevision(null); return; }
+                setPreviewRevision({ id: rev.id, documentId: doc.id, title: '', trigger_type: rev.trigger_type || null, description: rev.description || null, data: rev.data, createdAt: rev.created_at, createdBy: { id: rev.created_by || '', name: rev.created_by || '' } });
+              }}
               onRestore={async () => {
+                setPreviewRevision(null); setPrevRevision(null);
                 await queryClient.invalidateQueries({ queryKey: ['document', doc.id] });
                 await queryClient.invalidateQueries({ queryKey: ['content-items'] });
                 const restored = await queryClient.fetchQuery({ queryKey: ['document', doc.id], queryFn: () => docApi.getDocument(doc.id) });

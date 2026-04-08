@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Search, Clock, MessageSquare as MessageSquareIcon, Download, Link2, Pin, ExternalLink, AtSign, Share2, Trash2 } from 'lucide-react';
+import { Search, Clock, MessageSquare as MessageSquareIcon, Download, Link2, Pin, ExternalLink, AtSign, Share2, Trash2, X } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { cn } from '@/lib/utils';
@@ -10,6 +10,7 @@ import { formatRelativeTime } from '@/lib/utils/time';
 import dynamic from 'next/dynamic';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
+import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
 import { EditorSkeleton } from '@/components/shared/Skeleton';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { MobileCommentBar } from '@/components/shared/MobileCommentBar';
@@ -25,7 +26,7 @@ const DiagramEditor = dynamic(
   { ssr: false, loading: () => <EditorSkeleton /> }
 );
 
-export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, onCopyLink, docListVisible, onToggleDocList, onNavigate, focusCommentId, showComments, onShowComments, onCloseComments, onToggleComments }: {
+export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, onCopyLink, docListVisible, onToggleDocList, onNavigate, focusCommentId, showComments, onShowComments, onCloseComments, onToggleComments, isPinned, onTogglePin }: {
   diagramId: string;
   breadcrumb: { id: string; title: string }[];
   onBack: () => void;
@@ -39,12 +40,14 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
   onShowComments: () => void;
   onCloseComments: () => void;
   onToggleComments: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const editorRef = useRef<DiagramEditorHandle>(null);
-  const [saveStatus, setSaveStatus] = useState<DiagramSaveStatus>({ saving: false, lastSaved: null });
+  const [saveStatus, setSaveStatus] = useState<DiagramSaveStatus>({ reliabilityStatus: 'clean', flushRetryCount: 0, lastSaved: null });
   const [focusAnchorState, setFocusAnchorState] = useState<{ type: string; id: string } | null>(null);
 
   const { data: diagramComments = [] } = useQuery({
@@ -70,6 +73,8 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
   }, []);
   const [commentAnchor, setCommentAnchor] = useState<{ type: string; id: string; meta?: Record<string, unknown> } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [previewRevisionData, setPreviewRevisionData] = useState<any>(null);
+  const [previewRevisionMeta, setPreviewRevisionMeta] = useState<{ id: string; created_at: string } | null>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -115,6 +120,12 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
     if (item) setTitle(item.title || '');
   }, [contentItems, diagramId]);
 
+  useEffect(() => {
+    const handler = () => { gw.createContentManualSnapshot(`diagram:${diagramId}`).catch(() => {}); };
+    window.addEventListener('save-current', handler);
+    return () => window.removeEventListener('save-current', handler);
+  }, [diagramId]);
+
   const handleTitleChange = useCallback(async (newTitle: string) => {
     setTitle(newTitle);
     try {
@@ -153,7 +164,14 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
             title={title || t('content.untitledDiagram')}
             titlePlaceholder={t('content.untitledDiagram')}
             onTitleChange={handleTitleChange}
-            statusText={saveStatus.saving ? t('content.saving') : saveStatus.lastSaved ? `${t('content.saved')} ${formatRelativeTime(saveStatus.lastSaved)}` : ''}
+            statusText={
+              saveStatus.reliabilityStatus === 'flushing' ? t('content.saving')
+              : saveStatus.reliabilityStatus === 'dirty' ? t('content.unsaved')
+              : saveStatus.reliabilityStatus === 'flush_failed' ? `${t('content.saveFailed')} (${saveStatus.flushRetryCount}/3)`
+              : ''
+            }
+            statusError={saveStatus.reliabilityStatus === 'flush_failed'}
+            onRetry={saveStatus.reliabilityStatus === 'flush_failed' ? () => editorRef.current?.save() : undefined}
             metaLine={
               <button
                 onClick={() => { setShowHistory(true); onCloseComments(); }}
@@ -170,11 +188,11 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 id: diagramId,
                 type: 'diagram',
                 title,
-                pinned: false,
+                pinned: isPinned ?? false,
                 url: '',
                 startRename: () => {},
                 openIconPicker: () => {},
-                togglePin: () => {},
+                togglePin: () => onTogglePin?.(),
                 deleteItem: handleDelete,
                 downloadItem: () => editorRef.current?.exportPNG(),
                 shareItem: () => {},
@@ -189,11 +207,11 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 id: diagramId,
                 type: 'diagram',
                 title: title || t('content.untitledDiagram'),
-                pinned: false,
+                pinned: isPinned ?? false,
                 url: typeof window !== 'undefined' ? window.location.href : '',
                 startRename: () => {},
                 openIconPicker: () => {},
-                togglePin: () => {},
+                togglePin: () => onTogglePin?.(),
                 deleteItem: handleDelete,
                 shareItem: () => {},
                 copyLink: () => onCopyLink(),
@@ -208,8 +226,73 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
           />
         </div>
 
+        {/* Version Preview Overlay */}
+        {previewRevisionData && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <RevisionPreviewBanner
+              createdAt={previewRevisionMeta?.created_at || new Date().toISOString()}
+              onExit={() => { setPreviewRevisionData(null); setPreviewRevisionMeta(null); }}
+              onRestore={previewRevisionMeta ? async () => {
+                if (!confirm(t('content.restoreVersionWarning', { type: t('content.typeDiagram') }))) return;
+                try {
+                  await gw.restoreContentRevision(`diagram:${diagramId}`, previewRevisionMeta.id);
+                  // Invalidate cache so the remounted DiagramEditor fetches fresh data
+                  await queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
+                  setPreviewRevisionData(null);
+                  setPreviewRevisionMeta(null);
+                  setShowHistory(false);
+                } catch (e: unknown) {
+                  alert(e instanceof Error ? e.message : t('content.restoreVersionFailed'));
+                }
+              } : undefined}
+            />
+            <div className="flex-1 overflow-auto p-6 bg-muted/30">
+              {previewRevisionData?.cells ? (
+                (() => {
+                  const cells = previewRevisionData.cells;
+                  const nodes = cells.filter((c: any) => c.shape && !c.shape.includes('edge'));
+                  const edges = cells.filter((c: any) => c.shape?.includes('edge'));
+                  const nodeMap = new Map(nodes.map((n: any) => [n.id, n.data?.label || n.attrs?.text?.text || '']));
+                  return (
+                    <div className="max-w-4xl mx-auto space-y-3">
+                      <div className="text-xs text-muted-foreground mb-2">{nodes.length} node(s), {edges.length} edge(s)</div>
+                      {nodes.map((node: any, i: number) => (
+                        <div key={node.id || i} className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-zinc-800 rounded-lg border border-border shadow-sm">
+                          <div className="w-8 h-8 rounded bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-xs font-medium text-blue-700 dark:text-blue-300">
+                            {i + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{node.data?.label || node.attrs?.text?.text || t('content.untitledNode')}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {edges.length > 0 && (
+                        <div className="pt-2 border-t border-border space-y-1">
+                          <div className="text-xs font-medium text-muted-foreground">{t('content.connections')}</div>
+                          {edges.map((edge: any, i: number) => {
+                            const srcLabel = nodeMap.get(edge.source?.cell || edge.source) || '?';
+                            const tgtLabel = nodeMap.get(edge.target?.cell || edge.target) || '?';
+                            return (
+                              <div key={edge.id || i} className="text-xs text-muted-foreground pl-4">
+                                {srcLabel || `Node ${nodes.findIndex((n: any) => n.id === (edge.source?.cell || edge.source)) + 1}`} → {tgtLabel || `Node ${nodes.findIndex((n: any) => n.id === (edge.target?.cell || edge.target)) + 1}`}
+                                {edge.data?.label ? ` (${edge.data.label})` : ''}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="text-center text-sm text-muted-foreground py-8">{t('content.noPreviewData')}</div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* DiagramEditor — only the canvas area */}
-        <div className="flex-1 min-h-0 flex flex-col">
+        {!previewRevisionData && <div className="flex-1 min-h-0 flex flex-col">
           <DiagramEditor
             diagramId={diagramId}
             editorRef={editorRef}
@@ -224,7 +307,7 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
               setFocusAnchorState({ type: cellType, id: cellId });
             }}
           />
-        </div>
+        </div>}
         {/* Mobile: bottom comment bar — no editing on mobile */}
         <MobileCommentBar
           onClick={() => { onShowComments(); setShowHistory(false); }}
@@ -273,18 +356,24 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
             <RevisionHistory
               contentType="diagram"
               contentId={diagramId}
-              onClose={() => setShowHistory(false)}
+              onClose={() => { setShowHistory(false); setPreviewRevisionData(null); }}
+              onCreateManualVersion={async () => { await gw.createContentManualSnapshot(`diagram:${diagramId}`); }}
+              onSelectRevision={(rev) => { setPreviewRevisionData(rev?.data ?? null); setPreviewRevisionMeta(rev ? { id: rev.id, created_at: rev.created_at } : null); }}
               onRestore={async (data) => {
+                setPreviewRevisionData(null);
                 await editorRef.current?.restoreFromSnapshot(data);
               }}
             />
           </div>
-          <BottomSheet open={true} onClose={() => setShowHistory(false)} title={t('content.versionHistory')} initialHeight="full">
+          <BottomSheet open={true} onClose={() => { setShowHistory(false); setPreviewRevisionData(null); }} title={t('content.versionHistory')} initialHeight="full">
             <RevisionHistory
               contentType="diagram"
               contentId={diagramId}
-              onClose={() => setShowHistory(false)}
+              onClose={() => { setShowHistory(false); setPreviewRevisionData(null); }}
+              onCreateManualVersion={async () => { await gw.createContentManualSnapshot(`diagram:${diagramId}`); }}
+              onSelectRevision={(rev) => { setPreviewRevisionData(rev?.data ?? null); setPreviewRevisionMeta(rev ? { id: rev.id, created_at: rev.created_at } : null); }}
               onRestore={async (data) => {
+                setPreviewRevisionData(null);
                 await editorRef.current?.restoreFromSnapshot(data);
               }}
             />

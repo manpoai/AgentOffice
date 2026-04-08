@@ -19,7 +19,11 @@ import type { TableToolbarInfo } from './table-menu-plugin';
 
 interface EditorProps {
   defaultValue: string;
+  /** ProseMirror JSON to initialize from (takes priority over defaultValue markdown) */
+  defaultDocJson?: Record<string, unknown> | null;
   onChange?: (markdown: string) => void;
+  /** Callback with ProseMirror JSON on every doc change (for rich-content persistence) */
+  onDocJson?: (json: Record<string, unknown>) => void;
   readOnly?: boolean;
   autoFocus?: boolean;
   placeholder?: string;
@@ -38,7 +42,7 @@ interface EditorProps {
  * - Floating toolbar on text selection for inline formatting
  * - No top toolbar
  */
-function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = false, placeholder, className, documentId, onSearchOpen, commentQuotes }: EditorProps) {
+function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOnly = false, autoFocus = false, placeholder, className, documentId, onSearchOpen, commentQuotes }: EditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +115,18 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
 
         if (destroyed) return;
 
-        const doc = parseMarkdown(defaultValue || '');
+        let doc;
+        if (defaultDocJson) {
+          // Use ProseMirror JSON directly (preserves images, tables, formatting)
+          try {
+            const { Node } = await import('prosemirror-model');
+            doc = Node.fromJSON(schema, defaultDocJson);
+          } catch {
+            doc = parseMarkdown(defaultValue || '');
+          }
+        } else {
+          doc = parseMarkdown(defaultValue || '');
+        }
         if (!doc) {
           setError(getT()('errors.parseDocumentFailed'));
           return;
@@ -237,9 +252,14 @@ function EditorInner({ defaultValue, onChange, readOnly = false, autoFocus = fal
             if (!view || destroyed) return;
             const newState = view.state.apply(transaction);
             view.updateState(newState);
-            if (transaction.docChanged && onChange) {
-              const md = serializeMarkdown(newState.doc);
-              onChange(md);
+            if (transaction.docChanged) {
+              if (onChange) {
+                const md = serializeMarkdown(newState.doc);
+                onChange(md);
+              }
+              if (onDocJson) {
+                onDocJson(newState.doc.toJSON());
+              }
             }
           },
           attributes: {

@@ -3,6 +3,7 @@
  */
 import { createUnifiedComment } from '../lib/comment-service.js';
 import { createSnapshot, isAgentRequest } from '../lib/snapshot-helper.js';
+import { restoreDocFromSnapshot, extractTextFromProseMirror } from '../lib/doc-restore-helper.js';
 
 // Get display name for the authenticated actor (human or agent)
 function actorName(req) {
@@ -11,16 +12,7 @@ function actorName(req) {
 
 export default function docsRoutes(app, { db, authenticateAgent, genId, contentItemsUpsert, pushEvent, pushHumanEvent, humanClients, deliverWebhook }) {
 
-  // ─── Helper ─────────────────────────────────────
-  function extractTextFromProseMirror(pmData) {
-    if (!pmData) return '';
-    const extract = (node) => {
-      if (node.text) return node.text;
-      if (node.content) return node.content.map(extract).join('');
-      return '';
-    };
-    return extract(pmData);
-  }
+  // extractTextFromProseMirror imported from ../lib/doc-restore-helper.js
 
   function formatDocComment(r) {
     let pmData = null;
@@ -48,7 +40,7 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
 
   // ─── Docs (local SQLite) ────────────────────────
   app.post('/api/docs', authenticateAgent, (req, res) => {
-    const { title, content_markdown, parent_id, collection_id } = req.body;
+    const { title, content_markdown, parent_id, collection_id, data_json } = req.body;
     if (!title) {
       return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'title required' });
     }
@@ -67,6 +59,21 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       null, parent_id || null, collection_id || null,
       agentName, agentName, now, now, null, actorId, Date.now()
     );
+
+    // Create initial version snapshot only for agent-created docs (human-created docs start empty)
+    if (isAgentRequest(req)) {
+      const initData = data_json
+        ? (typeof data_json === 'string' ? JSON.parse(data_json) : data_json)
+        : { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: content_markdown || '' }] }] };
+      createSnapshot(db, { genId }, {
+        contentType: 'doc',
+        contentId: docId,
+        data: initData,
+        triggerType: 'auto',
+        actorId: agentName,
+        title,
+      });
+    }
 
     res.status(201).json({
       doc_id: docId,
@@ -88,7 +95,37 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
     if (content_markdown !== undefined) { updates.push('text = ?'); params.push(content_markdown); }
     params.push(req.params.doc_id);
 
+    // Agent edit: create pre/post snapshots when content changes
+    if (content_markdown !== undefined && content_markdown !== doc.text && isAgentRequest(req)) {
+      const preData = doc.data_json
+        ? JSON.parse(doc.data_json)
+        : { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text || '' }] }] };
+      createSnapshot(db, { genId }, {
+        contentType: 'doc',
+        contentId: req.params.doc_id,
+        data: preData,
+        triggerType: 'pre_agent_edit',
+        actorId: doc.updated_by || doc.created_by,
+        title: doc.title,
+        description: 'agent 编辑前自动保存',
+      });
+    }
+
     db.prepare(`UPDATE documents SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+    // Post-edit snapshot
+    if (content_markdown !== undefined && content_markdown !== doc.text && isAgentRequest(req)) {
+      const postData = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: content_markdown }] }] };
+      createSnapshot(db, { genId }, {
+        contentType: 'doc',
+        contentId: req.params.doc_id,
+        data: postData,
+        triggerType: 'post_agent_edit',
+        actorId: agentName,
+        title: title || doc.title,
+        description: req.body.revision_description || 'agent 编辑后保存',
+      });
+    }
 
     // Sync title change to content_items
     if (title !== undefined) {
@@ -265,6 +302,10 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
   app.get('/api/documents/:id', authenticateAgent, (req, res) => {
     const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
     if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+    // Parse data_json from TEXT string to object so frontend gets a proper object
+    if (doc.data_json) {
+      try { doc.data_json = JSON.parse(doc.data_json); } catch { /* leave as-is */ }
+    }
     res.json(doc);
   });
 
@@ -286,6 +327,21 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       icon || null, parent_id || null, collection_id || null,
       agentName, agentName, now, now, null, ownerId, Date.now()
     );
+
+    // Create initial version snapshot only for agent-created docs (human-created start empty)
+    if (isAgentRequest(req)) {
+      const initData = data_json
+        ? (typeof data_json === 'string' ? JSON.parse(data_json) : data_json)
+        : { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: text || '' }] }] };
+      createSnapshot(db, { genId }, {
+        contentType: 'doc',
+        contentId: docId,
+        data: initData,
+        triggerType: 'auto',
+        actorId: agentName,
+        title,
+      });
+    }
 
     const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(docId);
     res.status(201).json(doc);
@@ -309,19 +365,19 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
     if (full_width !== undefined) { updates.push('full_width = ?'); params.push(full_width ? 1 : 0); }
     params.push(req.params.id);
 
-    // Save revision snapshot before updating (only if text content changed)
-    if (text !== undefined && text !== doc.text) {
-      const triggerType = isAgentRequest(req) ? 'pre_agent_edit' : 'auto';
-      const dataToStore = doc.data_json
+    // Agent edit: create pre_agent_edit snapshot BEFORE update
+    if (text !== undefined && text !== doc.text && isAgentRequest(req)) {
+      const preData = doc.data_json
         ? JSON.parse(doc.data_json)
         : { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text || '' }] }] };
       createSnapshot(db, { genId }, {
         contentType: 'doc',
         contentId: req.params.id,
-        data: dataToStore,
-        triggerType,
+        data: preData,
+        triggerType: 'pre_agent_edit',
         actorId: doc.updated_by || doc.created_by,
         title: doc.title,
+        description: 'agent 编辑前自动保存',
       });
     }
 
@@ -345,8 +401,9 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
         contentId: req.params.id,
         data: postData,
         triggerType: 'post_agent_edit',
-        actorId: req.actor?.id,
+        actorId: actorName(req),
         title: updated.title,
+        description: req.body.revision_description || 'agent 编辑后保存',
       });
     }
 
@@ -384,6 +441,29 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
     res.json(restored);
   });
 
+  // POST /api/documents/:id/revisions — create a manual version snapshot
+  app.post('/api/documents/:id/revisions', authenticateAgent, (req, res) => {
+    const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const { description } = req.body;
+    const dataToStore = doc.data_json
+      ? JSON.parse(doc.data_json)
+      : { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text || '' }] }] };
+
+    const snap = createSnapshot(db, { genId }, {
+      contentType: 'doc',
+      contentId: req.params.id,
+      data: dataToStore,
+      triggerType: 'manual',
+      actorId: actorName(req),
+      title: doc.title,
+      description: description || null,
+    });
+
+    res.status(201).json(snap);
+  });
+
   // GET /api/documents/:id/revisions — list revisions for a document
   app.get('/api/documents/:id/revisions', authenticateAgent, (req, res) => {
     const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
@@ -397,6 +477,8 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       id: r.id,
       documentId: r.content_id,
       title: r.title,
+      trigger_type: r.trigger_type || null,
+      description: r.description || null,
       data: (() => { try { return JSON.parse(r.data_json); } catch { return null; } })(),
       createdAt: r.created_at,
       createdBy: { id: r.actor_id || '', name: r.actor_id || '' }
@@ -407,45 +489,19 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
 
   // POST /api/documents/:id/revisions/:revisionId/restore — restore a revision
   app.post('/api/documents/:id/revisions/:revisionId/restore', authenticateAgent, (req, res) => {
-    const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
-    if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
-
     const revision = db.prepare(
       "SELECT * FROM content_snapshots WHERE id = ? AND content_type = 'doc' AND content_id = ?"
     ).get(req.params.revisionId, req.params.id);
     if (!revision) return res.status(404).json({ error: 'REVISION_NOT_FOUND' });
 
-    const now = new Date().toISOString();
-    const agentName = actorName(req);
-
-    // Save current state as a new revision (so user can undo the restore)
-    const preRestoreData = doc.data_json
-      ? JSON.parse(doc.data_json)
-      : { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text || '' }] }] };
-    createSnapshot(db, { genId }, {
-      contentType: 'doc',
-      contentId: req.params.id,
-      data: preRestoreData,
-      triggerType: 'pre_restore',
-      actorId: doc.updated_by || doc.created_by,
-      title: doc.title,
+    const result = restoreDocFromSnapshot(db, { genId }, {
+      docId: req.params.id,
+      revision,
+      actorName: actorName(req),
     });
+    if (!result) return res.status(404).json({ error: 'NOT_FOUND' });
 
-    // Extract text from the revision's ProseMirror JSON
-    let revData = null;
-    try { revData = JSON.parse(revision.data_json); } catch { /* ignore */ }
-    const restoredText = revData ? extractTextFromProseMirror(revData) : '';
-
-    // Update document with restored title and text
-    db.prepare(`UPDATE documents SET title = ?, text = ?, data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?`)
-      .run(revision.title, restoredText, revision.data_json, agentName, now, req.params.id);
-
-    // Sync title to content_items
-    db.prepare('UPDATE content_items SET title = ?, updated_at = ? WHERE raw_id = ? AND type = ?')
-      .run(revision.title, now, req.params.id, 'doc');
-
-    const updated = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
-    res.json(updated);
+    res.json(result.document);
   });
 
   // ─── Document Comments (removed legacy routes; use unified content comment APIs) ───────

@@ -100,6 +100,8 @@ interface PresentationEditorProps {
   onShowComments: () => void;
   onCloseComments: () => void;
   onToggleComments: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
 }
 
 // ─── Fabric.js Dynamic Import ───────────────────────
@@ -129,6 +131,8 @@ export function PresentationEditor({
   onShowComments,
   onCloseComments,
   onToggleComments,
+  isPinned,
+  onTogglePin,
 }: PresentationEditorProps) {
   const { t } = useT();
 
@@ -1699,11 +1703,11 @@ export function PresentationEditor({
                 id: presentationId,
                 type: 'presentation',
                 title: currentTitle || '',
-                pinned: false,
+                pinned: isPinned ?? false,
                 url: '',
                 startRename: () => {},
                 openIconPicker: () => {},
-                togglePin: () => {},
+                togglePin: () => onTogglePin?.(),
                 deleteItem: handleDelete,
                 downloadItem: () => handleDownload(),
                 shareItem: () => {},
@@ -1823,11 +1827,11 @@ export function PresentationEditor({
               id: presentationId,
               type: 'presentation',
               title: currentTitle || '',
-              pinned: false,
+              pinned: isPinned ?? false,
               url: '',
               startRename: () => {},
               openIconPicker: () => {},
-              togglePin: () => {},
+              togglePin: () => onTogglePin?.(),
               deleteItem: handleDelete,
               downloadItem: () => handleDownload(),
               shareItem: () => {},
@@ -1843,11 +1847,11 @@ export function PresentationEditor({
               id: presentationId,
               type: 'slides',
               title: presentation?.title || t('content.presentation'),
-              pinned: false,
+              pinned: isPinned ?? false,
               url: typeof window !== 'undefined' ? window.location.href : '',
               startRename: () => {},
               openIconPicker: () => {},
-              togglePin: () => {},
+              togglePin: () => onTogglePin?.(),
               deleteItem: handleDelete,
               shareItem: () => {},
               copyLink: onCopyLink,

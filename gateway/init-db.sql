@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS content_snapshots (
   data_json     TEXT NOT NULL,
   schema_json   TEXT,               -- table schema at snapshot time (table-specific)
   trigger_type  TEXT,               -- 'auto' | 'manual' | 'pre_restore'
+  description   TEXT,               -- version description (e.g. 'agent 编辑前自动保存')
   row_count     INTEGER,            -- table-specific
   actor_id      TEXT,
   created_at    TEXT NOT NULL

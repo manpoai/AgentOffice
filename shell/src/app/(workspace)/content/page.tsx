@@ -1360,6 +1360,8 @@ export default function ContentPage() {
             onShowComments={onShowComments}
             onCloseComments={onCloseComments}
             onToggleComments={onToggleComments}
+            isPinned={effectiveNodes.get(`doc:${selectedDoc.id}`)?.pinned ?? false}
+            onTogglePin={() => handleTogglePin(`doc:${selectedDoc.id}`)}
           />
         ) : selectedTableId ? (
           <TableEditor
@@ -1391,6 +1393,8 @@ export default function ContentPage() {
             onShowComments={onShowComments}
             onCloseComments={onCloseComments}
             onToggleComments={onToggleComments}
+            isPinned={effectiveNodes.get(`table:${selectedTableId}`)?.pinned ?? false}
+            onTogglePin={() => handleTogglePin(`table:${selectedTableId}`)}
           />
         ) : selectedPresentationId ? (
           <PresentationEditor
@@ -1422,6 +1426,8 @@ export default function ContentPage() {
             onShowComments={onShowComments}
             onCloseComments={onCloseComments}
             onToggleComments={onToggleComments}
+            isPinned={effectiveNodes.get(`presentation:${selectedPresentationId}`)?.pinned ?? false}
+            onTogglePin={() => handleTogglePin(`presentation:${selectedPresentationId}`)}
           />
         ) : selectedDiagramId ? (
           <ContentDiagramView
@@ -1453,6 +1459,8 @@ export default function ContentPage() {
             onShowComments={onShowComments}
             onCloseComments={onCloseComments}
             onToggleComments={onToggleComments}
+            isPinned={effectiveNodes.get(`diagram:${selectedDiagramId}`)?.pinned ?? false}
+            onTogglePin={() => handleTogglePin(`diagram:${selectedDiagramId}`)}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2 bg-card md:rounded-lg md:shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] md:overflow-hidden">

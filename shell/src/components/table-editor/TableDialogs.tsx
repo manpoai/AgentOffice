@@ -14,6 +14,7 @@ import { SnapshotCellValue } from './TableGrid';
 import * as gw from '@/lib/api/gateway';
 import * as br from '@/lib/api/baserow';
 import { showError } from '@/lib/utils/error';
+import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
 
 // ── Snapshot Preview Panel ──
 
@@ -37,46 +38,22 @@ export function SnapshotPreviewPanel({ previewSnapshot, tableId, onRestore, onCl
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      {/* Preview banner */}
-      <div className="flex items-center justify-between px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 shrink-0">
-        <div className="flex items-center gap-2 text-sm">
-          <Clock size={14} className="text-amber-600 dark:text-amber-400" />
-          <span className="font-medium text-amber-800 dark:text-amber-200">
-            {t('dataTableHistory.previewingVersion')}
-          </span>
-          <span className="text-amber-600 dark:text-amber-400">
-            — {formatTime()}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={async () => {
-              if (!confirm(t('dataTableHistory.restoreConfirm'))) return;
-              try {
-                const result = await gw.restoreTableSnapshot(tableId, previewSnapshot.snapshotId);
-                console.log('[TableEditor] Restore success:', result);
-                onRestore();
-                // Force refetch all data so restored content is visible immediately
-                queryClient.removeQueries({ queryKey: ['nc-rows', tableId] });
-                queryClient.invalidateQueries({ queryKey: ['nc-table-meta', tableId] });
-              } catch (e: unknown) {
-                showError(t('errors.restoreVersionFailed'), e);
-              }
-            }}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-          >
-            <RotateCcw size={12} />
-            {t('dataTableHistory.restoreVersion')}
-          </button>
-          <button
-            onClick={onClose}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
-          >
-            <X size={12} />
-            {t('dataTableHistory.exitPreview')}
-          </button>
-        </div>
-      </div>
+      <RevisionPreviewBanner
+        createdAt={previewSnapshot.createdAt}
+        onExit={onClose}
+        onRestore={async () => {
+          if (!confirm(t('dataTableHistory.restoreConfirm'))) return;
+          try {
+            const result = await gw.restoreTableSnapshot(tableId, previewSnapshot.snapshotId);
+            console.log('[TableEditor] Restore success:', result);
+            onRestore();
+            queryClient.removeQueries({ queryKey: ['nc-rows', tableId] });
+            queryClient.invalidateQueries({ queryKey: ['nc-table-meta', tableId] });
+          } catch (e: unknown) {
+            showError(t('errors.restoreVersionFailed'), e);
+          }
+        }}
+      />
       {/* Read-only snapshot table — horizontal scroll like link picker */}
       <div className="flex-1 overflow-auto bg-amber-50/30 dark:bg-amber-950/10">
         {previewSnapshot.rows.length === 0 ? (

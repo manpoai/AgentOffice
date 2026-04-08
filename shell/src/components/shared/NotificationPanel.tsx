@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, Check, MessageSquare, FileText, Table2, Bot, X } from 'lucide-react';
+import { Bell, Check, MessageSquare, FileText, Table2, Bot, X, Layout, GitBranch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
 import * as gw from '@/lib/api/gateway';
@@ -11,6 +11,13 @@ import { useT } from '@/lib/i18n';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { showError } from '@/lib/utils/error';
 import { BottomSheet } from '@/components/shared/BottomSheet';
+
+const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
+  doc: <FileText className="h-4 w-4" />,
+  table: <Table2 className="h-4 w-4" />,
+  presentation: <Layout className="h-4 w-4" />,
+  diagram: <GitBranch className="h-4 w-4" />,
+};
 
 const NOTIF_ICON: Record<string, React.ReactNode> = {
   doc_update: <FileText className="h-4 w-4" />,
@@ -23,6 +30,16 @@ const NOTIF_ICON: Record<string, React.ReactNode> = {
   table_update: <Table2 className="h-4 w-4" />,
   agent: <Bot className="h-4 w-4" />,
 };
+
+function getNotificationIcon(notif: { type: string; meta?: { target_type?: string } | null }): React.ReactNode {
+  if (['comment_on_content', 'comment', 'comment_reply', 'mention'].includes(notif.type)) {
+    const targetType = notif.meta?.target_type;
+    if (targetType && CONTENT_TYPE_ICONS[targetType]) {
+      return CONTENT_TYPE_ICONS[targetType];
+    }
+  }
+  return NOTIF_ICON[notif.type] ?? <Bell className="h-4 w-4" />;
+}
 
 interface NotificationPanelProps {
   open: boolean;
@@ -116,7 +133,7 @@ export function NotificationPanel({ open, onClose, anchorRect }: NotificationPan
               'mt-0.5 shrink-0',
               notif.read ? 'text-muted-foreground/50' : 'text-sidebar-primary'
             )}>
-              {NOTIF_ICON[notif.type] || <Bell className="h-4 w-4" />}
+              {getNotificationIcon(notif)}
             </span>
             <div className="flex-1 min-w-0">
               <p className={cn(

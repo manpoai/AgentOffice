@@ -20,7 +20,13 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     );
   }
 
-  if (!actor) return null;
+  if (!actor) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f0f1a', color: '#aaa' }}>
+        Loading...
+      </div>
+    );
+  }
 
   return <AppShell>{children}</AppShell>;
 }

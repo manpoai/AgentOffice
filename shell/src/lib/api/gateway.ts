@@ -280,6 +280,19 @@ export async function updateContentItem(id: string, fields: {
   });
 }
 
+export async function listContentPins(): Promise<string[]> {
+  const data = await gwFetch<{ pinned_ids: string[] }>('/content-pins');
+  return data.pinned_ids;
+}
+
+export async function pinContentItem(contentId: string): Promise<void> {
+  await gwFetch(`/content-pins/${encodeURIComponent(contentId)}`, { method: 'POST' });
+}
+
+export async function unpinContentItem(contentId: string): Promise<void> {
+  await gwFetch(`/content-pins/${encodeURIComponent(contentId)}`, { method: 'DELETE' });
+}
+
 export async function updateContentTree(items: { id: string; parent_id: string | null; sort_order: number }[]): Promise<void> {
   await gwFetch('/content-items/tree', {
     method: 'PUT',
@@ -435,6 +448,11 @@ export interface Notification {
   actor?: string;
   read: boolean;
   created_at: string;
+  meta?: {
+    target_type?: 'doc' | 'table' | 'presentation' | 'diagram';
+    target_id?: string;
+    target_title?: string;
+  } | null;
 }
 
 export async function getNotifications(unread?: boolean, limit?: number): Promise<Notification[]> {

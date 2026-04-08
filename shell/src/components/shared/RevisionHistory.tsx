@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * RevisionHistory — Unified version history panel.
+ * RevisionHistory — Unified version history panel for ALL content types.
  *
- * Shows a list of saved revisions for any content type.
- * Supports preview selection and one-click restore.
+ * Shows a list of saved revisions, supports preview selection, manual version
+ * creation, and one-click restore. Used by Doc, Table, PPT, and Diagram editors.
  *
  * Desktop: side drawer | Mobile: full-screen panel (handled by parent)
  */
@@ -21,6 +21,7 @@ import {
   Loader2,
   X,
   AlertTriangle,
+  Save,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
@@ -30,13 +31,40 @@ import {
   type ContentRevision,
 } from '@/lib/api/gateway';
 
+/** Generic revision item — superset of ContentRevision + TableSnapshot fields */
+export interface RevisionItem {
+  id: string;
+  content_id?: string;
+  trigger_type: string | null;
+  description?: string | null;
+  data?: any;
+  created_at: string;
+  created_by?: string | null;
+  /** Table-specific */
+  version?: number;
+  row_count?: number;
+  agent?: string | null;
+}
+
 export interface RevisionHistoryProps {
   /** Content type for display */
   contentType: 'doc' | 'table' | 'presentation' | 'diagram';
-  /** Content ID (e.g. "doc:abc123") */
+  /** Content ID */
   contentId: string;
   /** Called after a revision is restored */
   onRestore?: (data: any) => void;
+  /** Called to create a manual version snapshot */
+  onCreateManualVersion?: () => Promise<void>;
+  /** Called when a revision is selected for preview (null = deselected) */
+  onSelectRevision?: (revision: RevisionItem | null) => void;
+  /** Currently selected revision ID (controlled by parent for preview) */
+  selectedRevisionId?: string | null;
+  /** Custom fetch function (default: listContentRevisions) */
+  fetchRevisions?: (contentId: string) => Promise<RevisionItem[]>;
+  /** Custom restore function (default: restoreContentRevision) */
+  restoreRevision?: (contentId: string, revisionId: string) => Promise<any>;
+  /** Render extra metadata per revision item (e.g. row count for tables) */
+  renderRevisionMeta?: (revision: RevisionItem) => React.ReactNode;
   /** Additional CSS class */
   className?: string;
   /** Called when panel should close */
@@ -50,38 +78,58 @@ const TYPE_LABELS: Record<string, string> = {
   diagram: 'content.typeDiagram',
 };
 
+const TRIGGER_LABELS: Record<string, string> = {
+  auto: 'content.triggerAuto',
+  manual: 'content.triggerManual',
+  pre_restore: 'content.triggerPreRestore',
+  pre_agent_edit: 'content.triggerPreAgentEdit',
+  post_agent_edit: 'content.triggerPostAgentEdit',
+  pre_bulk: 'content.triggerPreBulk',
+};
+
 export function RevisionHistory({
   contentType,
   contentId,
   onRestore,
+  onCreateManualVersion,
+  onSelectRevision,
+  selectedRevisionId,
+  fetchRevisions,
+  restoreRevision,
+  renderRevisionMeta,
   className,
   onClose,
 }: RevisionHistoryProps) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Use internal selection state if parent doesn't control it
+  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
+  const selectedId = selectedRevisionId !== undefined ? selectedRevisionId : internalSelectedId;
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [creatingVersion, setCreatingVersion] = useState(false);
 
   const queryKey = ['revisions', contentId];
 
-  const { data: revisions = [], isLoading } = useQuery<ContentRevision[]>({
+  const fetchFn = fetchRevisions || listContentRevisions;
+  const restoreFn = restoreRevision || restoreContentRevision;
+
+  const { data: revisions = [], isLoading } = useQuery<RevisionItem[]>({
     queryKey,
-    queryFn: () => listContentRevisions(contentId),
+    queryFn: () => fetchFn(contentId),
     staleTime: 15_000,
   });
 
   const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const restoreMut = useMutation({
-    mutationFn: (revisionId: string) =>
-      restoreContentRevision(contentId, revisionId),
-    onSuccess: (result, revisionId) => {
+    mutationFn: (revisionId: string) => restoreFn(contentId, revisionId),
+    onSuccess: (result) => {
       setRestoreError(null);
       queryClient.invalidateQueries({ queryKey });
       setConfirmRestore(null);
-      setSelectedId(null);
-      onRestore?.(result.data);
+      handleSelect(null);
+      onRestore?.(result?.data ?? result);
     },
     onError: (error: Error) => {
       setRestoreError(error.message || t('content.restoreVersionFailed'));
@@ -90,9 +138,63 @@ export function RevisionHistory({
 
   const selectedRevision = revisions.find((r) => r.id === selectedId);
 
+  const handleSelect = (id: string | null) => {
+    if (onSelectRevision !== undefined) {
+      const rev = id ? revisions.find(r => r.id === id) || null : null;
+      onSelectRevision(rev);
+    }
+    setInternalSelectedId(id);
+  };
+
+  const handleCreateVersion = async () => {
+    if (!onCreateManualVersion || creatingVersion) return;
+    setCreatingVersion(true);
+    // Optimistic update: immediately add a placeholder revision so user sees feedback
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticRevision: RevisionItem = {
+      id: optimisticId,
+      trigger_type: 'manual',
+      created_at: new Date().toISOString(),
+      description: null,
+    };
+    queryClient.setQueryData<RevisionItem[]>(queryKey, (old = []) => [optimisticRevision, ...old]);
+    try {
+      await onCreateManualVersion();
+      queryClient.invalidateQueries({ queryKey });
+    } catch (e) {
+      console.error('[RevisionHistory] Create manual version failed:', e);
+      // Rollback optimistic update on failure
+      queryClient.setQueryData<RevisionItem[]>(queryKey, (old = []) => old.filter(r => r.id !== optimisticId));
+    } finally {
+      setCreatingVersion(false);
+    }
+  };
+
   // Shared inner content (used by both desktop and mobile)
   const panelContent = (
     <>
+      {/* Create version button */}
+      {onCreateManualVersion && (
+        <div className="px-4 py-2 border-b border-border">
+          <button
+            onClick={handleCreateVersion}
+            disabled={creatingVersion}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium',
+              'border border-border hover:bg-muted transition-colors',
+              'disabled:opacity-50',
+            )}
+          >
+            {creatingVersion ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {t('content.createVersion')}
+          </button>
+        </div>
+      )}
+
       {/* Revision list */}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
@@ -113,7 +215,7 @@ export function RevisionHistory({
               <button
                 key={revision.id}
                 onClick={() =>
-                  setSelectedId(selectedId === revision.id ? null : revision.id)
+                  handleSelect(selectedId === revision.id ? null : revision.id)
                 }
                 className={cn(
                   'flex items-center w-full px-4 py-2.5 text-left transition-colors',
@@ -125,23 +227,27 @@ export function RevisionHistory({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">
-                      {index === 0 ? t('content.latestVersion') : t('content.versionN', { n: revisions.length - index })}
+                      {revision.version ? `v${revision.version}` : t('content.versionN', { n: revisions.length - index })}
                     </span>
-                    {index === 0 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sidebar-primary/10 text-sidebar-primary font-medium">
-                        {t('content.currentVersion')}
+                    {revision.trigger_type && TRIGGER_LABELS[revision.trigger_type] && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+                        {t(TRIGGER_LABELS[revision.trigger_type])}
                       </span>
                     )}
                   </div>
+                  {revision.description && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{revision.description}</p>
+                  )}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                     <span>{formatRelativeTime(revision.created_at)}</span>
-                    {revision.created_by && (
+                    {(revision.created_by || revision.agent) && (
                       <>
                         <span>&middot;</span>
-                        <span>{revision.created_by}</span>
+                        <span>{revision.created_by || revision.agent}</span>
                       </>
                     )}
                   </div>
+                  {renderRevisionMeta?.(revision)}
                 </div>
                 <ChevronRight
                   className={cn(
@@ -155,62 +261,6 @@ export function RevisionHistory({
         )}
       </div>
 
-      {/* Action bar (shown when a non-current revision is selected) */}
-      {selectedRevision && selectedId !== revisions[0]?.id && (
-        <div className="border-t border-border px-4 py-3">
-          {confirmRestore === selectedId ? (
-            <div className="space-y-2">
-              <div className="flex items-start gap-2 text-xs text-amber-600">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>
-                  {t('content.restoreVersionWarning', { type: t(TYPE_LABELS[contentType] || 'content.typeContent') })}
-                </span>
-              </div>
-              {restoreError && (
-                <div className="flex items-start gap-2 text-xs text-red-600">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{restoreError}</span>
-                </div>
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => restoreMut.mutate(selectedId!)}
-                  disabled={restoreMut.isPending}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium',
-                    'bg-sidebar-primary text-white hover:bg-sidebar-primary/90',
-                    'disabled:opacity-50',
-                  )}
-                >
-                  {restoreMut.isPending ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RotateCcw className="w-4 h-4" />
-                  )}
-                  {t('content.confirmRestore')}
-                </button>
-                <button
-                  onClick={() => { setConfirmRestore(null); setRestoreError(null); }}
-                  className="px-3 py-2 rounded-md text-sm hover:bg-muted transition-colors"
-                >
-                  {t('common.cancel')}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmRestore(selectedId)}
-              className={cn(
-                'w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium',
-                'border border-border hover:bg-muted transition-colors',
-              )}
-            >
-              <RotateCcw className="w-4 h-4" />
-              {t('content.restoreVersion')}
-            </button>
-          )}
-        </div>
-      )}
     </>
   );
 

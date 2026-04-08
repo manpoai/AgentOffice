@@ -14,23 +14,14 @@
  * @param {string|null} payload.actorId - actor ID
  * @param {string|null} payload.title - content title
  */
-export function createSnapshot(db, deps, { contentType, contentId, data, triggerType, actorId, title }) {
+export function createSnapshot(db, deps, { contentType, contentId, data, triggerType, actorId, title, description }) {
   const { genId } = deps;
   const id = genId('snap');
   const now = new Date().toISOString();
   db.prepare(`
-    INSERT INTO content_snapshots (id, content_type, content_id, version, title, data_json, schema_json, trigger_type, row_count, actor_id, created_at)
-    VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, NULL, ?, ?)
-  `).run(id, contentType, contentId, title || null, JSON.stringify(data), triggerType, actorId || null, now);
-
-  // Retention policy: keep at most 20 snapshots per content item
-  db.prepare(`
-    DELETE FROM content_snapshots
-    WHERE content_type = ? AND content_id = ? AND id NOT IN (
-      SELECT id FROM content_snapshots WHERE content_type = ? AND content_id = ?
-      ORDER BY created_at DESC LIMIT 20
-    )
-  `).run(contentType, contentId, contentType, contentId);
+    INSERT INTO content_snapshots (id, content_type, content_id, version, title, data_json, schema_json, trigger_type, description, row_count, actor_id, created_at)
+    VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, NULL, ?, ?)
+  `).run(id, contentType, contentId, title || null, JSON.stringify(data), triggerType, description || null, actorId || null, now);
 
   return { id, trigger_type: triggerType, created_at: now };
 }

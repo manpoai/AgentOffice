@@ -38,6 +38,8 @@ export interface Revision {
   id: string;
   documentId: string;
   title: string;
+  trigger_type: string | null;
+  description: string | null;
   data: any; // ProseMirror JSON
   createdAt: string;
   createdBy: { id: string; name: string };
@@ -55,13 +57,15 @@ export async function updateDocument(
   title?: string,
   text?: string,
   icon?: string | null,
-  opts?: { fullWidth?: boolean }
+  opts?: { fullWidth?: boolean },
+  data_json?: Record<string, unknown>,
 ): Promise<Document> {
   const body: Record<string, unknown> = {};
   if (title !== undefined) body.title = title;
   if (text !== undefined) body.text = text;
   if (icon !== undefined) body.icon = icon;
   if (opts?.fullWidth !== undefined) body.full_width = opts.fullWidth;
+  if (data_json !== undefined) body.data_json = data_json;
   return docFetch(`/documents/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
