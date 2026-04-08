@@ -4,6 +4,14 @@
 
 const BASE = '/api/gateway';
 
+/** Resolve a possibly-relative avatar URL to an absolute URL via the gateway proxy. */
+export function resolveAvatarUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  if (url.startsWith('/api/gateway')) return url;
+  return `/api/gateway${url}`;
+}
+
 /** Get auth headers for direct fetch calls to /api/gateway/* */
 export function gwAuthHeaders(): Record<string, string> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
@@ -30,6 +38,7 @@ export interface Agent {
   name: string;
   display_name?: string;
   avatar_url?: string | null;
+  platform?: string | null;
   type?: string;
   online: boolean;
   capabilities?: string[];
@@ -100,12 +109,40 @@ export async function getAgent(name: string): Promise<Agent> {
 export async function updateAgentProfile(name: string, fields: {
   display_name?: string;
   avatar_url?: string;
+  platform?: string;
 }): Promise<void> {
   await gwFetch(`/agents/${name}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(fields),
   });
+}
+
+export async function adminUpdateAgent(agentId: string, fields: {
+  display_name?: string;
+  avatar_url?: string;
+  platform?: string;
+}): Promise<void> {
+  await gwFetch(`/admin/agents/${agentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  });
+}
+
+export async function adminUploadAgentAvatar(agentId: string, file: File): Promise<{ avatar_url: string }> {
+  const form = new FormData();
+  form.append('avatar', file);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${BASE}/admin/agents/${agentId}/avatar`, {
+    method: 'POST',
+    headers,
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Upload avatar: ${res.status}`);
+  return res.json();
 }
 
 export async function uploadAgentAvatar(name: string, file: File): Promise<{ avatar_url: string }> {
@@ -125,75 +162,33 @@ export async function uploadAgentAvatar(name: string, file: File): Promise<{ ava
 
 // ── Comments ──
 
+export interface ContextPayload {
+  version: number;
+  target: { type: string; id: string; title: string | null };
+  anchor: { type: string; id: string; label: string; preview: string | null; meta: Record<string, unknown> } | null;
+  summary: { comment_text: string; comment_author: string; text_summary: string };
+}
+
 export interface Comment {
   id: string;
   text: string;
   html?: string;
   actor: string;
+  actor_id?: string | null;
+  actor_avatar_url?: string | null;
+  actor_platform?: string | null;
   parent_id?: string | null;
   resolved_by?: { id: string; name: string } | null;
   resolved_at?: string | null;
   created_at: string;
   updated_at?: string;
+  anchor_type?: string | null;
+  anchor_id?: string | null;
+  anchor_meta?: Record<string, unknown> | null;
+  context_payload?: ContextPayload | null;
 }
 
-export async function listDocComments(docId: string): Promise<Comment[]> {
-  const data = await gwFetch<{ comments: Comment[] }>(`/docs/${docId}/comments`);
-  return data.comments;
-}
-
-export async function commentOnDoc(docId: string, text: string, parentId?: string): Promise<void> {
-  await gwFetch('/comments', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ doc_id: docId, text, parent_comment_id: parentId }),
-  });
-}
-
-// ── Table Comments (SQLite-backed, for Baserow tables) ──
-
-export interface TableComment extends Comment {
-  row_id?: string | null;
-}
-
-export async function listTableComments(tableId: string, rowId?: string): Promise<Comment[]> {
-  const qs = rowId ? `?row_id=${encodeURIComponent(rowId)}` : '';
-  const data = await gwFetch<{ comments: Comment[] }>(`/data/tables/${tableId}/comments${qs}`);
-  return data.comments;
-}
-
-export async function listAllTableComments(tableId: string): Promise<TableComment[]> {
-  const data = await gwFetch<{ comments: TableComment[] }>(`/data/tables/${tableId}/comments?include_all=1`);
-  return data.comments;
-}
-
-export async function commentOnTable(tableId: string, text: string, parentId?: string, rowId?: string): Promise<Comment> {
-  return gwFetch<Comment>(`/data/tables/${tableId}/comments`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, parent_id: parentId, row_id: rowId }),
-  });
-}
-
-export async function editTableComment(commentId: string, text: string): Promise<void> {
-  await gwFetch(`/data/table-comments/${commentId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-}
-
-export async function deleteTableComment(commentId: string): Promise<void> {
-  await gwFetch(`/data/table-comments/${commentId}`, { method: 'DELETE' });
-}
-
-export async function resolveTableComment(commentId: string): Promise<void> {
-  await gwFetch(`/data/table-comments/${commentId}/resolve`, { method: 'POST' });
-}
-
-export async function unresolveTableComment(commentId: string): Promise<void> {
-  await gwFetch(`/data/table-comments/${commentId}/unresolve`, { method: 'POST' });
-}
+// ── Table: commented-rows (table-specific, used by table editor for row comment bubbles) ──
 
 export async function listCommentedRows(tableId: string): Promise<{ row_id: string; count: number }[]> {
   const data = await gwFetch<{ rows: { row_id: string; count: number }[] }>(`/data/tables/${tableId}/commented-rows`);
@@ -218,6 +213,7 @@ export interface ContentItem {
   deleted_at: string | null;
   pinned: number;
   synced_at: number;
+  unresolved_comment_count: number;
 }
 
 export async function getContentItem(id: string): Promise<ContentItem> {
@@ -456,25 +452,33 @@ export async function getUnreadCount(): Promise<number> {
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
-  await gwFetch(`/notifications/${id}/read`, { method: 'POST' });
+  await gwFetch(`/notifications/${id}/read`, { method: 'PATCH' });
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-  await gwFetch('/notifications/read-all', { method: 'POST' });
+  await gwFetch('/notifications/mark-all-read', { method: 'POST' });
 }
 
 // ─── Content Comments (Generic — presentations, diagrams, etc.) ─────────
 
-export async function listContentComments(contentId: string): Promise<Comment[]> {
-  const data = await gwFetch<{ comments: Comment[] }>(`/content-items/${encodeURIComponent(contentId)}/comments`);
+export async function listContentComments(
+  contentId: string,
+  filter?: { anchor_type?: string; anchor_id?: string }
+): Promise<Comment[]> {
+  const params = new URLSearchParams();
+  if (filter?.anchor_type) params.set('anchor_type', filter.anchor_type);
+  if (filter?.anchor_id) params.set('anchor_id', filter.anchor_id);
+  const qs = params.toString();
+  const url = `/content-items/${encodeURIComponent(contentId)}/comments${qs ? '?' + qs : ''}`;
+  const data = await gwFetch<{ comments: Comment[] }>(url);
   return data.comments;
 }
 
-export async function createContentComment(contentId: string, text: string, parentId?: string): Promise<Comment> {
+export async function createContentComment(contentId: string, text: string, parentId?: string, anchorType?: string, anchorId?: string, anchorMeta?: Record<string, unknown>): Promise<Comment> {
   return gwFetch<Comment>(`/content-items/${encodeURIComponent(contentId)}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, parent_comment_id: parentId }),
+    body: JSON.stringify({ text, parent_comment_id: parentId, anchor_type: anchorType, anchor_id: anchorId, anchor_meta: anchorMeta }),
   });
 }
 

@@ -5,8 +5,8 @@ import { br, BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID } from '../baserow.js';
 
 export function createContentSync(db) {
   const contentItemsUpsert = db.prepare(`
-    INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, collection_id, created_by, updated_by, created_at, updated_at, deleted_at, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, collection_id, created_by, updated_by, created_at, updated_at, deleted_at, owner_actor_id, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title,
       icon = COALESCE((SELECT icon FROM doc_icons WHERE doc_id = excluded.raw_id), excluded.icon),
@@ -17,6 +17,7 @@ export function createContentSync(db) {
       created_at = excluded.created_at,
       updated_at = excluded.updated_at,
       deleted_at = excluded.deleted_at,
+      owner_actor_id = COALESCE(content_items.owner_actor_id, excluded.owner_actor_id),
       synced_at = excluded.synced_at
   `);
 
@@ -32,11 +33,15 @@ export function createContentSync(db) {
         const nodeId = `doc:${doc.id}`;
         const existing = db.prepare('SELECT parent_id, collection_id FROM content_items WHERE id = ?').get(nodeId);
         const icon = doc.custom_icon || doc.icon || null;
+        const docOwner = doc.created_by
+          ? db.prepare("SELECT id FROM actors WHERE display_name = ? OR username = ? LIMIT 1").get(doc.created_by, doc.created_by)
+          : null;
         contentItemsUpsert.run(
           nodeId, doc.id, 'doc', doc.title || '',
           icon, existing?.parent_id || null, existing?.collection_id || null,
           doc.created_by || null, doc.updated_by || null,
           doc.created_at || null, doc.updated_at || null, doc.deleted_at || null,
+          docOwner?.id || null,
           now
         );
         docCount++;
@@ -59,6 +64,7 @@ export function createContentSync(db) {
               customIcon?.icon || null, null, null,
               null, null,
               t.created_on || null, null, null,
+              null,
               now
             );
             tableCount++;

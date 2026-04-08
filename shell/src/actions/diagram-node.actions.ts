@@ -84,8 +84,18 @@ export const diagramNodeActions: ActionDef<DiagramNodeCtx>[] = [
     label: t => t('actions.comment'),
     icon: MessageSquare,
     group: 'other',
-    execute: _ctx => {
-      window.dispatchEvent(new CustomEvent('diagram:open-comments'));
+    execute: ctx => {
+      const cell = ctx.cell;
+      const detail: Record<string, any> = {
+        cellId: cell?.id,
+        cellType: cell?.isNode() ? 'node' : 'edge',
+        label: (cell as any)?.getData?.()?.label || (cell as any)?.getLabelAt?.(0)?.attrs?.text?.text || '',
+      };
+      if (cell && !cell.isNode()) {
+        detail.source_node_id = (cell as any).getSourceCellId?.() || null;
+        detail.target_node_id = (cell as any).getTargetCellId?.() || null;
+      }
+      window.dispatchEvent(new CustomEvent('diagram:open-comments', { detail }));
     },
   },
 ];
@@ -115,7 +125,7 @@ export const diagramCanvasActions: ActionDef<DiagramCanvasCtx>[] = [
     icon: MessageSquare,
     group: 'other',
     execute: _ctx => {
-      window.dispatchEvent(new CustomEvent('diagram:open-comments'));
+      window.dispatchEvent(new CustomEvent('diagram:open-comments', { detail: {} }));
     },
   },
 ];

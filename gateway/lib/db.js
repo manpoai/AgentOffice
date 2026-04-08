@@ -22,6 +22,12 @@ function runMigrations(db) {
   try { db.exec('ALTER TABLE actors ADD COLUMN br_password TEXT'); } catch { /* already exists */ }
   try { db.exec('ALTER TABLE actors ADD COLUMN pending_approval INTEGER DEFAULT 0'); } catch { /* already exists */ }
 
+  // Migrate: add platform column to actors (separate try/catch so UPDATE always runs)
+  try { db.exec('ALTER TABLE actors ADD COLUMN platform TEXT'); } catch { /* already exists */ }
+  try {
+    db.exec("UPDATE actors SET platform = 'zylos' WHERE username IN ('zylos', 'zylos-thinker', 'zylos-digger') AND platform IS NULL");
+  } catch (e) { console.warn('[gateway] platform seed error:', e.message); }
+
   // Migrate: create content_snapshots table
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS content_snapshots (
@@ -212,6 +218,51 @@ function runMigrations(db) {
     db.exec('ALTER TABLE content_items ADD COLUMN pinned INTEGER DEFAULT 0');
     console.log('[gateway] DB migrated: added pinned column to content_items');
   } catch { /* already exists */ }
+
+  // Migrate: add owner_actor_id to content_items (Phase 2)
+  try {
+    db.exec('ALTER TABLE content_items ADD COLUMN owner_actor_id TEXT');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_content_items_owner ON content_items(owner_actor_id)');
+    console.log('[gateway] DB migrated: added owner_actor_id to content_items');
+  } catch { /* already exists */ }
+
+  // Backfill owner_actor_id from created_by display name
+  try {
+    db.exec(`UPDATE content_items SET owner_actor_id = (
+      SELECT id FROM actors WHERE display_name = content_items.created_by OR username = content_items.created_by
+      LIMIT 1
+    ) WHERE owner_actor_id IS NULL AND created_by IS NOT NULL`);
+  } catch (e) { console.warn('[gateway] owner_actor_id backfill:', e.message); }
+
+  // Migrate: add anchor columns to comments (Phase 0)
+  try { db.exec('ALTER TABLE comments ADD COLUMN anchor_type TEXT'); } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE comments ADD COLUMN anchor_id TEXT'); } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE comments ADD COLUMN anchor_meta TEXT'); } catch { /* already exists */ }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_comments_anchor ON comments(target_type, target_id, anchor_type, anchor_id)'); } catch { /* already exists */ }
+
+  // Migrate: unify target_id format to 'type:raw_id' for all comments (Phase 0)
+  try {
+    // doc comments: raw UUID (no prefix, no 'doc' start) → 'doc:uuid'
+    db.exec(`UPDATE comments SET target_id = 'doc:' || target_id
+      WHERE target_type = 'doc' AND target_id NOT LIKE 'doc:%' AND target_id NOT LIKE 'doc_%'`);
+    // doc comments: 'doc_xxx' raw new-format ID (no 'doc:' prefix) → 'doc:doc_xxx'
+    db.exec(`UPDATE comments SET target_id = 'doc:' || target_id
+      WHERE target_type = 'doc' AND target_id LIKE 'doc_%' AND target_id NOT LIKE 'doc:%'`);
+    // table comments: raw table ID (no prefix) → 'table:id'
+    db.exec(`UPDATE comments SET target_id = 'table:' || target_id
+      WHERE target_type = 'table' AND target_id NOT LIKE 'table:%'`);
+    // presentation comments: already 'presentation:xxx', no change needed
+    // diagram comments: if any without prefix
+    db.exec(`UPDATE comments SET target_id = 'diagram:' || target_id
+      WHERE target_type = 'diagram' AND target_id NOT LIKE 'diagram:%'`);
+    // Migrate row_id → anchor_id (table row comments)
+    db.exec(`UPDATE comments SET anchor_type = 'row', anchor_id = row_id
+      WHERE row_id IS NOT NULL AND row_id != '' AND anchor_type IS NULL`);
+    console.log('[gateway] DB migrated: unified comments target_id format and anchor columns (Phase 0)');
+  } catch (e) { console.warn('[gateway] Phase 0 comment migration:', e.message); }
+
+  // Migrate: add context_payload column to comments (Phase 3)
+  try { db.exec('ALTER TABLE comments ADD COLUMN context_payload TEXT'); } catch { /* already exists */ }
 
   // Legacy: keep content_comments table creation for backward compat
   try {

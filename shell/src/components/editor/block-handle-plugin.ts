@@ -405,15 +405,23 @@ function buildMenuItems(): BlockMenuItem[] {
         const node = view.state.doc.nodeAt(pos);
         if (!node) return;
         let text = '';
+        let anchorType: string | undefined;
+        let anchorMeta: Record<string, unknown> | undefined;
         const name = node.type.name;
         if (name === 'image') {
           text = node.attrs.alt || node.attrs.title || t('editor.image');
+          anchorType = 'image';
+          anchorMeta = { alt_text: node.attrs.alt || null, image_url: node.attrs.src || null };
         } else if (name === 'table') {
           const cells: string[] = [];
           node.firstChild?.forEach((cell: any) => { cells.push(cell.textContent); });
           text = cells.join(' | ') || t('editor.table');
+          anchorType = 'table';
+          anchorMeta = { preview: text.substring(0, 80) };
         } else if (name === 'mermaid_block') {
           text = t('editor.mermaidDiagram');
+          anchorType = 'mermaid';
+          anchorMeta = { code: node.textContent?.substring(0, 80) || null };
         } else if (name === 'math_block') {
           text = node.textContent || t('editor.mathBlock');
         } else if (name === 'code_block') {
@@ -432,17 +440,24 @@ function buildMenuItems(): BlockMenuItem[] {
           });
           if (imgNode && !hasOtherContent) {
             text = imgNode.attrs.alt || imgNode.attrs.title || t('editor.image');
+            anchorType = 'image';
+            anchorMeta = { alt_text: imgNode.attrs.alt || null, image_url: imgNode.attrs.src || null };
           } else {
             text = node.textContent || '';
           }
+        } else if (name === 'iframe' || name === 'embed' || name === 'diagram_embed') {
+          text = t('editor.diagram') || 'Diagram';
+          anchorType = 'diagram_embed';
+          anchorMeta = { preview: '嵌入流程图' };
         } else {
           text = node.textContent || '';
         }
         if (text.length > 100) text = text.slice(0, 100) + '…';
+        const anchorId = anchorType ? `${anchorType}_${pos}` : undefined;
         // Include block DOM rect for sidebar positioning (selection may not be on the block)
         const blockDom = view.nodeDOM(pos) as HTMLElement | null;
         const blockRect = blockDom?.getBoundingClientRect() || null;
-        window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text, blockRect } }));
+        window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text, blockRect, anchorType, anchorId, anchorMeta } }));
       },
     },
     {
@@ -855,12 +870,9 @@ export function blockHandlePlugin(): Plugin {
     menu.style.left = `${left}px`;
 
     let items = buildMenuItems();
-    // For opaque blocks: table → copy+delete only; image → copy+delete+comment
+    // For opaque blocks: table and image both get copy+delete+comment
     if (isOpaque) {
-      items = items.filter(item => {
-        if (isTable) return item.danger || item.kind === 'copy'; // No comment for tables
-        return item.danger || item.kind === 'copy' || item.kind === 'comment'; // Comment allowed for images
-      });
+      items = items.filter(item => item.danger || item.kind === 'copy' || item.kind === 'comment');
     }
 
     // Determine which block type is currently active

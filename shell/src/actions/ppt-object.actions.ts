@@ -9,6 +9,8 @@ export interface PPTObjectCtx {
   activeObject: any; // fabric.FabricObject
   clipboardRef: React.MutableRefObject<any>;
   setShowComments: (v: boolean) => void;
+  handleSlideComment?: (type: 'slide' | 'element', obj: any | null) => void;
+  currentSlideIndex?: number;
 }
 
 export const pptObjectActions: ActionDef<PPTObjectCtx>[] = [
@@ -143,7 +145,13 @@ export const pptObjectActions: ActionDef<PPTObjectCtx>[] = [
     label: t => t('actions.comment'),
     icon: MessageSquare,
     group: 'other',
-    execute: ctx => ctx.setShowComments(true),
+    execute: ctx => {
+      if (ctx.handleSlideComment) {
+        ctx.handleSlideComment('element', ctx.activeObject);
+      } else {
+        ctx.setShowComments(true);
+      }
+    },
   },
 ];
 
@@ -152,6 +160,8 @@ export interface PPTCanvasCtx {
   clipboardRef: React.MutableRefObject<any>;
   setShowComments: (v: boolean) => void;
   openBackground: () => void;
+  handleSlideComment?: (type: 'slide' | 'element', obj: any | null) => void;
+  currentSlideIndex?: number;
 }
 
 export const pptCanvasActions: ActionDef<PPTCanvasCtx>[] = [
@@ -186,6 +196,12 @@ export const pptCanvasActions: ActionDef<PPTCanvasCtx>[] = [
     label: t => t('actions.comment'),
     icon: MessageSquare,
     group: 'other',
-    execute: ctx => ctx.setShowComments(true),
+    execute: ctx => {
+      if (ctx.handleSlideComment) {
+        ctx.handleSlideComment('slide', null);
+      } else {
+        ctx.setShowComments(true);
+      }
+    },
   },
 ];

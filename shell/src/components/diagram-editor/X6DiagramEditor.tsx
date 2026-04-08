@@ -65,6 +65,7 @@ export interface DiagramEditorHandle {
   save: () => Promise<void>;
   flushSave: () => Promise<void> | void;
   restoreFromSnapshot: (data: any) => Promise<void>;
+  scrollToCell: (cellId: string) => void;
 }
 
 export interface DiagramSaveStatus {
@@ -96,6 +97,10 @@ interface X6DiagramEditorProps {
   docListVisible?: boolean;
   /** Toggle doc list visibility */
   onToggleDocList?: () => void;
+  /** Set of cell IDs that have at least one unresolved comment */
+  commentedCellIds?: Set<string>;
+  /** Called when user clicks a cell that has comments */
+  onCellCommentClick?: (cellId: string, cellType: string) => void;
 }
 
 let nodeIdCounter = 0;
@@ -377,6 +382,7 @@ function X6DiagramEditorInner({
   diagramId, editorRef, onSaveStatusChange, onDeleted, embedded,
   showComments: showCommentsProp, showHistory: showHistoryProp, onClosePanel,
   breadcrumb, onBack, docListVisible, onToggleDocList,
+  commentedCellIds, onCellCommentClick,
 }: X6DiagramEditorProps) {
   const { t } = useT();
 
@@ -1228,6 +1234,27 @@ function X6DiagramEditorInner({
     return () => { graph.off('blank:click', handleBlankClick); };
   }, [graph, activeTool]);
 
+  // ─── Cell click → open comments if cell has comments ──
+  useEffect(() => {
+    if (!graph || !onCellCommentClick || !commentedCellIds) return;
+    const handleNodeClick = ({ node }: { node: any }) => {
+      if (commentedCellIds.has(node.id)) {
+        onCellCommentClick(node.id, 'node');
+      }
+    };
+    const handleEdgeClick = ({ edge }: { edge: any }) => {
+      if (commentedCellIds.has(edge.id)) {
+        onCellCommentClick(edge.id, 'edge');
+      }
+    };
+    graph.on('node:click', handleNodeClick);
+    graph.on('edge:click', handleEdgeClick);
+    return () => {
+      graph.off('node:click', handleNodeClick);
+      graph.off('edge:click', handleEdgeClick);
+    };
+  }, [graph, commentedCellIds, onCellCommentClick]);
+
   // ─── Disable rubberband selection when a creation tool is active ──
   // (otherwise drag-to-create conflicts with rubberband)
   useEffect(() => {
@@ -1642,6 +1669,11 @@ function X6DiagramEditorInner({
         queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
       }
     },
+    scrollToCell: (cellId: string) => {
+      if (!graph) return;
+      const cell = graph.getCellById(cellId);
+      if (cell) graph.centerCell(cell);
+    },
   }), [graph, handleExport, handleDelete, save, flushSave, diagramId, queryClient]);
 
   // ─── Migrate data ──
@@ -1897,7 +1929,7 @@ function X6DiagramEditorInner({
               onClose={() => setShowComments(false)}
             />
           </div>
-          <BottomSheet open={true} onClose={() => setShowComments(false)} title={t('content.comments')} initialHeight="full">
+          <BottomSheet open={true} onClose={() => setShowComments(false)} initialHeight="full">
             <CommentPanel
               targetType="diagram"
               targetId={`diagram:${diagramId}`}

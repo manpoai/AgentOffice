@@ -43,19 +43,6 @@ export interface Revision {
   createdBy: { id: string; name: string };
 }
 
-export interface Comment {
-  id: string;
-  documentId: string;
-  parentCommentId: string | null;
-  data: any; // ProseMirror JSON
-  createdById: string;
-  createdBy: { id: string; name: string };
-  resolvedById: string | null;
-  resolvedBy?: { id: string; name: string } | null;
-  resolvedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
 
 // ── Document CRUD ──
 
@@ -106,44 +93,6 @@ export async function restoreRevision(documentId: string, revisionId: string): P
   });
 }
 
-// ── Comments ──
-
-export async function listComments(documentId: string): Promise<Comment[]> {
-  const data = await docFetch<{ data: Comment[] }>(`/documents/${documentId}/comments`);
-  return data.data;
-}
-
-export async function createComment(documentId: string, data: any, parentCommentId?: string): Promise<Comment> {
-  const body: Record<string, unknown> = { data };
-  if (parentCommentId) body.parent_comment_id = parentCommentId;
-  const res = await docFetch<{ data: Comment }>(`/documents/${documentId}/comments`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.data;
-}
-
-export async function updateComment(id: string, data: any): Promise<void> {
-  await docFetch(`/documents/comments/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data }),
-  });
-}
-
-export async function deleteComment(id: string): Promise<void> {
-  await docFetch(`/documents/comments/${id}`, { method: 'DELETE' });
-}
-
-export async function resolveComment(id: string): Promise<void> {
-  await docFetch(`/documents/comments/${id}/resolve`, { method: 'POST' });
-}
-
-export async function unresolveComment(id: string): Promise<void> {
-  await docFetch(`/documents/comments/${id}/unresolve`, { method: 'POST' });
-}
-
 // ── File Upload ──
 
 export async function uploadFile(file: File, _documentId?: string): Promise<{ url: string; name: string; size: number }> {
@@ -191,17 +140,4 @@ export function textToProseMirror(text: string): any {
   return { type: 'doc', content };
 }
 
-/** Extract plain text from ProseMirror JSON */
-export function proseMirrorToText(pmData: any): string {
-  if (!pmData) return '';
-  const extract = (node: any): string => {
-    if (node.text) return node.text;
-    if (node.type === 'image') return `![${node.attrs?.alt || ''}](${node.attrs?.src || ''})`;
-    if (node.content) return node.content.map(extract).join('');
-    return '';
-  };
-  if (pmData.content) {
-    return pmData.content.map((block: any) => extract(block)).join('\n');
-  }
-  return extract(pmData);
-}
+

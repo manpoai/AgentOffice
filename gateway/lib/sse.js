@@ -4,6 +4,16 @@
 import crypto from 'crypto';
 
 export const sseClients = new Map(); // agent_id -> Set<res>
+export const humanClients = new Map(); // actor_id -> Set<res>
+
+export function pushHumanEvent(actorId, event) {
+  const clients = humanClients.get(actorId);
+  if (!clients) return;
+  const data = `data: ${JSON.stringify(event)}\n\n`;
+  for (const res of clients) {
+    res.write(data);
+  }
+}
 
 export function pushEvent(agentId, event) {
   const clients = sseClients.get(agentId);

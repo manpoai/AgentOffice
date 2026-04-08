@@ -7,10 +7,12 @@
  */
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
+import { getT } from '@/lib/i18n';
 
 export interface CommentQuote {
   id: string;
-  text: string; // the quoted text from the comment
+  text: string;         // the quoted text (text-range) or anchor preview (block)
+  anchorType?: string;  // anchor type — if block type, use findBlockByType
 }
 
 const commentHighlightKey = new PluginKey('commentHighlight');
@@ -118,12 +120,59 @@ function findBlockForQuote(doc: any, quoteText: string): { pos: number; end: num
   return found;
 }
 
+const BLOCK_ANCHOR_TYPES = new Set(['image', 'table', 'mermaid', 'diagram_embed']);
+
+/**
+ * Find the first block node matching an anchor type.
+ */
+function findBlockByType(doc: any, anchorType: string): { pos: number; end: number } | null {
+  const typeMap: Record<string, string> = {
+    'image': 'image',
+    'table': 'table',
+    'mermaid': 'mermaid_block',
+    'diagram_embed': 'diagram_embed',
+  };
+  const pmType = typeMap[anchorType];
+  if (!pmType) return null;
+  let result: { pos: number; end: number } | null = null;
+  doc.descendants((node: any, pos: number) => {
+    if (result) return false;
+    if (node.type.name === pmType) {
+      result = { pos, end: pos + node.nodeSize };
+      return false;
+    }
+  });
+  return result;
+}
+
 function buildDecorations(doc: any, quotes: CommentQuote[]): DecorationSet {
   const decorations: Decoration[] = [];
 
   for (const quote of quotes) {
+    // Block-type anchor: use structural matching first
+    if (quote.anchorType && BLOCK_ANCHOR_TYPES.has(quote.anchorType)) {
+      // Try preview text match (more precise) first, then fallback to type-based
+      let block: { pos: number; end: number } | null = null;
+      if (quote.text) {
+        block = findBlockForQuote(doc, quote.text);
+      }
+      if (!block) {
+        block = findBlockByType(doc, quote.anchorType);
+      }
+      if (block) {
+        decorations.push(
+          Decoration.node(block.pos, block.end, {
+            class: 'comment-marker comment-marker-block',
+            id: `comment-${quote.id}`,
+            'data-comment-id': quote.id,
+          })
+        );
+      }
+      continue;
+    }
+
+    // text-range anchor: inline text match
     const matches = findTextInDoc(doc, quote.text);
-    // Use only the first match (most likely the correct one)
     if (matches.length > 0) {
       const { from, to } = matches[0];
       decorations.push(
@@ -134,7 +183,7 @@ function buildDecorations(doc: any, quotes: CommentQuote[]): DecorationSet {
         })
       );
     } else {
-      // No inline text match — try block-level matching
+      // Fallback: try block-level matching by text
       const block = findBlockForQuote(doc, quote.text);
       if (block) {
         decorations.push(

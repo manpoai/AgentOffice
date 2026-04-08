@@ -3,7 +3,7 @@
  */
 import crypto from 'crypto';
 
-export default function eventsRoutes(app, { db, authenticateAny, authenticateAgent, genId, pushEvent, deliverWebhook, sseClients, pollNcComments }) {
+export default function eventsRoutes(app, { db, authenticateAny, authenticateAgent, genId, pushEvent, deliverWebhook, sseClients, humanClients, pollNcComments }) {
 
   // ─── Catchup ─────────────────────────────────────
   app.get('/api/me/catchup', authenticateAgent, (req, res) => {
@@ -47,6 +47,28 @@ export default function eventsRoutes(app, { db, authenticateAny, authenticateAge
     req.on('close', () => {
       clearInterval(heartbeat);
       sseClients.get(agentId)?.delete(res);
+    });
+  });
+
+  // ─── Human SSE Notification Stream ──────────────
+  app.get('/api/notifications/stream', authenticateAny, (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const actorId = req.actor?.id;
+    if (!actorId) { res.end(); return; }
+
+    if (!humanClients.has(actorId)) humanClients.set(actorId, new Set());
+    humanClients.get(actorId).add(res);
+
+    const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), 30000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      const set = humanClients.get(actorId);
+      if (set) { set.delete(res); if (set.size === 0) humanClients.delete(actorId); }
     });
   });
 

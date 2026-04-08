@@ -121,6 +121,7 @@
     "saved": "저장됨",
     "unsaved": "저장되지 않음",
     "saveFailed": "저장 실패",
+    "retry": "다시 시도",
     "editorPlaceholder": "/ 를 입력하여 명령 메뉴를 열기...",
     "addRow": "행 추가",
     "deleteRow": "행 삭제",
@@ -185,7 +186,13 @@
     "noAgents": "Agent 없음",
     "registerHint": "Agent는 자체 등록 API로 등록",
     "sendMessage": "메시지 보내기",
-    "assignTask": "작업 할당"
+    "assignTask": "작업 할당",
+    "editAgent": "Agent 편집",
+    "changeAvatar": "아바타 변경",
+    "platform": "플랫폼",
+    "displayName": "표시 이름",
+    "save": "저장",
+    "cancel": "취소"
   },
   "editor": {
     "heading1": "제목 1",
@@ -315,7 +322,31 @@
     "deleteFailed": "댓글 삭제에 실패했습니다",
     "resolveFailed": "댓글 해결 처리에 실패했습니다",
     "unresolveFailed": "댓글 다시 열기에 실패했습니다",
-    "replyPlaceholder": "답글을 입력..."
+    "replyPlaceholder": "답글을 입력...",
+    "replyingTo": "{{name}}에게 답글",
+    "repliedTo": "{{name}}에게 답글 달았습니다",
+    "mentionUser": "사용자 멘션",
+    "send": "보내기",
+    "threadReply": "이 댓글에 답글",
+    "quotedContent": "인용된 콘텐츠",
+    "agent": "에이전트",
+    "commentOnRow": "{{row}}행에 댓글",
+    "commentOnDoc": "문서에 댓글",
+    "newComments": "새 댓글이 있습니다",
+    "selectAgent": "에이전트 선택",
+    "noAgents": "사용 가능한 에이전트가 없습니다",
+    "anchorTypes": {
+      "text-range": "텍스트 선택",
+      "image": "이미지",
+      "table": "테이블",
+      "diagram_embed": "다이어그램",
+      "mermaid": "Mermaid 다이어그램",
+      "node": "노드",
+      "edge": "연결",
+      "slide": "슬라이드",
+      "element": "요소",
+      "row": "행"
+    }
   },
   "table": {
     "alignLeft": "왼쪽 정렬",
@@ -728,7 +759,8 @@
       "solidLine": "실선",
       "dashedLine": "파선",
       "dottedLine": "점선",
-      "none": "없음"
+      "none": "없음",
+      "comment": "댓글"
     },
     "docs": {
       "highlight": "강조",
@@ -984,7 +1016,14 @@
     "noNotifications": "알림이 없습니다",
     "messages": "메시지",
     "markAllRead": "모두 읽음으로 표시",
-    "noMessages": "메시지가 없습니다"
+    "noMessages": "메시지가 없습니다",
+    "types": {
+      "comment_on_content": "콘텐츠에 댓글",
+      "comment_reply": "댓글 답글",
+      "mention": "멘션",
+      "comment_resolved": "댓글 해결됨",
+      "comment_unresolved": "댓글 다시 열림"
+    }
   },
   "search": {
     "find": "찾기...",

@@ -24,6 +24,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/utils/time';
 import { useT } from '@/lib/i18n';
 import * as br from '@/lib/api/baserow';
 import * as gw from '@/lib/api/gateway';
@@ -288,6 +289,11 @@ interface TableEditorProps {
   docListVisible?: boolean;
   onToggleDocList?: () => void;
   onNavigate?: (rawId: string) => void;
+  focusCommentId?: string;
+  showComments: boolean;
+  onShowComments: () => void;
+  onCloseComments: () => void;
+  onToggleComments: () => void;
 }
 
 // Error Boundary to prevent white-screen crashes
@@ -327,7 +333,7 @@ export function TableEditor(props: TableEditorProps) {
   );
 }
 
-function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate, onCopyLink, docListVisible, onToggleDocList }: TableEditorProps) {
+function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate, onCopyLink, docListVisible, onToggleDocList, focusCommentId, showComments, onShowComments, onCloseComments, onToggleComments }: TableEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
   const [mobileEditing, setMobileEditing] = useState(false);
@@ -370,7 +376,6 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const [newColUserNotify, setNewColUserNotify] = useState(false);
   // Title editing now handled by ContentTopBar
   const [showTableMenu, setShowTableMenu] = useState(false);
-  const [showTableComments, setShowTableComments] = useState(false);
   const [selectDropdown, setSelectDropdown] = useState<{ rowId: number; col: string; options: br.BRSelectOption[]; multi: boolean } | null>(null);
   const [selectInput, setSelectInput] = useState('');
   // View state
@@ -591,13 +596,13 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
     return set;
   }, [commentedRowsData]);
 
-  // All tables (for Links creation) — from content-items cache
+  // Content items — for table metadata (updated_by) and Links creation
   const { data: allContentItems } = useQuery({
     queryKey: ['content-items'],
     queryFn: gw.listContentItems,
-    enabled: showAddCol,
     staleTime: 30_000,
   });
+  const tableContentItem = allContentItems?.find((i: any) => i.raw_id === tableId && i.type === 'table');
   const allTables = useMemo(() =>
     allContentItems?.filter(i => i.type === 'table').map(i => ({ id: i.raw_id, title: i.title, created_at: i.created_at || undefined })) as br.BRTable[] | undefined,
     [allContentItems]
@@ -649,6 +654,16 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const editableCols = displayCols.filter(c => !c.primary_key && !READONLY_TYPES.has(c.type));
   const rows = rowsData?.list || [];
   const totalRows = rowsData?.pageInfo?.totalRows || 0;
+
+  const navigateToAnchor = useCallback((anchor: { type: string; id: string; meta?: Record<string, unknown> }) => {
+    if (anchor.type === 'row') {
+      const rowId = Number(anchor.id);
+      if (!isNaN(rowId)) {
+        const idx = rows.findIndex(r => (r.Id as number) === rowId);
+        if (idx >= 0) { setExpandedRowIdx(idx); setExpandWithComments(true); }
+      }
+    }
+  }, [rows]);
   const totalPages = Math.ceil(totalRows / pageSize) || 1;
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['nc-rows', tableId] });
@@ -1865,18 +1880,16 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             }
           }}
           metaLine={
-            <div className="text-[11px] text-muted-foreground/50 flex items-center gap-2">
-              <span>{totalRows} {t('dataTable.rows')}</span>
-              {meta?.updated_at && (
-                <>
-                  <span>·</span>
-                  <span>{t('dataTable.lastEditedAt')} {new Date(meta.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                </>
-              )}
-            </div>
+            <button
+              onClick={() => setShowHistory(true)}
+              className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+            >
+              {t('content.lastModified')}: {formatRelativeTime(tableContentItem?.updated_at || meta?.updated_at)}
+              {tableContentItem?.updated_by && <span> {t('content.by')} {tableContentItem.updated_by}</span>}
+            </button>
           }
           onHistory={() => setShowHistory(true)}
-          onComments={() => setShowTableComments(v => !v)}
+          onComments={() => onToggleComments()}
           menuItems={buildContentTopBarCommonMenuItems(t, {
             id: tableId,
             type: 'table',
@@ -1902,7 +1915,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
               }
             },
             showHistory: () => setShowHistory(true),
-            showComments: () => setShowTableComments(v => !v),
+            showComments: () => onToggleComments(),
             search: () => {},
           })}
           actions={renderFixedTopBarActions(
@@ -1931,12 +1944,12 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                 }
               },
               showHistory: () => setShowHistory(true),
-              showComments: () => setShowTableComments(v => !v),
+              showComments: () => onToggleComments(),
               search: () => setShowSearch(v => !v),
               showHistoryActive: showHistory,
-              showCommentsActive: showTableComments,
+              showCommentsActive: showComments,
             }),
-            { t, ctx: { showHistoryActive: showHistory, showCommentsActive: showTableComments } as any }
+            { t, ctx: { showHistoryActive: showHistory, showCommentsActive: showComments } as any }
           )}
         />
       </div>
@@ -4305,21 +4318,25 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       </div>{/* end left column */}
 
       {/* Sidebar — full height, independent column */}
-      {showTableComments && !showHistory && (
+      {showComments && !showHistory && (
         <>
           <div className="w-80 border-l border-border bg-card hidden md:flex flex-col shrink-0 overflow-hidden h-full">
             <CommentPanel
               targetType="table"
-              targetId={tableId}
-              onClose={() => setShowTableComments(false)}
+              targetId={`table:${tableId}`}
+              onClose={() => onCloseComments()}
+              focusCommentId={focusCommentId}
+              onNavigateToAnchor={navigateToAnchor}
             />
           </div>
           {isMobile && (
-            <BottomSheet open={showTableComments} onClose={() => setShowTableComments(false)} title={t('content.comments')} initialHeight="full">
+            <BottomSheet open={showComments} onClose={() => onCloseComments()} initialHeight="full">
               <CommentPanel
                 targetType="table"
-                targetId={tableId}
-                onClose={() => setShowTableComments(false)}
+                targetId={`table:${tableId}`}
+                onClose={() => onCloseComments()}
+                focusCommentId={focusCommentId}
+                onNavigateToAnchor={navigateToAnchor}
               />
             </BottomSheet>
           )}

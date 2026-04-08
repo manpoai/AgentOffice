@@ -121,6 +121,7 @@
     "saved": "保存済み",
     "unsaved": "未保存",
     "saveFailed": "保存失敗",
+    "retry": "再試行",
     "editorPlaceholder": "/ を入力してコマンドメニューを開く...",
     "addRow": "行を追加",
     "deleteRow": "行を削除",
@@ -185,7 +186,13 @@
     "noAgents": "Agentなし",
     "registerHint": "Agentは自己登録APIで接続",
     "sendMessage": "メッセージを送る",
-    "assignTask": "タスクを割り当て"
+    "assignTask": "タスクを割り当て",
+    "editAgent": "Agentを編集",
+    "changeAvatar": "アバターを変更",
+    "platform": "プラットフォーム",
+    "displayName": "表示名",
+    "save": "保存",
+    "cancel": "キャンセル"
   },
   "editor": {
     "heading1": "見出し 1",
@@ -315,7 +322,31 @@
     "deleteFailed": "コメントの削除に失敗しました",
     "resolveFailed": "コメントの解決に失敗しました",
     "unresolveFailed": "コメントの再オープンに失敗しました",
-    "replyPlaceholder": "返信を入力..."
+    "replyPlaceholder": "返信を入力...",
+    "replyingTo": "{{name}} に返信",
+    "repliedTo": "{{name}} に返信しました",
+    "mentionUser": "ユーザーをメンション",
+    "send": "送信",
+    "threadReply": "このコメントに返信",
+    "quotedContent": "引用コンテンツ",
+    "agent": "エージェント",
+    "commentOnRow": "{{row}} 行目にコメントしました",
+    "commentOnDoc": "ドキュメントにコメントしました",
+    "newComments": "新しいコメントがあります",
+    "selectAgent": "エージェントを選択",
+    "noAgents": "利用可能なエージェントがありません",
+    "anchorTypes": {
+      "text-range": "テキスト選択",
+      "image": "画像",
+      "table": "テーブル",
+      "diagram_embed": "フローチャート",
+      "mermaid": "Mermaidダイアグラム",
+      "node": "ノード",
+      "edge": "接続",
+      "slide": "スライド",
+      "element": "要素",
+      "row": "行"
+    }
   },
   "table": {
     "alignLeft": "左揃え",
@@ -728,7 +759,8 @@
       "solidLine": "実線",
       "dashedLine": "破線",
       "dottedLine": "点線",
-      "none": "なし"
+      "none": "なし",
+      "comment": "コメント"
     },
     "docs": {
       "highlight": "ハイライト",
@@ -984,7 +1016,14 @@
     "noNotifications": "通知はありません",
     "messages": "メッセージ",
     "markAllRead": "すべて既読にする",
-    "noMessages": "メッセージはありません"
+    "noMessages": "メッセージはありません",
+    "types": {
+      "comment_on_content": "コンテンツへのコメント",
+      "comment_reply": "コメントへの返信",
+      "mention": "メンション",
+      "comment_resolved": "コメントが解決されました",
+      "comment_unresolved": "コメントが再開されました"
+    }
   },
   "search": {
     "find": "検索...",

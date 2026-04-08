@@ -15,6 +15,11 @@ import { BottomSheet } from '@/components/shared/BottomSheet';
 const NOTIF_ICON: Record<string, React.ReactNode> = {
   doc_update: <FileText className="h-4 w-4" />,
   comment: <MessageSquare className="h-4 w-4" />,
+  comment_reply: <MessageSquare className="h-4 w-4" />,
+  comment_on_content: <MessageSquare className="h-4 w-4" />,
+  mention: <MessageSquare className="h-4 w-4" />,
+  comment_resolved: <Check className="h-4 w-4" />,
+  comment_unresolved: <MessageSquare className="h-4 w-4" />,
   table_update: <Table2 className="h-4 w-4" />,
   agent: <Bot className="h-4 w-4" />,
 };
@@ -34,14 +39,12 @@ export function NotificationPanel({ open, onClose, anchorRect }: NotificationPan
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => gw.getNotifications(undefined, 50),
-    refetchInterval: 30_000,
     enabled: open,
   });
 
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['notifications-unread-count'],
     queryFn: gw.getUnreadCount,
-    refetchInterval: 30_000,
   });
 
   const invalidate = useCallback(() => {
@@ -65,13 +68,27 @@ export function NotificationPanel({ open, onClose, anchorRect }: NotificationPan
         invalidate();
       }
       if (notif.link) {
-        router.push(notif.link);
+        const linkParams = new URLSearchParams(notif.link.split('?')[1] || '');
+        const targetId = linkParams.get('id');
+        const commentId = linkParams.get('comment_id');
+        const currentId = new URLSearchParams(window.location.search).get('id');
+
+        if (window.location.pathname === '/content' && targetId) {
+          // Already on content page — navigate in-app via custom event
+          window.dispatchEvent(new CustomEvent('notification-navigate', {
+            detail: { targetId, commentId },
+          }));
+        } else if (isMobile) {
+          router.push(notif.link);
+        } else {
+          window.open(notif.link, '_blank');
+        }
       }
       onClose();
     } catch (e) {
       showError(t('errors.notificationClickFailed'), e);
     }
-  }, [router, onClose, invalidate]);
+  }, [router, onClose, invalidate, isMobile]);
 
   if (!open) return null;
 
@@ -214,7 +231,6 @@ export function NotificationBellBadge() {
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['notifications-unread-count'],
     queryFn: gw.getUnreadCount,
-    refetchInterval: 30_000,
   });
 
   if (unreadCount === 0) return null;

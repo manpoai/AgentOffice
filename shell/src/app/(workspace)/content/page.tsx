@@ -81,6 +81,7 @@ type ContentNode = {
   updatedAt?: string;
   parentId: string | null;
   pinned?: boolean;
+  unresolvedCommentCount?: number;
 };
 
 type Selection = { type: 'doc'; id: string } | { type: 'table'; id: string } | { type: 'presentation'; id: string } | { type: 'diagram'; id: string } | null;
@@ -147,15 +148,20 @@ function saveTreeStateToGateway(state: TreeState) {
 // ═══════════════════════════════════════════════════
 
 /** Read ?id=doc:xxx or ?id=table:xxx from the current URL */
+function parseContentId(id: string): Selection | null {
+  if (id.startsWith('doc:')) return { type: 'doc', id: id.slice(4) };
+  if (id.startsWith('table:')) return { type: 'table', id: id.slice(6) };
+  if (id.startsWith('presentation:')) return { type: 'presentation', id: id.slice(13) };
+  if (id.startsWith('diagram:')) return { type: 'diagram', id: id.slice(8) };
+  return null;
+}
+
 function selectionFromURL(): Selection | null {
   try {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('id');
     if (!id) return null;
-    if (id.startsWith('doc:')) return { type: 'doc', id: id.slice(4) };
-    if (id.startsWith('table:')) return { type: 'table', id: id.slice(6) };
-    if (id.startsWith('presentation:')) return { type: 'presentation', id: id.slice(13) };
-    if (id.startsWith('diagram:')) return { type: 'diagram', id: id.slice(8) };
+    return parseContentId(id);
   } catch { /* SSR or invalid */ }
   return null;
 }
@@ -168,6 +174,10 @@ function syncSelectionToURL(sel: Selection | null, replace = false) {
   } else {
     url.searchParams.delete('id');
   }
+  // Clear comment-related params when navigating to a different file
+  url.searchParams.delete('comment_id');
+  url.searchParams.delete('anchor_type');
+  url.searchParams.delete('anchor_id');
   const newUrl = url.toString();
   if (replace || newUrl === window.location.href) {
     window.history.replaceState(null, '', newUrl);
@@ -218,6 +228,12 @@ export default function ContentPage() {
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [hydrated, setHydrated] = useState(false);
   const [showMobileNotifications, setShowMobileNotifications] = useState(false);
+  const [focusCommentId, setFocusCommentId] = useState<string | undefined>(undefined);
+  const [showComments, setShowComments] = useState(false);
+  useEffect(() => { if (focusCommentId) setShowComments(true); }, [focusCommentId]);
+  const onShowComments = useCallback(() => setShowComments(true), []);
+  const onCloseComments = useCallback(() => setShowComments(false), []);
+  const onToggleComments = useCallback(() => setShowComments(v => !v), []);
   const queryClient = useQueryClient();
 
   const handleSidebarWidthChange = useCallback((width: number) => {
@@ -245,6 +261,13 @@ export default function ContentPage() {
         if (saved) { setSelection(JSON.parse(saved)); setMobileView('detail'); }
       } catch { /* ignore */ }
     }
+    // Read comment_id and anchor params from URL for direct link / new tab opens
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const cid = urlParams.get('comment_id');
+      if (cid) setFocusCommentId(cid);
+    } catch { /* ignore */ }
+
     setExpandedIds(new Set(loadExpandedState()));
     setTreeState(loadTreeState());
     const savedCollapsed = localStorage.getItem('asuite-sidebar-collapsed');
@@ -279,6 +302,40 @@ export default function ContentPage() {
       window.removeEventListener('popstate', handlePopState);
       window.removeEventListener('toggle-sidebar', handleToggleSidebar);
     };
+  }, []);
+
+  // Listen for focus-comment events from notification panel (same document, no reload)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { commentId } = (e as CustomEvent).detail;
+      if (commentId) setFocusCommentId(commentId);
+    };
+    window.addEventListener('focus-comment', handler);
+    return () => window.removeEventListener('focus-comment', handler);
+  }, []);
+
+  // Listen for notification-navigate events (in-app navigation from notification panel)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { targetId, commentId } = (e as CustomEvent).detail;
+      if (targetId) {
+        const sel = parseContentId(targetId);
+        if (sel) {
+          setSelection(sel);
+          syncSelectionToURL(sel);
+          setMobileView('detail');
+        }
+      }
+      // Reset comment state, then set new focusCommentId if present
+      setFocusCommentId(undefined);
+      setShowComments(false);
+      if (commentId) {
+        // Use setTimeout to ensure state is cleared first, then set new focus
+        setTimeout(() => setFocusCommentId(commentId), 0);
+      }
+    };
+    window.addEventListener('notification-navigate', handler);
+    return () => window.removeEventListener('notification-navigate', handler);
   }, []);
 
   // On mount: fetch tree state from Gateway (migration from localStorage)
@@ -348,6 +405,7 @@ export default function ContentPage() {
         updatedAt: item.updated_at || undefined,
         parentId: item.parent_id,
         pinned: !!item.pinned,
+        unresolvedCommentCount: item.unresolved_comment_count || 0,
       });
     }
     return map;
@@ -540,6 +598,9 @@ export default function ContentPage() {
     sessionStorage.setItem('asuite-content-selection', JSON.stringify(sel));
     syncSelectionToURL(sel);
     setMobileView('detail');
+    // Clear comment state when switching files
+    setShowComments(false);
+    setFocusCommentId(undefined);
     // Auto-expand selected item's children
     const children = childrenMap.get(nodeId);
     if (children && children.length > 0) {
@@ -1294,6 +1355,11 @@ export default function ContentPage() {
             onNavigate={navigateToBreadcrumb}
             docListVisible={docListVisible}
             onToggleDocList={() => setDocListVisible(v => !v)}
+            focusCommentId={focusCommentId}
+            showComments={showComments}
+            onShowComments={onShowComments}
+            onCloseComments={onCloseComments}
+            onToggleComments={onToggleComments}
           />
         ) : selectedTableId ? (
           <TableEditor
@@ -1320,6 +1386,11 @@ export default function ContentPage() {
             docListVisible={docListVisible}
             onToggleDocList={() => setDocListVisible(v => !v)}
             onNavigate={navigateToBreadcrumb}
+            focusCommentId={focusCommentId}
+            showComments={showComments}
+            onShowComments={onShowComments}
+            onCloseComments={onCloseComments}
+            onToggleComments={onToggleComments}
           />
         ) : selectedPresentationId ? (
           <PresentationEditor
@@ -1346,6 +1417,11 @@ export default function ContentPage() {
             docListVisible={docListVisible}
             onToggleDocList={() => setDocListVisible(v => !v)}
             onNavigate={navigateToBreadcrumb}
+            focusCommentId={focusCommentId}
+            showComments={showComments}
+            onShowComments={onShowComments}
+            onCloseComments={onCloseComments}
+            onToggleComments={onToggleComments}
           />
         ) : selectedDiagramId ? (
           <ContentDiagramView
@@ -1372,6 +1448,11 @@ export default function ContentPage() {
             docListVisible={docListVisible}
             onToggleDocList={() => setDocListVisible(v => !v)}
             onNavigate={navigateToBreadcrumb}
+            focusCommentId={focusCommentId}
+            showComments={showComments}
+            onShowComments={onShowComments}
+            onCloseComments={onCloseComments}
+            onToggleComments={onToggleComments}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2 bg-card md:rounded-lg md:shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] md:overflow-hidden">

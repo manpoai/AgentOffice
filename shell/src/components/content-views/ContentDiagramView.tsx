@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, Clock, MessageSquare as MessageSquareIcon, Download, Link2, Pin, ExternalLink, AtSign, Share2, Trash2 } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
@@ -25,7 +25,7 @@ const DiagramEditor = dynamic(
   { ssr: false, loading: () => <EditorSkeleton /> }
 );
 
-export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, onCopyLink, docListVisible, onToggleDocList, onNavigate }: {
+export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, onCopyLink, docListVisible, onToggleDocList, onNavigate, focusCommentId, showComments, onShowComments, onCloseComments, onToggleComments }: {
   diagramId: string;
   breadcrumb: { id: string; title: string }[];
   onBack: () => void;
@@ -34,14 +34,73 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
   docListVisible: boolean;
   onToggleDocList: () => void;
   onNavigate?: (id: string) => void;
+  focusCommentId?: string;
+  showComments: boolean;
+  onShowComments: () => void;
+  onCloseComments: () => void;
+  onToggleComments: () => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const editorRef = useRef<DiagramEditorHandle>(null);
   const [saveStatus, setSaveStatus] = useState<DiagramSaveStatus>({ saving: false, lastSaved: null });
-  const [showComments, setShowComments] = useState(false);
+  const [focusAnchorState, setFocusAnchorState] = useState<{ type: string; id: string } | null>(null);
+
+  const { data: diagramComments = [] } = useQuery({
+    queryKey: ['comments', 'diagram', `diagram:${diagramId}`, undefined],
+    queryFn: () => gw.listContentComments(`diagram:${diagramId}`),
+    staleTime: 5_000,
+  });
+  const commentedCellIds = useMemo(() => {
+    const ids = new Set<string>();
+    diagramComments.forEach((c: any) => {
+      const anchor = c.context_payload?.anchor;
+      if (anchor && (anchor.type === 'node' || anchor.type === 'edge') && !c.resolved_at) {
+        ids.add(anchor.id);
+      }
+    });
+    return ids;
+  }, [diagramComments]);
+
+  const navigateToAnchor = useCallback((anchor: { type: string; id: string; meta?: Record<string, unknown> }) => {
+    if (anchor.type === 'node' || anchor.type === 'edge') {
+      editorRef.current?.scrollToCell?.(anchor.id);
+    }
+  }, []);
+  const [commentAnchor, setCommentAnchor] = useState<{ type: string; id: string; meta?: Record<string, unknown> } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.cellId && detail?.cellType) {
+        if (detail.cellType === 'node') {
+          setCommentAnchor({
+            type: 'node',
+            id: detail.cellId,
+            meta: { node_label: detail.label || '' },
+          });
+        } else if (detail.cellType === 'edge') {
+          setCommentAnchor({
+            type: 'edge',
+            id: detail.cellId,
+            meta: {
+              edge_label: detail.label || '',
+              source_node_id: detail.source_node_id || null,
+              target_node_id: detail.target_node_id || null,
+            },
+          });
+        }
+      } else {
+        setCommentAnchor(null);
+      }
+      onShowComments();
+      setShowHistory(false);
+    };
+    window.addEventListener('diagram:open-comments', handler);
+    return () => window.removeEventListener('diagram:open-comments', handler);
+  }, []);
   const [title, setTitle] = useState('');
 
   // Get title from content items
@@ -97,15 +156,15 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
             statusText={saveStatus.saving ? t('content.saving') : saveStatus.lastSaved ? `${t('content.saved')} ${formatRelativeTime(saveStatus.lastSaved)}` : ''}
             metaLine={
               <button
-                onClick={() => { setShowHistory(true); setShowComments(false); }}
+                onClick={() => { setShowHistory(true); onCloseComments(); }}
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
               >
                 {t('content.lastModified')}: {formatRelativeTime(diagramItem?.updated_at || diagramItem?.created_at)}
                 {diagramItem?.updated_by && <span> {t('content.by')} {diagramItem.updated_by}</span>}
               </button>
             }
-            onHistory={() => { setShowHistory(true); setShowComments(false); }}
-            onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
+            onHistory={() => { setShowHistory(true); onCloseComments(); }}
+            onComments={() => { onToggleComments(); setShowHistory(false); }}
             menuItems={[
               ...buildContentTopBarCommonMenuItems(t, {
                 id: diagramId,
@@ -120,8 +179,8 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 downloadItem: () => editorRef.current?.exportPNG(),
                 shareItem: () => {},
                 copyLink: () => onCopyLink(),
-                showHistory: () => { setShowHistory(true); setShowComments(false); },
-                showComments: () => { setShowComments(true); setShowHistory(false); },
+                showHistory: () => { setShowHistory(true); onCloseComments(); },
+                showComments: () => { onShowComments(); setShowHistory(false); },
                 search: () => {},
               }),
             ]}
@@ -129,17 +188,17 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
               buildFixedTopBarActionItems(t, {
                 id: diagramId,
                 type: 'diagram',
-                title: contentItem?.title || 'Diagram',
+                title: title || t('content.untitledDiagram'),
                 pinned: false,
                 url: typeof window !== 'undefined' ? window.location.href : '',
                 startRename: () => {},
                 openIconPicker: () => {},
                 togglePin: () => {},
-                deleteItem: onDelete || (() => {}),
+                deleteItem: handleDelete,
                 shareItem: () => {},
-                copyLink: onCopyLink,
-                showHistory: () => { setShowHistory(v => !v); setShowComments(false); },
-                showComments: () => { setShowComments(v => !v); setShowHistory(false); },
+                copyLink: () => onCopyLink(),
+                showHistory: () => { setShowHistory(v => !v); onCloseComments(); },
+                showComments: () => { onToggleComments(); setShowHistory(false); },
                 search: () => {},
                 showHistoryActive: showHistory,
                 showCommentsActive: showComments,
@@ -159,12 +218,16 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
             showComments={false}
             showHistory={false}
             embedded
+            commentedCellIds={commentedCellIds}
+            onCellCommentClick={(cellId: string, cellType: string) => {
+              onShowComments();
+              setFocusAnchorState({ type: cellType, id: cellId });
+            }}
           />
         </div>
         {/* Mobile: bottom comment bar — no editing on mobile */}
         <MobileCommentBar
-          targetType="diagram"
-          targetId={`diagram:${diagramId}`}
+          onClick={() => { onShowComments(); setShowHistory(false); }}
         />
       </div>
 
@@ -175,14 +238,29 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
             <CommentPanel
               targetType="diagram"
               targetId={`diagram:${diagramId}`}
-              onClose={() => setShowComments(false)}
+              anchorType={commentAnchor?.type}
+              anchorId={commentAnchor?.id}
+              anchorMeta={commentAnchor?.meta}
+              onClose={() => onCloseComments()}
+              focusCommentId={focusCommentId}
+              onAnchorUsed={() => setCommentAnchor(null)}
+              onNavigateToAnchor={navigateToAnchor}
+              focusAnchor={focusAnchorState}
             />
           </div>
-          <BottomSheet open={true} onClose={() => setShowComments(false)} title={t('content.comments')} initialHeight="full">
+          <BottomSheet open={true} onClose={() => onCloseComments()} initialHeight="full">
             <CommentPanel
               targetType="diagram"
               targetId={`diagram:${diagramId}`}
-              onClose={() => setShowComments(false)}
+              anchorType={commentAnchor?.type}
+              anchorId={commentAnchor?.id}
+              anchorMeta={commentAnchor?.meta}
+              onClose={() => onCloseComments()}
+              focusCommentId={focusCommentId}
+              onAnchorUsed={() => setCommentAnchor(null)}
+              onNavigateToAnchor={navigateToAnchor}
+              focusAnchor={focusAnchorState}
+              autoFocus
             />
           </BottomSheet>
         </>

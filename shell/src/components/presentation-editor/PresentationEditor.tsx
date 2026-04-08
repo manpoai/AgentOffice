@@ -94,6 +94,11 @@ interface PresentationEditorProps {
   docListVisible?: boolean;
   onToggleDocList?: () => void;
   onNavigate?: (rawId: string) => void;
+  focusCommentId?: string;
+  showComments: boolean;
+  onShowComments: () => void;
+  onCloseComments: () => void;
+  onToggleComments: () => void;
 }
 
 // ─── Fabric.js Dynamic Import ───────────────────────
@@ -118,6 +123,11 @@ export function PresentationEditor({
   docListVisible,
   onToggleDocList,
   onNavigate,
+  focusCommentId,
+  showComments,
+  onShowComments,
+  onCloseComments,
+  onToggleComments,
 }: PresentationEditorProps) {
   const { t } = useT();
 
@@ -136,7 +146,7 @@ export function PresentationEditor({
   // Counter to force property panel re-render when object properties change
   const [propVersion, setPropVersion] = useState(0);
   const [showPropertyPanel, setShowPropertyPanel] = useState(false);
-  const [showComments, setShowComments] = useState(false);
+  const [commentAnchor, setCommentAnchor] = useState<{ type: string; id: string; meta?: Record<string, unknown> } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedSlideIndices, setSelectedSlideIndices] = useState<Set<number>>(new Set([0]));
   const slideClipboardRef = useRef<SlideData[]>([]);
@@ -282,6 +292,22 @@ export function PresentationEditor({
       setCurrentSlideIndex(0);
     }
   }, [presentation]);
+
+  const navigateToAnchor = useCallback((anchor: { type: string; id: string; meta?: Record<string, unknown> }) => {
+    if (anchor.type === 'slide') {
+      const idx = Number(anchor.id);
+      if (!isNaN(idx) && idx < slides.length) {
+        setCurrentSlideIndex(idx);
+        setSelectedSlideIndices(new Set([idx]));
+      }
+    } else if (anchor.type === 'element') {
+      const [slideIdx] = anchor.id.split(':').map(Number);
+      if (!isNaN(slideIdx) && slideIdx < slides.length) {
+        setCurrentSlideIndex(slideIdx);
+        setSelectedSlideIndices(new Set([slideIdx]));
+      }
+    }
+  }, [slides]);
 
   const currentTitle = breadcrumb?.[breadcrumb.length - 1]?.title || '';
 
@@ -437,14 +463,18 @@ export function PresentationEditor({
           canvas,
           activeObject: activeObj,
           clipboardRef,
-          setShowComments: (v) => setShowComments(v),
+          setShowComments: (v) => v ? onShowComments() : onCloseComments(),
+          handleSlideComment,
+          currentSlideIndex,
         };
         items = toContextMenuItems(pptSurfaces.canvasObject, pptObjectActionMap, ctx, t);
       } else {
         const ctx: PPTCanvasCtx = {
           canvas,
           clipboardRef,
-          setShowComments: (v) => setShowComments(v),
+          setShowComments: (v) => v ? onShowComments() : onCloseComments(),
+          handleSlideComment,
+          currentSlideIndex,
           openBackground: () => {
             canvas?.discardActiveObject();
             canvas?.renderAll();
@@ -663,10 +693,28 @@ export function PresentationEditor({
     setPropVersion(v => v + 1);
   }, []);
 
-  const handleSlideComment = useCallback((_i: number) => {
-    setShowComments(true);
+  const handleSlideComment = useCallback((type: 'slide' | 'element', obj: any | null) => {
+    if (type === 'element' && obj) {
+      const canvas = canvasRef.current;
+      const objects = canvas?.getObjects() || [];
+      const elementIndex = objects.indexOf(obj);
+      const elementType = obj.type || 'element';
+      const preview = obj.type === 'textbox' ? (obj.text?.substring(0, 50) || elementType) : elementType;
+      setCommentAnchor({
+        type: 'element',
+        id: `${currentSlideIndex}:${elementIndex}`,
+        meta: { slide_index: currentSlideIndex, element_type: elementType, preview },
+      });
+    } else {
+      setCommentAnchor({
+        type: 'slide',
+        id: String(currentSlideIndex),
+        meta: { slide_index: currentSlideIndex, slide_title: slides[currentSlideIndex]?.notes?.substring(0, 50) || `Slide ${currentSlideIndex + 1}` },
+      });
+    }
+    onShowComments();
     setShowHistory(false);
-  }, []);
+  }, [currentSlideIndex]);
 
   // ─── Clear undo stack on slide switch ──
   useEffect(() => {
@@ -1523,15 +1571,15 @@ export function PresentationEditor({
             canRedo={redoStackRef.current.length > 0}
             metaLine={
               <button
-                onClick={() => { setShowHistory(true); setShowComments(false); }}
+                onClick={() => { setShowHistory(true); onCloseComments(); }}
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
               >
-                Last modified: {formatRelativeTime(presentation.updated_at)}
-                {presentation.updated_by && <span> by {presentation.updated_by}</span>}
+                {t('content.lastModified')}: {formatRelativeTime(presentation.updated_at)}
+                {presentation.updated_by && <span> {t('content.by')} {presentation.updated_by}</span>}
               </button>
             }
-            onHistory={() => { setShowHistory(true); setShowComments(false); }}
-            onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
+            onHistory={() => { setShowHistory(true); onCloseComments(); }}
+            onComments={() => { onToggleComments(); setShowHistory(false); }}
             menuItems={[
               ...buildContentTopBarCommonMenuItems(t, {
                 id: presentationId,
@@ -1546,8 +1594,8 @@ export function PresentationEditor({
                 downloadItem: () => handleDownload(),
                 shareItem: () => {},
                 copyLink: () => onCopyLink?.(),
-                showHistory: () => { setShowHistory(true); setShowComments(false); },
-                showComments: () => { setShowComments(true); setShowHistory(false); },
+                showHistory: () => { setShowHistory(true); onCloseComments(); },
+                showComments: () => { onShowComments(); setShowHistory(false); },
                 search: () => {},
               }),
               { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
@@ -1562,16 +1610,22 @@ export function PresentationEditor({
         />
         {/* Bottom comment bar — no edit FAB for PPT on mobile */}
         <MobileCommentBar
-          targetType="presentation"
-          targetId={`presentation:${presentationId}`}
+          onClick={() => { onShowComments(); setShowHistory(false); }}
         />
         {/* Mobile: Comments BottomSheet */}
         {showComments && !showHistory && (
-          <BottomSheet open={true} onClose={() => setShowComments(false)} title={t('content.comments')} initialHeight="full">
+          <BottomSheet open={true} onClose={() => onCloseComments()} initialHeight="full">
             <CommentPanel
               targetType="presentation"
               targetId={`presentation:${presentationId}`}
-              onClose={() => setShowComments(false)}
+              anchorType={commentAnchor?.type}
+              anchorId={commentAnchor?.id}
+              anchorMeta={commentAnchor?.meta}
+              onClose={() => onCloseComments()}
+              focusCommentId={focusCommentId}
+              onAnchorUsed={() => setCommentAnchor(null)}
+              onNavigateToAnchor={navigateToAnchor}
+              autoFocus
             />
           </BottomSheet>
         )}
@@ -1623,15 +1677,15 @@ export function PresentationEditor({
           canRedo={redoStackRef.current.length > 0}
           metaLine={
             <button
-              onClick={() => { setShowHistory(true); setShowComments(false); }}
+              onClick={() => { setShowHistory(true); onCloseComments(); }}
               className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
             >
-              Last modified: {formatRelativeTime(presentation.updated_at)}
-              {presentation.updated_by && <span> by {presentation.updated_by}</span>}
+              {t('content.lastModified')}: {formatRelativeTime(presentation.updated_at)}
+              {presentation.updated_by && <span> {t('content.by')} {presentation.updated_by}</span>}
             </button>
           }
-          onHistory={() => { setShowHistory(true); setShowComments(false); }}
-          onComments={() => { setShowComments(v => !v); setShowHistory(false); }}
+          onHistory={() => { setShowHistory(true); onCloseComments(); }}
+          onComments={() => { onToggleComments(); setShowHistory(false); }}
           menuItems={[
             ...buildContentTopBarCommonMenuItems(t, {
               id: presentationId,
@@ -1646,8 +1700,8 @@ export function PresentationEditor({
               downloadItem: () => handleDownload(),
               shareItem: () => {},
               copyLink: () => onCopyLink?.(),
-              showHistory: () => { setShowHistory(true); setShowComments(false); },
-              showComments: () => { setShowComments(true); setShowHistory(false); },
+              showHistory: () => { setShowHistory(true); onCloseComments(); },
+              showComments: () => { onShowComments(); setShowHistory(false); },
               search: () => {},
             }),
             { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
@@ -1662,11 +1716,11 @@ export function PresentationEditor({
               startRename: () => {},
               openIconPicker: () => {},
               togglePin: () => {},
-              deleteItem: onDelete || (() => {}),
+              deleteItem: handleDelete,
               shareItem: () => {},
               copyLink: onCopyLink,
-              showHistory: () => { setShowHistory(v => !v); setShowComments(false); },
-              showComments: () => { setShowComments(v => !v); setShowHistory(false); },
+              showHistory: () => { setShowHistory(v => !v); onCloseComments(); },
+              showComments: () => { onToggleComments(); setShowHistory(false); },
               search: () => {},
               showHistoryActive: showHistory,
               showCommentsActive: showComments,
@@ -1699,7 +1753,7 @@ export function PresentationEditor({
           onSlideDelete={handleSlideDelete}
           onSlideDuplicate={handleSlideDuplicate}
           onSlideBackground={handleSlideBackground}
-          onSlideComment={handleSlideComment}
+          onSlideComment={(i: number) => handleSlideComment('slide', null)}
         />
 
         {/* Canvas Area (center) */}
@@ -1743,14 +1797,26 @@ export function PresentationEditor({
             <CommentPanel
               targetType="presentation"
               targetId={`presentation:${presentationId}`}
-              onClose={() => setShowComments(false)}
+              anchorType={commentAnchor?.type}
+              anchorId={commentAnchor?.id}
+              anchorMeta={commentAnchor?.meta}
+              onClose={() => onCloseComments()}
+              focusCommentId={focusCommentId}
+              onAnchorUsed={() => setCommentAnchor(null)}
+              onNavigateToAnchor={navigateToAnchor}
             />
           </div>
-          <BottomSheet open={true} onClose={() => setShowComments(false)} title={t('content.comments')} initialHeight="full">
+          <BottomSheet open={true} onClose={() => onCloseComments()} initialHeight="full">
             <CommentPanel
               targetType="presentation"
               targetId={`presentation:${presentationId}`}
-              onClose={() => setShowComments(false)}
+              anchorType={commentAnchor?.type}
+              anchorId={commentAnchor?.id}
+              anchorMeta={commentAnchor?.meta}
+              onClose={() => onCloseComments()}
+              focusCommentId={focusCommentId}
+              onAnchorUsed={() => setCommentAnchor(null)}
+              onNavigateToAnchor={navigateToAnchor}
             />
           </BottomSheet>
         </>

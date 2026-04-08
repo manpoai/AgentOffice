@@ -67,8 +67,8 @@ CREATE INDEX IF NOT EXISTS idx_thread_links_link ON thread_links(link_type, link
 CREATE TABLE IF NOT EXISTS comments (
   id          TEXT PRIMARY KEY,
   target_type TEXT NOT NULL,     -- 'doc' | 'table' | 'presentation' | 'diagram' | 'cell'
-  target_id   TEXT NOT NULL,     -- resource ID (doc ID, table ID, content_items ID, etc.)
-  row_id      TEXT,              -- table-specific: row ID (NULL for non-table or table-level)
+  target_id   TEXT NOT NULL,     -- content_items ID format: 'type:raw_id' (e.g. 'doc:xxx', 'table:xxx')
+  row_id      TEXT,              -- table-specific: row ID (kept for compat, use anchor_id instead)
   text        TEXT,
   html        TEXT,
   data_json   TEXT,              -- ProseMirror JSON (for doc comments)
@@ -78,11 +78,16 @@ CREATE TABLE IF NOT EXISTS comments (
   resolved_by TEXT,
   resolved_at TEXT,
   created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
+  updated_at  TEXT NOT NULL,
+  anchor_type TEXT,              -- 'row' | 'text-range' | 'image' | 'element' | 'node' | 'edge' | 'cell' | NULL
+  anchor_id   TEXT,              -- anchor object ID
+  anchor_meta TEXT,              -- JSON, anchor additional info
+  context_payload TEXT           -- JSON, structured context for agent consumers (Phase 3)
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_target ON comments(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id);
+CREATE INDEX IF NOT EXISTS idx_comments_anchor ON comments(target_type, target_id, anchor_type, anchor_id);
 
 -- Doc/table custom icons (emoji per document or table)
 CREATE TABLE IF NOT EXISTS doc_icons (
@@ -110,25 +115,27 @@ CREATE INDEX IF NOT EXISTS idx_content_snapshots_content ON content_snapshots(co
 
 -- Content items: unified doc/table metadata for sidebar (source of truth for Shell)
 CREATE TABLE IF NOT EXISTS content_items (
-  id          TEXT PRIMARY KEY,       -- 'doc:<uuid>' or 'table:<uuid>'
-  raw_id      TEXT NOT NULL,          -- original doc ID or Baserow table ID
+  id          TEXT PRIMARY KEY,       -- 'doc:<uuid>' or 'table:<id>'
+  raw_id      TEXT NOT NULL,          -- original doc UUID or Baserow table ID
   type        TEXT NOT NULL,          -- 'doc' or 'table'
   title       TEXT NOT NULL DEFAULT '',
   icon        TEXT,                   -- emoji or icon URL
-  parent_id   TEXT,                   -- 'doc:<uuid>' or 'table:<uuid>' (null = root)
+  parent_id   TEXT,                   -- 'doc:<uuid>' or 'table:<id>' (null = root)
   sort_order  INTEGER DEFAULT 0,
-  collection_id TEXT,                 -- Outline collection ID (docs only)
-  created_by  TEXT,                   -- display name
+  collection_id TEXT,                 -- content tree collection grouping (docs only)
+  created_by  TEXT,                   -- display name of creator
   updated_by  TEXT,                   -- display name
   created_at  TEXT,                   -- ISO timestamp from upstream
   updated_at  TEXT,                   -- ISO timestamp from upstream
   deleted_at  TEXT,                   -- soft-delete timestamp
   pinned      INTEGER DEFAULT 0,     -- 1 = pinned to top of sidebar
+  owner_actor_id TEXT,               -- actor id of content owner
   synced_at   INTEGER NOT NULL        -- last sync epoch ms
 );
 
 CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(type);
 CREATE INDEX IF NOT EXISTS idx_content_items_parent ON content_items(parent_id);
+CREATE INDEX IF NOT EXISTS idx_content_items_owner ON content_items(owner_actor_id);
 
 -- Notifications
 CREATE TABLE IF NOT EXISTS notifications (

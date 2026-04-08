@@ -135,7 +135,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
         if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
       }
     }
-    const avatarUrl = `/api/gateway/uploads/avatars/${req.file.filename}`;
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
     db.prepare('UPDATE actors SET avatar_url = ?, updated_at = ? WHERE id = ?').run(avatarUrl, Date.now(), req.actor.id);
     res.json({ ok: true, avatar_url: avatarUrl });
   });
@@ -152,7 +152,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // ─── Auth: Register agent ────────────────────────
   app.post('/api/auth/register', (req, res) => {
-    const { ticket, name, display_name, capabilities, webhook_url, webhook_secret } = req.body;
+    const { ticket, name, display_name, capabilities, webhook_url, webhook_secret, platform } = req.body;
     if (!ticket || !name || !display_name) {
       return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'ticket, name, display_name required' });
     }
@@ -175,10 +175,10 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     const tokenHash = hashToken(token);
     const now = Date.now();
 
-    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, created_at, updated_at)
-      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?)`)
+    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, platform, created_at, updated_at)
+      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(agentId, name, display_name, tokenHash, JSON.stringify(capabilities || []),
-        webhook_url || null, webhook_secret || null, now, now);
+        webhook_url || null, webhook_secret || null, platform || null, now, now);
 
     // Mark ticket used
     db.prepare('UPDATE tickets SET used = 1 WHERE id = ?').run(ticket);
@@ -303,7 +303,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // Admin: list all agents
   app.get('/api/admin/agents', authenticateAdmin, (req, res) => {
-    const agents = db.prepare("SELECT id, username, display_name, capabilities, online, last_seen_at, pending_approval, created_at FROM actors WHERE type = 'agent'").all();
+    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, online, last_seen_at, pending_approval, created_at FROM actors WHERE type = 'agent'").all();
     res.json({ agents: agents.map(a => ({ ...a, agent_id: a.id, name: a.username, capabilities: JSON.parse(a.capabilities || '[]'), pending_approval: !!a.pending_approval })) });
   });
 
@@ -330,9 +330,9 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     });
   });
 
-  // Update agent profile (name, avatar_url) — accessible to any authenticated agent
+  // Update agent profile (name, avatar_url, platform) — accessible to any authenticated agent
   app.patch('/api/agents/:name', authenticateAgent, (req, res) => {
-    const { name, display_name, avatar_url } = req.body;
+    const { name, display_name, avatar_url, platform } = req.body;
     const target = db.prepare("SELECT id FROM actors WHERE type = 'agent' AND username = ?").get(req.params.name);
     if (!target) return res.status(404).json({ error: 'NOT_FOUND' });
     const updates = [];
@@ -346,11 +346,55 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     if (avatar_url !== undefined) {
       updates.push('avatar_url = ?'); values.push(avatar_url);
     }
+    if (platform !== undefined) {
+      updates.push('platform = ?'); values.push(platform);
+    }
     if (updates.length === 0) return res.status(400).json({ error: 'NO_FIELDS' });
     const now = Date.now();
     updates.push('updated_at = ?'); values.push(now); values.push(target.id);
     db.prepare(`UPDATE actors SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     res.json({ ok: true });
+  });
+
+  // Admin: update agent profile (by agent_id)
+  app.patch('/api/admin/agents/:agent_id', authenticateAdmin, (req, res) => {
+    const { display_name, avatar_url, platform } = req.body;
+    const target = db.prepare("SELECT id FROM actors WHERE type = 'agent' AND id = ?").get(req.params.agent_id);
+    if (!target) return res.status(404).json({ error: 'NOT_FOUND' });
+    const updates = [];
+    const values = [];
+    if (display_name !== undefined) {
+      updates.push('display_name = ?'); values.push(display_name);
+    }
+    if (avatar_url !== undefined) {
+      updates.push('avatar_url = ?'); values.push(avatar_url);
+    }
+    if (platform !== undefined) {
+      updates.push('platform = ?'); values.push(platform);
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'NO_FIELDS' });
+    const now = Date.now();
+    updates.push('updated_at = ?'); values.push(now); values.push(target.id);
+    db.prepare(`UPDATE actors SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    res.json({ ok: true });
+  });
+
+  // Admin: upload agent avatar (by agent_id)
+  app.post('/api/admin/agents/:agent_id/avatar', authenticateAdmin, avatarUpload.single('avatar'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
+    const target = db.prepare("SELECT id, avatar_url FROM actors WHERE type = 'agent' AND id = ?").get(req.params.agent_id);
+    if (!target) return res.status(404).json({ error: 'NOT_FOUND' });
+    if (target.avatar_url && target.avatar_url.includes('/uploads/avatars/')) {
+      const filename = target.avatar_url.split('/uploads/avatars/').pop();
+      if (filename) {
+        const oldPath = path.join(AVATAR_DIR, filename);
+        if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+      }
+    }
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const now = Date.now();
+    db.prepare('UPDATE actors SET avatar_url = ?, updated_at = ? WHERE id = ?').run(avatarUrl, now, target.id);
+    res.json({ ok: true, avatar_url: avatarUrl });
   });
 
   // Upload agent avatar
@@ -373,7 +417,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
         if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
       }
     }
-    const avatarUrl = `/api/gateway/uploads/avatars/${req.file.filename}`;
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
     const now = Date.now();
     db.prepare('UPDATE actors SET avatar_url = ?, updated_at = ? WHERE id = ?').run(avatarUrl, now, target.id);
     res.json({ ok: true, avatar_url: avatarUrl });

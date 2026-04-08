@@ -6,6 +6,7 @@ import { ThemeProvider } from 'next-themes';
 import { I18nProvider } from '@/lib/i18n';
 import { AuthProvider } from '@/lib/auth';
 import { Toaster } from 'sonner';
+import { SSEProvider } from '@/components/providers/SSEProvider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -19,10 +20,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
         <I18nProvider>
           <QueryClientProvider client={queryClient}>
-            <TooltipProvider>
-              {children}
-              <Toaster position="bottom-right" richColors closeButton />
-            </TooltipProvider>
+            <SSEProvider>
+              <TooltipProvider>
+                {children}
+                <Toaster position="bottom-right" richColors closeButton />
+              </TooltipProvider>
+            </SSEProvider>
           </QueryClientProvider>
         </I18nProvider>
       </ThemeProvider>

@@ -71,6 +71,15 @@ export function createDiagramNodeHandler({ graph, cell }: DiagramTarget): Toolba
           if (value === 'front') cell.toFront();
           else cell.toBack();
           break;
+        case 'comment':
+          window.dispatchEvent(new CustomEvent('diagram:open-comments', {
+            detail: {
+              cellId: cell.id,
+              cellType: 'node',
+              label: (cell as any).getData?.()?.label || '',
+            },
+          }));
+          break;
       }
     },
   };
@@ -231,6 +240,19 @@ export function createDiagramEdgeHandler({ graph, cell }: DiagramTarget): Toolba
           if (value === 'front') cell.toFront();
           else cell.toBack();
           break;
+        case 'comment': {
+          const e = cell as Edge;
+          window.dispatchEvent(new CustomEvent('diagram:open-comments', {
+            detail: {
+              cellId: cell.id,
+              cellType: 'edge',
+              label: (e.getLabels?.()[0]?.attrs?.text as any)?.text || '',
+              source_node_id: (e as any).getSourceCellId?.() || null,
+              target_node_id: (e as any).getTargetCellId?.() || null,
+            },
+          }));
+          break;
+        }
       }
     },
   };
@@ -256,6 +278,15 @@ export function createDiagramImageHandler({ graph, cell }: DiagramTarget): Toolb
         case 'zOrder':
           if (value === 'front') cell.toFront();
           else cell.toBack();
+          break;
+        case 'comment':
+          window.dispatchEvent(new CustomEvent('diagram:open-comments', {
+            detail: {
+              cellId: cell.id,
+              cellType: 'node',
+              label: (cell as any).getData?.()?.label || '',
+            },
+          }));
           break;
       }
     },

@@ -14,7 +14,7 @@ import { BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID } from './baserow.js';
 import { initDatabase } from './lib/db.js';
 import { genId, hashToken, hashPassword, verifyPassword } from './lib/utils.js';
 import { createAuthMiddleware } from './middleware/auth.js';
-import { sseClients, pushEvent, deliverWebhook, pollComments } from './lib/sse.js';
+import { sseClients, humanClients, pushEvent, pushHumanEvent, deliverWebhook, pollComments } from './lib/sse.js';
 import { createContentSync } from './lib/content-sync.js';
 
 import authRoutes from './routes/auth.js';
@@ -59,7 +59,7 @@ const shared = {
   authenticateAny, authenticateAdmin, authenticateAgent,
   genId, hashToken, hashPassword, verifyPassword,
   createBrUser, contentItemsUpsert, syncContentItems,
-  pushEvent, deliverWebhook, sseClients, pollComments,
+  pushEvent, pushHumanEvent, deliverWebhook, sseClients, humanClients, pollComments,
 };
 
 // ─── Mount route modules ────────────────────────

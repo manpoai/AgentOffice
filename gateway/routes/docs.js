@@ -1,13 +1,7 @@
 /**
  * Document routes: /api/docs/*, /api/documents/*, /api/comments, document comments/revisions
  */
-import {
-  listUnifiedComments,
-  createUnifiedComment,
-  updateUnifiedCommentText,
-  deleteUnifiedComment,
-  setUnifiedCommentResolved,
-} from '../lib/comment-service.js';
+import { createUnifiedComment } from '../lib/comment-service.js';
 
 // Get display name for the authenticated actor (human or agent)
 function actorName(req) {
@@ -118,8 +112,7 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
 
     const displayName = actorName(req);
     const actId = req.actor?.id || req.agent?.id;
-    const commentId = genId('cmt');
-    const now = new Date().toISOString();
+    const unifiedDocId = doc_id.startsWith('doc:') ? doc_id : `doc:${doc_id}`;
 
     // Convert plain text to minimal ProseMirror JSON
     const pmData = {
@@ -127,44 +120,26 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
     };
 
-    // Store target_id in unified format 'doc:raw_id'
-    const unifiedDocId = doc_id.startsWith('doc:') ? doc_id : `doc:${doc_id}`;
-    const docOwner1 = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(unifiedDocId);
-    const contextPayload1 = buildContextPayload(db, {
-      targetType: 'doc', targetId: unifiedDocId, anchorType: null, anchorId: null,
-      text, actorName: displayName,
-    });
-    db.prepare(`INSERT INTO comments (id, target_type, target_id, parent_id, data_json, text, actor, actor_id, context_payload, created_at, updated_at)
-      VALUES (?, 'doc', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(commentId, unifiedDocId, parent_comment_id || null, JSON.stringify(pmData),
-        text, displayName, actId, JSON.stringify(contextPayload1), now, now);
-    emitCommentEvent(db, {
-      eventType: parent_comment_id ? 'comment.reply' : 'comment.created',
-      commentId,
+    const created = createUnifiedComment(db, {
+      genId, pushEvent, pushHumanEvent, humanClients, deliverWebhook,
+    }, {
       targetType: 'doc',
       targetId: unifiedDocId,
-      anchorType: null,
-      anchorId: null,
       text,
       parentId: parent_comment_id || null,
       actorId: actId,
       actorName: displayName,
-      ownerActorId: docOwner1?.owner_actor_id || null,
-      contextPayload: contextPayload1,
-      genId,
-      pushEvent,
-      pushHumanEvent,
-      deliverWebhook,
+      idPrefix: 'cmt',
+      dataJson: pmData,
     });
-    if (humanClients) for (const [aId] of humanClients) pushHumanEvent(aId, { event: 'comment.changed', data: { target_id: unifiedDocId } });
 
     res.status(201).json({
-      comment_id: commentId,
+      comment_id: created.id,
       doc_id,
       parent_comment_id: parent_comment_id || null,
       actor: displayName,
       actor_id: actId,
-      created_at: new Date(now).getTime(),
+      created_at: new Date(created.created_at).getTime(),
     });
   });
 

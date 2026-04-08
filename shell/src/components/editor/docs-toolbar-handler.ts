@@ -218,7 +218,26 @@ export function createDocsTextHandler(view: EditorView): ToolbarHandler {
           const { from, to } = view.state.selection;
           if (from === to) break;
           const selectedText = view.state.doc.textBetween(from, to, ' ');
-          window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text: selectedText } }));
+          // Collect heading path for context
+          const headingPath: string[] = [];
+          const $from = view.state.doc.resolve(from);
+          for (let d = $from.depth; d > 0; d--) {
+            const node = $from.node(d);
+            if (node.type.name === 'heading') headingPath.unshift(node.textContent);
+          }
+          window.dispatchEvent(new CustomEvent('editor-comment', {
+            detail: {
+              text: selectedText,
+              anchorType: 'text-range',
+              anchorId: `textrange_${Date.now()}`,
+              anchorMeta: {
+                quote: selectedText,
+                from,
+                to,
+                heading_path: headingPath.length > 0 ? headingPath : null,
+              },
+            },
+          }));
           view.focus();
           break;
         }
@@ -457,7 +476,14 @@ export function createDocsImageHandler(view: EditorView, nodePos: number): Toolb
           break;
         }
         case 'comment': {
-          window.dispatchEvent(new CustomEvent('editor-comment', { detail: { text: node.attrs.alt || '' } }));
+          window.dispatchEvent(new CustomEvent('editor-comment', {
+            detail: {
+              text: node.attrs.alt || '',
+              anchorType: 'image',
+              anchorId: `image_${nodePos}`,
+              anchorMeta: { alt_text: node.attrs.alt || null, image_url: node.attrs.src || null },
+            },
+          }));
           break;
         }
       }

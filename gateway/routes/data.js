@@ -3,13 +3,7 @@
  * file upload/download proxy, table comments, snapshots
  */
 import crypto from 'crypto';
-import {
-  listUnifiedComments,
-  createUnifiedComment,
-  updateUnifiedCommentText,
-  deleteUnifiedComment,
-  setUnifiedCommentResolved,
-} from '../lib/comment-service.js';
+import { createUnifiedComment } from '../lib/comment-service.js';
 import multer from 'multer';
 import {
   BR_URL,
@@ -179,7 +173,7 @@ export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE
     }));
 
     const nodeId = `table:${tableId}`;
-    contentItemsUpsert.run(nodeId, tableId, 'table', title, null, null, null, actorName(req), null, new Date().toISOString(), null, null, Date.now());
+    contentItemsUpsert.run(nodeId, tableId, 'table', title, null, null, null, actorName(req), null, new Date().toISOString(), null, null, req.actor?.id || req.agent?.id || null, Date.now());
 
     res.status(201).json({ table_id: tableId, title, columns: responseCols });
   });
@@ -842,7 +836,7 @@ export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE
       const srcItem = db.prepare('SELECT * FROM content_items WHERE raw_id = ? AND type = ?').get(srcTableId, 'table');
       const displayTitle = srcItem ? `${srcItem.title} (copy)` : `${srcTitle} (copy)`;
       const nodeId = `table:${newTableId}`;
-      contentItemsUpsert.run(nodeId, newTableId, 'table', displayTitle, null, srcItem?.parent_id || null, null, actorName(req), null, new Date().toISOString(), null, null, Date.now());
+      contentItemsUpsert.run(nodeId, newTableId, 'table', displayTitle, null, srcItem?.parent_id || null, null, actorName(req), null, new Date().toISOString(), null, null, req.actor?.id || req.agent?.id || null, Date.now());
       res.json({ success: true, new_table_id: newTableId, copied_rows: copiedRows });
     } catch (e) {
       console.error(`[gateway] Duplicate table failed: ${e.message}`);
@@ -858,44 +852,27 @@ export default function dataRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE
 
     const displayName = actorName(req);
     const actId = req.actor?.id || req.agent?.id;
-    const commentId = genId('ccmt');
-    const now = new Date().toISOString();
     const tableId = req.params.table_id;
     const rowId = req.params.row_id;
     const unifiedTableId = tableId.startsWith('table:') ? tableId : `table:${tableId}`;
-    const rowCommentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(unifiedTableId);
-    const rowContextPayload = buildContextPayload(db, {
-      targetType: 'table', targetId: unifiedTableId, anchorType: 'row', anchorId: rowId,
-      text, actorName: displayName,
-    });
-    db.prepare(
-      "INSERT INTO comments (id, target_type, target_id, row_id, anchor_type, anchor_id, text, actor, actor_id, parent_id, context_payload, created_at, updated_at) VALUES (?, 'table', ?, ?, 'row', ?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run(commentId, unifiedTableId, rowId, rowId, text, displayName, actId, null, JSON.stringify(rowContextPayload), now, now);
-    emitCommentEvent(db, {
-      eventType: 'comment.created',
-      commentId,
+
+    const created = createUnifiedComment(db, {
+      genId, pushEvent, pushHumanEvent, humanClients, deliverWebhook,
+    }, {
       targetType: 'table',
       targetId: unifiedTableId,
+      text,
       anchorType: 'row',
       anchorId: rowId,
-      text,
-      parentId: null,
       actorId: actId,
       actorName: displayName,
-      ownerActorId: rowCommentOwner?.owner_actor_id || null,
-      contextPayload: rowContextPayload,
-      genId,
-      pushEvent,
-      pushHumanEvent,
-      deliverWebhook,
     });
-    if (humanClients) for (const [aId] of humanClients) pushHumanEvent(aId, { event: 'comment.changed', data: { target_id: unifiedTableId } });
 
     res.status(201).json({
-      comment_id: commentId,
+      comment_id: created.id,
       table_id: req.params.table_id,
       row_id: req.params.row_id,
-      created_at: new Date(now).getTime(),
+      created_at: new Date(created.created_at).getTime(),
     });
   });
 

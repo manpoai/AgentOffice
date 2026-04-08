@@ -29,7 +29,6 @@ export function NotificationBell({ className, variant = 'default' }: Notificatio
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['notifications-unread-count'],
     queryFn: gw.getUnreadCount,
-    refetchInterval: 30_000,
   });
 
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);

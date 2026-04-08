@@ -26,8 +26,8 @@ export function createAuthMiddleware(db, JWT_SECRET, ADMIN_TOKEN) {
     let token;
     if (auth?.startsWith('Bearer ')) {
       token = auth.slice(7);
-    } else if (req.query.token && req.path === '/api/me/events/stream') {
-      // Only accept query param token for SSE endpoint (can't set headers in EventSource)
+    } else if (req.query.token && (req.path === '/api/me/events/stream' || req.path === '/api/notifications/stream')) {
+      // Only accept query param token for SSE endpoints (can't set headers in EventSource)
       token = req.query.token;
     } else {
       return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Missing authorization' });

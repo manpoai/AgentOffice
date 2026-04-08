@@ -12,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { NotificationPanel, NotificationBellBadge } from '@/components/shared/NotificationPanel';
 import { AgentPanelContent } from '@/components/shared/AgentPanelContent';
 import * as gw from '@/lib/api/gateway';
+import { resolveAvatarUrl } from '@/lib/api/gateway';
 import { showError } from '@/lib/utils/error';
 import { formatRelativeTime } from '@/lib/utils/time';
 import { CREATE_CONTENT_ITEMS } from '@/actions/create-content.actions';
@@ -105,14 +106,12 @@ export function ContentSidebar({
   const { data: notifications = [] } = useQuery({
     queryKey: ['notifications'],
     queryFn: () => gw.getNotifications(undefined, 50),
-    refetchInterval: 30_000,
     enabled: showMessageMenu,
   });
 
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ['notifications-unread-count'],
     queryFn: gw.getUnreadCount,
-    refetchInterval: 30_000,
   });
 
   useEffect(() => setMounted(true), []);
@@ -234,8 +233,8 @@ export function ContentSidebar({
           <div className="flex items-center gap-2 group/header" ref={profileRef}>
             {/* Avatar */}
             <div className="w-8 h-8 rounded-full bg-muted overflow-hidden shrink-0 border border-black/10">
-              {actor?.avatar_url ? (
-                <img src={actor.avatar_url} alt="" className="w-full h-full object-cover" />
+              {resolveAvatarUrl(actor?.avatar_url) ? (
+                <img src={resolveAvatarUrl(actor?.avatar_url)!} alt="" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-xs font-medium text-muted-foreground">
                   {(actor?.display_name || actor?.username || '?')[0].toUpperCase()}
@@ -280,8 +279,8 @@ export function ContentSidebar({
                     <div className="w-12 h-12 rounded-full bg-muted overflow-hidden shrink-0 border border-black/10 relative group cursor-pointer"
                       onClick={() => avatarInputRef.current?.click()}
                     >
-                      {actor?.avatar_url ? (
-                        <img src={actor.avatar_url} alt="" className="w-full h-full object-cover" />
+                      {resolveAvatarUrl(actor?.avatar_url) ? (
+                        <img src={resolveAvatarUrl(actor?.avatar_url)!} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-lg font-medium text-muted-foreground">
                           {(actor?.display_name || actor?.username || '?')[0].toUpperCase()}
@@ -599,7 +598,16 @@ export function ContentSidebar({
                           } catch {}
                         }
                         if (notif.link) {
-                          router.push(notif.link);
+                          const linkParams = new URLSearchParams(notif.link.split('?')[1] || '');
+                          const targetId = linkParams.get('id');
+                          const currentId = new URLSearchParams(window.location.search).get('id');
+                          if (targetId && targetId === currentId) {
+                            // Same document — stay on page, just open comment panel
+                            const commentId = linkParams.get('comment_id');
+                            if (commentId) window.dispatchEvent(new CustomEvent('focus-comment', { detail: { commentId } }));
+                          } else {
+                            window.open(notif.link, '_blank');
+                          }
                           setShowMessageMenu(false);
                         }
                       }}

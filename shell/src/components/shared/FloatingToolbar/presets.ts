@@ -279,6 +279,7 @@ export function getDiagramNodeItems(): ToolbarItem[] {
     { key: 'copy', type: 'action', icon: icon(Copy), label: t('toolbar.common.copy'), group: 'action' },
     { key: 'delete', type: 'action', icon: icon(Trash2), label: t('toolbar.common.delete'), group: 'action' },
     { key: 'zOrder', type: 'dropdown', icon: icon(Layers), label: t('toolbar.common.zOrder'), group: 'action', options: getZOrderOptions(t) },
+    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: t('toolbar.common.comment'), group: 'action' },
   ];
 }
 
@@ -300,6 +301,7 @@ export function getDiagramEdgeItems(): ToolbarItem[] {
     { key: 'copy', type: 'action', icon: icon(Copy), label: t('toolbar.common.copy'), group: 'action' },
     { key: 'delete', type: 'action', icon: icon(Trash2), label: t('toolbar.common.delete'), group: 'action' },
     { key: 'zOrder', type: 'dropdown', icon: icon(Layers), label: t('toolbar.common.zOrder'), group: 'action', options: getZOrderOptions(t) },
+    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: t('toolbar.common.comment'), group: 'action' },
   ];
 }
 
@@ -311,6 +313,7 @@ export function getDiagramImageItems(): ToolbarItem[] {
     { key: 'copy', type: 'action', icon: icon(Copy), label: t('toolbar.common.copy'), group: 'action' },
     { key: 'delete', type: 'action', icon: icon(Trash2), label: t('toolbar.common.delete'), group: 'action' },
     { key: 'zOrder', type: 'dropdown', icon: icon(Layers), label: t('toolbar.common.zOrder'), group: 'action', options: getZOrderOptions(t) },
+    { key: 'comment', type: 'action', icon: icon(MessageSquare), label: t('toolbar.common.comment'), group: 'action' },
   ];
 }
 

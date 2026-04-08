@@ -49,21 +49,22 @@ export function createUnifiedComment(db, deps, opts) {
   } = deps;
   const {
     targetType, targetId, text, parentId = null, anchorType = null, anchorId = null, anchorMeta = null,
-    actorId, actorName, idPrefix = 'ccmt',
+    actorId, actorName, idPrefix = 'ccmt', dataJson = null,
   } = opts;
 
   const id = genId(idPrefix);
   const now = new Date().toISOString();
   const anchorMetaStr = anchorMeta ? JSON.stringify(anchorMeta) : null;
   const rowIdVal = anchorType === 'row' && anchorId ? anchorId : null;
+  const dataJsonStr = dataJson ? JSON.stringify(dataJson) : null;
   const contentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(targetId);
   const contextPayload = buildContextPayload(db, {
     targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName,
   });
-  db.prepare(`INSERT INTO comments (id, target_type, target_id, text, actor, actor_id, parent_id, anchor_type, anchor_id, anchor_meta, row_id, context_payload, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO comments (id, target_type, target_id, text, actor, actor_id, parent_id, anchor_type, anchor_id, anchor_meta, row_id, data_json, context_payload, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, targetType, targetId, text, actorName, actorId, parentId,
-    anchorType, anchorId, anchorMetaStr, rowIdVal, JSON.stringify(contextPayload), now, now,
+    anchorType, anchorId, anchorMetaStr, rowIdVal, dataJsonStr, JSON.stringify(contextPayload), now, now,
   );
 
   emitCommentEvent(db, {

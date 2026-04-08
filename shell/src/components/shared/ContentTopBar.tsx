@@ -54,6 +54,7 @@ export interface ContentTopBarProps {
   // Save status indicator
   statusText?: string;
   statusError?: boolean;
+  onRetry?: () => void;
 
   // Mobile home button
   onHome?: () => void;
@@ -84,6 +85,7 @@ export function ContentTopBar({
   onComments,
   statusText,
   statusError,
+  onRetry,
   mode = 'preview',
   onUndo,
   onRedo,
@@ -250,6 +252,11 @@ export function ContentTopBar({
           {statusText && (
             <span className={cn('text-[10px]', statusError ? 'text-destructive' : 'text-muted-foreground')}>
               {statusText}
+              {statusError && onRetry && (
+                <button onClick={onRetry} className="ml-1 underline hover:text-foreground transition-colors">
+                  {t('content.retry')}
+                </button>
+              )}
             </span>
           )}
           {/* Edit mode controls — desktop only */}

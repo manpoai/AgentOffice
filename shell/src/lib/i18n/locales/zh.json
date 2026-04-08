@@ -122,6 +122,7 @@
     "saved": "已保存",
     "unsaved": "未保存",
     "saveFailed": "保存失败",
+    "retry": "重试",
     "selectRevision": "选择一个版本进行预览",
     "currentVersion": "当前版本",
     "loading": "加载中...",
@@ -185,7 +186,13 @@
     "noAgents": "暂无 Agent",
     "registerHint": "Agent 通过自注册 API 接入",
     "sendMessage": "发消息",
-    "assignTask": "分配任务"
+    "assignTask": "分配任务",
+    "editAgent": "编辑 Agent",
+    "changeAvatar": "更换头像",
+    "platform": "平台",
+    "displayName": "显示名称",
+    "save": "保存",
+    "cancel": "取消"
   },
   "editor": {
     "heading1": "标题 1",
@@ -288,6 +295,8 @@
     "title": "评论",
     "placeholder": "输入评论...",
     "replyPlaceholder": "输入回复...",
+    "replyingTo": "回复 {{name}}",
+    "repliedTo": "回复了 {{name}}",
     "justNow": "刚刚",
     "minutesAgo": "{n}分钟前",
     "hoursAgo": "{n}小时前",
@@ -315,7 +324,29 @@
     "editFailed": "编辑评论失败",
     "deleteFailed": "删除评论失败",
     "resolveFailed": "解决评论失败",
-    "unresolveFailed": "重新打开评论失败"
+    "unresolveFailed": "重新打开评论失败",
+    "mentionUser": "提及用户",
+    "send": "发送",
+    "threadReply": "回复此评论",
+    "quotedContent": "引用内容",
+    "agent": "智能体",
+    "commentOnRow": "评论了第 {{row}} 行",
+    "commentOnDoc": "评论了文档",
+    "newComments": "有新评论",
+    "selectAgent": "选择智能体",
+    "noAgents": "没有可用的智能体",
+    "anchorTypes": {
+      "text-range": "文本选区",
+      "image": "图片",
+      "table": "表格",
+      "diagram_embed": "流程图",
+      "mermaid": "Mermaid 图",
+      "node": "节点",
+      "edge": "连线",
+      "slide": "幻灯片",
+      "element": "元素",
+      "row": "行"
+    }
   },
   "table": {
     "alignLeft": "左对齐",
@@ -728,7 +759,8 @@
       "solidLine": "实线",
       "dashedLine": "虚线",
       "dottedLine": "点线",
-      "none": "无"
+      "none": "无",
+      "comment": "评论"
     },
     "docs": {
       "highlight": "高亮",
@@ -984,7 +1016,14 @@
     "noNotifications": "暂无通知",
     "messages": "消息",
     "markAllRead": "全部标为已读",
-    "noMessages": "暂无消息"
+    "noMessages": "暂无消息",
+    "types": {
+      "comment_on_content": "内容评论",
+      "comment_reply": "评论回复",
+      "mention": "提及",
+      "comment_resolved": "评论已解决",
+      "comment_unresolved": "评论已重新打开"
+    }
   },
   "search": {
     "find": "查找...",

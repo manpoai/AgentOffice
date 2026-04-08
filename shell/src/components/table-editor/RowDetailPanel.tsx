@@ -142,18 +142,18 @@ export function RowDetailPanel({
 
         {/* Bottom comment bar */}
         <MobileCommentBar
-          targetType="table"
-          targetId={tableId}
+          onClick={() => setShowComments(true)}
         />
 
         {/* Comments BottomSheet */}
         {showComments && (
-          <BottomSheet open={true} onClose={() => setShowComments(false)} title={t('content.comments')} initialHeight="full">
+          <BottomSheet open={true} onClose={() => setShowComments(false)} initialHeight="full">
             <CommentPanel
               targetType="table"
-              targetId={tableId}
+              targetId={`table:${tableId}`}
               rowId={rowIdStr}
               onClose={() => setShowComments(false)}
+              autoFocus
             />
           </BottomSheet>
         )}
@@ -233,7 +233,7 @@ export function RowDetailPanel({
             <div className="w-80 border-l border-border flex flex-col shrink-0 overflow-hidden">
               <CommentPanel
                 targetType="table"
-                targetId={tableId}
+                targetId={`table:${tableId}`}
                 rowId={rowIdStr}
                 onClose={() => setShowComments(false)}
               />

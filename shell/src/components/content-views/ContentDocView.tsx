@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { TextSelection } from 'prosemirror-state';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as docApi from '@/lib/api/documents';
 import type { Document as DocType, Revision as DocRevision } from '@/lib/api/documents';
@@ -67,7 +68,7 @@ function DocMenuToggle({ icon: Icon, label, checked, onChange }: {
   );
 }
 
-export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onNavigate, docListVisible, onToggleDocList }: {
+export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, onDeleted, onNavigate, docListVisible, onToggleDocList, focusCommentId: initialFocusCommentId, showComments, onShowComments, onCloseComments, onToggleComments }: {
   doc: DocType;
   customIcon?: string;
   breadcrumb: { id: string; title: string }[];
@@ -77,6 +78,11 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
   onNavigate: (docId: string) => void;
   docListVisible?: boolean;
   onToggleDocList?: () => void;
+  focusCommentId?: string;
+  showComments: boolean;
+  onShowComments: () => void;
+  onCloseComments: () => void;
+  onToggleComments: () => void;
 }) {
   const { t } = useT();
 
@@ -84,45 +90,82 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
   useKeyboardScope('document', DOC_SHORTCUTS);
   const queryClient = useQueryClient();
 
-  // Shared comment fetch function — used by both highlight extraction and Comments component
-  const fetchDocComments = useCallback(async () => {
-    const comments = await docApi.listComments(doc.id);
-    return comments.map(c => ({
-      id: c.id,
-      text: docApi.proseMirrorToText(c.data),
-      actor: c.createdBy?.name || 'Unknown',
-      parent_id: c.parentCommentId || null,
-      resolved_by: c.resolvedBy || null,
-      resolved_at: c.resolvedAt || null,
-      created_at: c.createdAt,
-      updated_at: c.updatedAt,
-    }));
-  }, [doc.id]);
-
-  // Fetch comments — shared query key with Comments component so invalidation works
+  // Fetch comments — unified queryKey matches CommentPanel so both share same cache
+  const unifiedDocId = `doc:${doc.id}`;
   const { data: docComments = [] } = useQuery({
-    queryKey: ['doc-comments', doc.id],
-    queryFn: fetchDocComments,
+    queryKey: ['comments', 'doc', unifiedDocId, undefined],
+    queryFn: () => gw.listContentComments(unifiedDocId),
+    staleTime: 10_000,
   });
   // Extract quoted text from comments for editor highlighting (skip resolved comments)
   const commentHighlightQuotes = useMemo(() => {
     return docComments
       .filter(c => !c.resolved_by)
       .map(c => {
-        const match = c.text.match(/^>\s(.+?)(?:\n\n)/);
-        return match ? { id: c.id, text: match[1] } : null;
+        const anchor = c.context_payload?.anchor;
+        if (!anchor) return null;
+        const quote = anchor.meta?.quote || anchor.preview;
+        if (!quote && !anchor.type) return null;
+        return { id: c.id, text: (quote as string) || '', anchorType: anchor.type as string };
       })
-      .filter((q): q is { id: string; text: string } => q !== null);
+      .filter((q): q is { id: string; text: string; anchorType?: string } => q !== null);
   }, [docComments]);
 
-  const [showComments, setShowComments] = useState(false);
+  const [activeFocusCommentId, setActiveFocusCommentId] = useState<string | undefined>(initialFocusCommentId);
+
+  const navigateToAnchor = useCallback((anchor: { type: string; id: string; meta?: Record<string, unknown> }) => {
+    // Delay to let click event finish processing before moving focus/scroll
+    setTimeout(() => {
+      try {
+        const getPmView = () => (document.querySelector('.outline-editor-mount') as any)?.__pmView;
+        if (anchor.type === 'text-range') {
+          const quote = (anchor.meta?.quote as string) || '';
+          if (!quote) return;
+          const view = getPmView();
+          if (!view) { console.warn('[navigateToAnchor] ProseMirror view not found'); return; }
+          const { doc } = view.state;
+          let from = -1;
+          doc.descendants((node: any, pos: number) => {
+            if (from >= 0) return false;
+            if (node.isText && node.text?.includes(quote)) {
+              from = pos + node.text.indexOf(quote);
+              return false;
+            }
+          });
+          if (from >= 0) {
+            view.dispatch(view.state.tr.setSelection(
+              TextSelection.create(doc, from, from + quote.length)
+            ).scrollIntoView());
+            view.focus();
+          } else {
+            console.warn('[navigateToAnchor] Quote not found in doc:', quote);
+          }
+        } else {
+          const typeMap: Record<string, string> = {
+            image: '.comment-marker-block img, .comment-marker-block',
+            table: '.comment-marker-block table, .comment-marker-block',
+            mermaid: '.comment-marker-block',
+            diagram_embed: '.comment-marker-block',
+          };
+          const sel = typeMap[anchor.type] || '.comment-marker-block';
+          const el = document.querySelector(sel);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          else console.warn('[navigateToAnchor] Block element not found:', sel);
+        }
+      } catch (e) {
+        console.error('[navigateToAnchor] Error:', e);
+      }
+    }, 50);
+  }, []);
   const [showDocMenu, setShowDocMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [commentQuote, setCommentQuote] = useState('');
+  const [commentAnchor, setCommentAnchor] = useState<{ type: string; id: string; meta?: Record<string, unknown> } | null>(null);
   const [title, setTitle] = useState(doc.title);
   const [emoji, setEmoji] = useState<string | null>(customIcon || doc.icon?.trim() || null);
   const [text, setText] = useState(doc.text);
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
+  const [reliabilityStatus, setReliabilityStatus] = useState<'clean' | 'dirty' | 'flushing' | 'flush_failed'>('clean');
+  const [flushRetryCount, setFlushRetryCount] = useState(0);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showTitleIcon, setShowTitleIcon] = useState(false);
   const [editorKey, setEditorKey] = useState(0);
@@ -160,7 +203,12 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
       const detail = (e as CustomEvent).detail;
       if (detail?.text) {
         setCommentQuote(detail.text);
-        setShowComments(true);
+        setCommentAnchor(detail.anchorType ? {
+          type: detail.anchorType,
+          id: detail.anchorId,
+          meta: detail.anchorMeta,
+        } : null);
+        onShowComments();
         const editorArea = document.querySelector('.outline-editor');
         if (editorArea) {
           const editorRect = editorArea.getBoundingClientRect();
@@ -208,6 +256,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
         el.classList.add('comment-focused')
       );
       setFocusedCommentId(id);
+      setActiveFocusCommentId(id);
 
       const editorArea = document.querySelector('.outline-editor');
       if (editorArea) {
@@ -216,11 +265,11 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
         setCommentTopOffset(markRect.top - editorRect.top);
       }
 
-      if (!showComments) setShowComments(true);
+      if (!showComments) onShowComments();
     };
     document.addEventListener('mouseup', handler);
     return () => document.removeEventListener('mouseup', handler);
-  }, [focusedCommentId, showComments]);
+  }, [focusedCommentId, showComments, onShowComments]);
 
   // Global Cmd+F / Cmd+H to open search bar
   useEffect(() => {
@@ -254,7 +303,8 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
     latestTitleRef.current = doc.title;
     latestTextRef.current = doc.text;
     latestEmojiRef.current = (customIcon || doc.icon || null) as string | null;
-    setSaveStatus('saved');
+    setReliabilityStatus('clean');
+    setFlushRetryCount(0);
     setShowHistory(false);
     setPreviewRevision(null);
     setPrevRevision(null);
@@ -275,9 +325,9 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
   }, [showEmojiPicker]);
 
   // Shared save execution
-  const executeSave = useCallback(async (saveDocId: string, titleVersion: number, textVersion: number) => {
+  const executeSave = useCallback(async (saveDocId: string, titleVersion: number, textVersion: number, attempt = 0) => {
     if (saveDocId !== docIdRef.current) return;
-    setSaveStatus('saving');
+    setReliabilityStatus('flushing');
     try {
       const savingTitle = latestTitleRef.current;
       const savingText = latestTextRef.current;
@@ -293,18 +343,27 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
       );
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
       if (saveDocId === docIdRef.current) {
-        setSaveStatus('saved');
+            setReliabilityStatus('clean');
+        setFlushRetryCount(0);
       }
     } catch (e) {
+      if (attempt < 2) {
+        setFlushRetryCount(attempt + 1);
+        setTimeout(() => executeSave(saveDocId, titleVersion, textVersion, attempt + 1), 400 * (attempt + 1));
+        return;
+      }
       showError(t('errors.autoSaveFailed'), e);
-      if (saveDocId === docIdRef.current) setSaveStatus('error');
+      if (saveDocId === docIdRef.current) {
+        setReliabilityStatus('flush_failed');
+        setFlushRetryCount(attempt + 1);
+      }
     }
-  }, [queryClient]);
+  }, [queryClient, t]);
 
   const scheduleTitleSave = useCallback((newTitle: string, newEmoji?: string | null) => {
     latestTitleRef.current = newTitle;
     if (newEmoji !== undefined) latestEmojiRef.current = newEmoji;
-    setSaveStatus('unsaved');
+    setReliabilityStatus('dirty');
     if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
     if (textSaveTimerRef.current) { clearTimeout(textSaveTimerRef.current); textSaveTimerRef.current = null; }
     const saveDocId = docIdRef.current;
@@ -315,7 +374,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
 
   const scheduleTextSave = useCallback((newText: string) => {
     latestTextRef.current = newText;
-    setSaveStatus('unsaved');
+    setReliabilityStatus('dirty');
     if (textSaveTimerRef.current) clearTimeout(textSaveTimerRef.current);
     if (titleSaveTimerRef.current) { clearTimeout(titleSaveTimerRef.current); titleSaveTimerRef.current = null; }
     const saveDocId = docIdRef.current;
@@ -337,7 +396,13 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
       if (document.hidden) flushDocSave();
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
-    const onBeforeUnload = () => flushDocSave();
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (reliabilityStatus === 'dirty' || reliabilityStatus === 'flush_failed') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+      flushDocSave();
+    };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -406,7 +471,13 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
     navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id }));
   }, [doc.id]);
 
-  const statusText = saveStatus === 'saving' ? t('content.saving') : saveStatus === 'unsaved' ? t('content.unsaved') : saveStatus === 'error' ? t('content.saveFailed') : '';
+  const statusText = reliabilityStatus === 'flushing'
+    ? t('content.saving')
+    : reliabilityStatus === 'dirty'
+      ? t('content.unsaved')
+      : reliabilityStatus === 'flush_failed'
+        ? `${t('content.saveFailed')} (${flushRetryCount}/3)`
+        : '';
 
   const mobileReadOnly = isMobile && !mobileEditMode;
 
@@ -447,12 +518,16 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
             </button>
           }
           statusText={statusText}
-          statusError={saveStatus === 'error'}
+          statusError={reliabilityStatus === 'flush_failed'}
+          onRetry={reliabilityStatus === 'flush_failed' ? () => {
+            setFlushRetryCount(0);
+            executeSave(docIdRef.current, titleVersionRef.current, textVersionRef.current);
+          } : undefined}
           mode={isMobile && mobileEditMode ? 'edit' : 'preview'}
           onCancelEdit={handleMobileCancel}
           onSave={handleMobileSave}
           onHistory={() => setShowHistory(true)}
-          onComments={() => setShowComments(v => !v)}
+          onComments={() => onToggleComments()}
           menuItems={[
             ...buildContentTopBarCommonMenuItems(t, {
               id: doc.id,
@@ -473,7 +548,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               shareItem: () => {},
               copyLink: () => { navigator.clipboard.writeText(buildContentLink({ type: 'doc', id: doc.id })); },
               showHistory: () => setShowHistory(true),
-              showComments: () => setShowComments(true),
+              showComments: () => onShowComments(),
               search: () => { setShowSearch(true); setSearchWithReplace(false); },
             }),
             { icon: Maximize2, label: t('content.fullWidth'), separator: true, desktopOnly: true, onClick: () => {}, desktopRender: (
@@ -498,7 +573,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               shareItem: () => {},
               copyLink: handleCopyLink,
               showHistory: () => setShowHistory(v => !v),
-              showComments: () => setShowComments(v => !v),
+              showComments: () => onToggleComments(),
               search: () => { setShowSearch(true); setSearchWithReplace(false); },
               showHistoryActive: showHistory,
               showCommentsActive: showComments,
@@ -645,8 +720,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
     {/* Mobile: comment bar (preview mode only) + EditFAB */}
     {isMobile && !mobileEditMode && (
       <MobileCommentBar
-        targetType="doc"
-        targetId={`doc:${doc.id}`}
+        onClick={() => { onShowComments(); setShowHistory(false); }}
         rightSlot={
           <button
             onClick={() => setMobileEditMode(true)}
@@ -674,14 +748,27 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
             <CommentPanel
               targetType="doc"
               targetId={`doc:${doc.id}`}
-              onClose={() => setShowComments(false)}
+              anchorType={commentAnchor?.type}
+              anchorId={commentAnchor?.id}
+              anchorMeta={commentAnchor?.meta}
+              onClose={() => onCloseComments()}
+              focusCommentId={activeFocusCommentId}
+              onAnchorUsed={() => setCommentAnchor(null)}
+              onNavigateToAnchor={navigateToAnchor}
             />
           </div>
-          <BottomSheet open={true} onClose={() => setShowComments(false)} title={t('content.comments')} initialHeight="full">
+          <BottomSheet open={true} onClose={() => onCloseComments()} initialHeight="full">
             <CommentPanel
               targetType="doc"
               targetId={`doc:${doc.id}`}
-              onClose={() => setShowComments(false)}
+              anchorType={commentAnchor?.type}
+              anchorId={commentAnchor?.id}
+              anchorMeta={commentAnchor?.meta}
+              onClose={() => onCloseComments()}
+              focusCommentId={activeFocusCommentId}
+              onAnchorUsed={() => setCommentAnchor(null)}
+              onNavigateToAnchor={navigateToAnchor}
+              autoFocus
             />
           </BottomSheet>
         </>

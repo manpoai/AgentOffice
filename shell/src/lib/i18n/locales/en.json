@@ -185,7 +185,13 @@
     "noAgents": "No Agents",
     "registerHint": "Agents register via self-register API",
     "sendMessage": "Send Message",
-    "assignTask": "Assign Task"
+    "assignTask": "Assign Task",
+    "editAgent": "Edit Agent",
+    "changeAvatar": "Change Avatar",
+    "platform": "Platform",
+    "displayName": "Display Name",
+    "save": "Save",
+    "cancel": "Cancel"
   },
   "editor": {
     "error": "Editor error",
@@ -288,6 +294,8 @@
     "title": "Comments",
     "placeholder": "Write a comment...",
     "replyPlaceholder": "Write a reply...",
+    "replyingTo": "Replying to {{name}}",
+    "repliedTo": "Replied to {{name}}",
     "justNow": "just now",
     "minutesAgo": "{n}m ago",
     "hoursAgo": "{n}h ago",
@@ -315,7 +323,29 @@
     "editFailed": "Failed to edit comment",
     "deleteFailed": "Failed to delete comment",
     "resolveFailed": "Failed to resolve comment",
-    "unresolveFailed": "Failed to reopen comment"
+    "unresolveFailed": "Failed to reopen comment",
+    "mentionUser": "Mention user",
+    "send": "Send",
+    "threadReply": "Reply to this comment",
+    "quotedContent": "Quoted content",
+    "agent": "Agent",
+    "commentOnRow": "Commented on row {{row}}",
+    "commentOnDoc": "Commented on document",
+    "newComments": "New comments",
+    "selectAgent": "Select agent",
+    "noAgents": "No agents available",
+    "anchorTypes": {
+      "text-range": "Text Selection",
+      "image": "Image",
+      "table": "Table",
+      "diagram_embed": "Diagram",
+      "mermaid": "Mermaid Diagram",
+      "node": "Node",
+      "edge": "Connection",
+      "slide": "Slide",
+      "element": "Element",
+      "row": "Row"
+    }
   },
   "table": {
     "alignLeft": "Align left",
@@ -728,7 +758,8 @@
       "solidLine": "Solid",
       "dashedLine": "Dashed",
       "dottedLine": "Dotted",
-      "none": "None"
+      "none": "None",
+      "comment": "Comment"
     },
     "docs": {
       "highlight": "Highlight",
@@ -906,6 +937,7 @@
     "createSnapshotFailed": "Create snapshot failed",
     "loadSnapshotFailed": "Load snapshot failed",
     "saveFailed": "Save failed",
+    "retry": "Retry",
     "dateUpdateFailed": "Date update failed",
     "deleteAttachmentFailed": "Delete attachment failed",
     "reorderFailed": "Reorder failed",
@@ -984,7 +1016,14 @@
     "noNotifications": "No notifications",
     "messages": "Messages",
     "markAllRead": "Mark all read",
-    "noMessages": "No messages"
+    "noMessages": "No messages",
+    "types": {
+      "comment_on_content": "Comment on content",
+      "comment_reply": "Comment reply",
+      "mention": "Mention",
+      "comment_resolved": "Comment resolved",
+      "comment_unresolved": "Comment reopened"
+    }
   },
   "search": {
     "find": "Find...",

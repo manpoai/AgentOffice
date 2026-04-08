@@ -820,17 +820,11 @@
 
 /* Block-level comment markers (images, tables, mermaid, etc.) */
 .outline-editor-content .comment-marker-block:not([data-resolved]) {
-  outline: 2px solid rgba(43, 194, 255, 0.4);
-  outline-offset: 2px;
-  border-radius: 4px;
-  transition: outline-color 100ms ease-in-out;
   cursor: pointer;
 }
 
 .outline-editor-content .comment-marker-block:not([data-resolved]):hover,
 .outline-editor-content .comment-marker-block.comment-focused {
-  outline-color: rgba(43, 194, 255, 0.7);
-  background: rgba(43, 194, 255, 0.05);
 }
 
 /* Resolved comments: no styling */
