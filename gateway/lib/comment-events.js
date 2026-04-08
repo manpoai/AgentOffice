@@ -20,12 +20,12 @@ export function buildCommentLink(targetId, anchorType, anchorId, commentId) {
 /**
  * Write a notification row for a human actor.
  */
-function createNotification(db, { genId, actorId, targetActorId, type, title, body, link }) {
+function createNotification(db, { genId, actorId, targetActorId, type, title, body, link, meta }) {
   const id = genId('notif');
   db.prepare(
-    `INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, read, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, unixepoch() * 1000)`
-  ).run(id, actorId || null, targetActorId, type, title, body || null, link || null);
+    `INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, unixepoch() * 1000)`
+  ).run(id, actorId || null, targetActorId, type, title, body || null, link || null, meta ? JSON.stringify(meta) : null);
 }
 
 /**
@@ -59,6 +59,7 @@ export function emitCommentEvent(db, {
   actorId,
   actorName,
   ownerActorId,
+  targetTitle,
   contextPayload,
   genId,
   pushEvent,
@@ -95,9 +96,14 @@ export function emitCommentEvent(db, {
           actorId,
           targetActorId: ownerActorId,
           type: 'comment_on_content',
-          title: `${actorName} 评论了你的内容`,
+          title: targetTitle ? `${actorName} 评论了《${targetTitle}》` : `${actorName} 评论了你的内容`,
           body: contextPayload?.summary?.comment_text || (text || '').substring(0, 200),
           link,
+          meta: {
+            target_type: targetType,
+            target_id: targetId,
+            target_title: targetTitle || null,
+          },
         });
         if (pushHumanEvent) pushHumanEvent(ownerActorId, { event: 'notification.created', data: { type: 'comment_on_content', target_actor_id: ownerActorId } });
       } else if (ownerActor?.type === 'agent' && pushEvent) {

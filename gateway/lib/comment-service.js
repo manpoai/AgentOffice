@@ -58,6 +58,7 @@ export function createUnifiedComment(db, deps, opts) {
   const rowIdVal = anchorType === 'row' && anchorId ? anchorId : null;
   const dataJsonStr = dataJson ? JSON.stringify(dataJson) : null;
   const contentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(targetId);
+  const contentTitle = db.prepare('SELECT title FROM content_items WHERE id = ?').get(targetId)?.title || '';
   const contextPayload = buildContextPayload(db, {
     targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName,
   });
@@ -79,6 +80,7 @@ export function createUnifiedComment(db, deps, opts) {
     actorId,
     actorName,
     ownerActorId: contentOwner?.owner_actor_id || null,
+    targetTitle: contentTitle,
     contextPayload,
     genId,
     pushEvent,

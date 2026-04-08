@@ -141,7 +141,7 @@ export default function eventsRoutes(app, { db, authenticateAny, authenticateAge
     params.push(lim);
 
     const rows = db.prepare(sql).all(...params);
-    res.json({ notifications: rows });
+    res.json({ notifications: rows.map(r => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null })) });
   });
 
   app.get('/api/notifications/unread-count', authenticateAny, (req, res) => {
