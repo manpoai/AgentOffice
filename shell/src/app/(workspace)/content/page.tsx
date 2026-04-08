@@ -482,12 +482,15 @@ export default function ContentPage() {
       roots.sort((a, b) => (effectiveNodes.get(a)?.createdAt || 0) - (effectiveNodes.get(b)?.createdAt || 0));
     }
 
-    // Split roots into pinned and unpinned
+    // Pinned section: all pinned items across the entire tree (not just roots)
+    // Library section: all root items (unpinned roots only, to avoid duplication)
     const pinned: string[] = [];
     const unpinned: string[] = [];
+    effectiveNodes.forEach((node) => {
+      if (node.pinned) pinned.push(node.id);
+    });
     for (const id of roots) {
-      if (effectiveNodes.get(id)?.pinned) pinned.push(id);
-      else unpinned.push(id);
+      if (!effectiveNodes.get(id)?.pinned) unpinned.push(id);
     }
 
     return { childrenMap: cMap, rootIds: roots, pinnedIds: pinned, unpinnedIds: unpinned };
