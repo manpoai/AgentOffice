@@ -30,6 +30,7 @@ import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
+import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { usePinchZoom } from '@/lib/hooks/use-pinch-zoom';
 import { SlidePreviewList } from '@/components/shared/SlidePreviewList';
@@ -148,6 +149,8 @@ export function PresentationEditor({
   const [showPropertyPanel, setShowPropertyPanel] = useState(false);
   const [commentAnchor, setCommentAnchor] = useState<{ type: string; id: string; meta?: Record<string, unknown> } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [previewRevisionData, setPreviewRevisionData] = useState<any>(null);
+  const [previewRevisionMeta, setPreviewRevisionMeta] = useState<{ id: string; created_at: string } | null>(null);
   const [selectedSlideIndices, setSelectedSlideIndices] = useState<Set<number>>(new Set([0]));
   const slideClipboardRef = useRef<SlideData[]>([]);
   const [mobileEditMode, setMobileEditMode] = useState(false);
@@ -165,9 +168,13 @@ export function PresentationEditor({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Auto-save revision tracking
-  const lastRevisionRef = useRef<number>(0);
-  const REVISION_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  // ─── Reliability state ────────────────────────────
+  const [reliabilityStatus, setReliabilityStatus] = useState<'clean' | 'dirty' | 'flushing' | 'flush_failed'>('clean');
+  const [flushRetryCount, setFlushRetryCount] = useState(0);
+  const [lastSaved, setLastSaved] = useState<number | null>(null);
+  const reliabilityStatusRef = useRef<string>('clean');
+  reliabilityStatusRef.current = reliabilityStatus;
+  const dirtyRef = useRef(false);
 
   // Refs
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -312,20 +319,58 @@ export function PresentationEditor({
   const currentTitle = breadcrumb?.[breadcrumb.length - 1]?.title || '';
 
   // ─── Auto-save ────────────────────────────────────
-  const triggerSave = useCallback((updatedSlides: SlideData[]) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      gw.savePresentation(presentationId, { slides: updatedSlides }).catch((err) => {
-        showError(t('errors.presentationAutoSaveFailed'), err);
-      });
-      // Auto-create revision every 5 minutes
-      const now = Date.now();
-      if (now - lastRevisionRef.current > REVISION_INTERVAL) {
-        lastRevisionRef.current = now;
-        gw.createContentRevision(`presentation:${presentationId}`, { slides: updatedSlides }).catch(() => {});
+  const AUTOSAVE_DEBOUNCE_MS = 800;
+  const saveRef = useRef<(attempt?: number) => Promise<void> | void>(() => {});
+
+  /** Get the truly latest slides (with current canvas serialized into the current slide slot) */
+  const getLatestSlides = useCallback((): SlideData[] => {
+    const serialized = serializeCanvasRef.current?.();
+    if (!serialized) return slidesRef.current;
+    const updated = [...slidesRef.current];
+    updated[currentSlideIndexRef.current] = serialized;
+    return updated;
+  }, []);
+  const getLatestSlidesRef = useRef(getLatestSlides);
+  getLatestSlidesRef.current = getLatestSlides;
+
+  const save = useCallback(async (attempt = 0) => {
+    if (!dirtyRef.current && attempt === 0) return;
+    setReliabilityStatus('flushing');
+    try {
+      const latestSlides = getLatestSlidesRef.current();
+      await gw.savePresentation(presentationId, { slides: latestSlides });
+      dirtyRef.current = false;
+      setLastSaved(Date.now());
+      setReliabilityStatus('clean');
+      setFlushRetryCount(0);
+    } catch (e) {
+      if (attempt < 2) {
+        setFlushRetryCount(attempt + 1);
+        setTimeout(() => saveRef.current(attempt + 1), 400 * (attempt + 1));
+        return;
       }
-    }, 800);
-  }, [presentationId]);
+      showError(t('errors.presentationAutoSaveFailed'), e);
+      setReliabilityStatus('flush_failed');
+      setFlushRetryCount(attempt + 1);
+    }
+  }, [presentationId, t]);
+
+  saveRef.current = save;
+
+  const scheduleSave = useCallback(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(save, AUTOSAVE_DEBOUNCE_MS);
+  }, [save]);
+
+  const flushSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (dirtyRef.current) {
+      return saveRef.current();
+    }
+  }, []);
 
   // ─── Canvas Setup ─────────────────────────────────
   useEffect(() => {
@@ -1089,14 +1134,15 @@ export function PresentationEditor({
   const saveCurrentSlideToState = useCallback(() => {
     const serialized = serializeCanvas();
     if (!serialized) return;
-
     setSlides(prev => {
       const updated = [...prev];
       updated[currentSlideIndex] = serialized;
-      triggerSave(updated);
       return updated;
     });
-  }, [currentSlideIndex, serializeCanvas, triggerSave]);
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [currentSlideIndex, serializeCanvas, scheduleSave]);
 
   saveCurrentSlideToStateRef.current = saveCurrentSlideToState;
 
@@ -1108,32 +1154,67 @@ export function PresentationEditor({
 
   useEffect(() => {
     return () => {
-      // Flush any pending debounced save
+      // Flush any pending debounced canvas→state sync
       if (modifiedDebounceRef.current) clearTimeout(modifiedDebounceRef.current);
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      // Serialize current canvas and save immediately (can't use setState in unmount)
-      try {
-        const serialized = serializeCanvasRef.current();
-        if (serialized) {
-          const updated = [...slidesRef.current];
-          updated[currentSlideIndexRef.current] = serialized;
-          gw.savePresentation(presentationId, { slides: updated }).catch(() => {});
-        }
-      } catch {}
+      // Flush pending save timer
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      // Final save with latest canvas state
+      if (dirtyRef.current) {
+        try {
+          const latestSlides = getLatestSlidesRef.current();
+          gw.savePresentation(presentationId, { slides: latestSlides }).catch(() => {});
+        } catch {}
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presentationId]);
+
+  // ─── beforeunload + visibilitychange ─────────────
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden && dirtyRef.current) {
+        saveRef.current();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current || reliabilityStatusRef.current === 'flush_failed') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+      if (!dirtyRef.current) return;
+      try {
+        const latestSlides = getLatestSlidesRef.current();
+        const payload = JSON.stringify({ data: { slides: latestSlides } });
+        fetch(`/api/gateway/presentations/${presentationId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...gw.gwAuthHeaders() },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      } catch {}
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
   }, [presentationId]);
 
   // ─── Slide Operations ─────────────────────────────
   const addSlide = useCallback(() => {
     saveCurrentSlideToState();
-    setSlides(prev => {
-      const updated = [...prev, { ...DEFAULT_SLIDE }];
-      triggerSave(updated);
-      return updated;
-    });
+    setSlides(prev => [...prev, { ...DEFAULT_SLIDE }]);
     setCurrentSlideIndex(slides.length);
-  }, [slides.length, saveCurrentSlideToState, triggerSave]);
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [slides.length, saveCurrentSlideToState, scheduleSave]);
 
   const duplicateSlide = useCallback(() => {
     const serialized = serializeCanvas();
@@ -1141,21 +1222,22 @@ export function PresentationEditor({
     setSlides(prev => {
       const updated = [...prev];
       updated.splice(currentSlideIndex + 1, 0, JSON.parse(JSON.stringify(serialized)));
-      triggerSave(updated);
       return updated;
     });
     setCurrentSlideIndex(currentSlideIndex + 1);
-  }, [currentSlideIndex, serializeCanvas, triggerSave]);
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [currentSlideIndex, serializeCanvas, scheduleSave]);
 
   const deleteSlide = useCallback(() => {
     if (slides.length <= 1) return;
-    setSlides(prev => {
-      const updated = prev.filter((_, i) => i !== currentSlideIndex);
-      triggerSave(updated);
-      return updated;
-    });
+    setSlides(prev => prev.filter((_, i) => i !== currentSlideIndex));
     setCurrentSlideIndex(Math.min(currentSlideIndex, slides.length - 2));
-  }, [currentSlideIndex, slides.length, triggerSave]);
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [currentSlideIndex, slides.length, scheduleSave]);
 
   const moveSlide = useCallback((dir: -1 | 1) => {
     const newIdx = currentSlideIndex + dir;
@@ -1164,11 +1246,13 @@ export function PresentationEditor({
     setSlides(prev => {
       const updated = [...prev];
       [updated[currentSlideIndex], updated[newIdx]] = [updated[newIdx], updated[currentSlideIndex]];
-      triggerSave(updated);
       return updated;
     });
     setCurrentSlideIndex(newIdx);
-  }, [currentSlideIndex, slides.length, saveCurrentSlideToState, triggerSave]);
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [currentSlideIndex, slides.length, saveCurrentSlideToState, scheduleSave]);
 
   // ─── Canvas Tool Actions ──────────────────────────
   const addTextbox = useCallback(() => {
@@ -1453,6 +1537,12 @@ export function PresentationEditor({
     return () => window.removeEventListener('keydown', handler);
   }, [deleteSelected]);
 
+  useEffect(() => {
+    const handler = () => { gw.createContentManualSnapshot(`presentation:${presentationId}`).catch(() => {}); };
+    window.addEventListener('save-current', handler);
+    return () => window.removeEventListener('save-current', handler);
+  }, [presentationId]);
+
   // Title editing now handled by ContentTopBar
 
   // ─── Delete Presentation ──────────────────────────
@@ -1488,28 +1578,31 @@ export function PresentationEditor({
     setSlides(prev => {
       const updated = [...prev];
       updated[currentSlideIndex] = { ...updated[currentSlideIndex], background: bg };
-      triggerSave(updated);
       return updated;
     });
-  }, [currentSlideIndex, triggerSave]);
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [currentSlideIndex, scheduleSave]);
 
   const handleApplyBackgroundToAll = useCallback(() => {
     const bg = slides[currentSlideIndex]?.background || '#ffffff';
-    setSlides(prev => {
-      const updated = prev.map(s => ({ ...s, background: bg }));
-      triggerSave(updated);
-      return updated;
-    });
-  }, [currentSlideIndex, slides, triggerSave]);
+    setSlides(prev => prev.map(s => ({ ...s, background: bg })));
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [currentSlideIndex, slides, scheduleSave]);
 
   const handleSlideBackgroundImageChange = useCallback((bgImage: string | undefined) => {
     setSlides(prev => {
       const updated = [...prev];
       updated[currentSlideIndex] = { ...updated[currentSlideIndex], backgroundImage: bgImage };
-      triggerSave(updated);
       return updated;
     });
-  }, [currentSlideIndex, triggerSave]);
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [currentSlideIndex, scheduleSave]);
 
   // ─── Presenter Mode ──────────────────────────────
   if (isPresenting) {
@@ -1565,6 +1658,15 @@ export function PresentationEditor({
                 queryClient.invalidateQueries({ queryKey: ['content-items'] });
               }
             }}
+            statusText={
+              reliabilityStatus === 'flushing' ? t('content.saving') :
+              reliabilityStatus === 'dirty' ? t('content.unsaved') :
+              reliabilityStatus === 'flush_failed' ? t('content.saveFailed') :
+              lastSaved ? t('content.saved') :
+              undefined
+            }
+            statusError={reliabilityStatus === 'flush_failed'}
+            onRetry={reliabilityStatus === 'flush_failed' ? () => save(0) : undefined}
             onUndo={pptUndo}
             onRedo={pptRedo}
             canUndo={undoStackRef.current.length > 0}
@@ -1634,13 +1736,17 @@ export function PresentationEditor({
           <BottomSheet open={true} onClose={() => setShowHistory(false)} title={t('content.versionHistory')} initialHeight="full">
             <RevisionHistory
               contentType="presentation"
-              contentId={presentationId}
-              onClose={() => setShowHistory(false)}
+              contentId={`presentation:${presentationId}`}
+              onClose={() => { setShowHistory(false); setPreviewRevisionData(null); }}
+              onCreateManualVersion={async () => { await flushSave(); await gw.createContentManualSnapshot(`presentation:${presentationId}`); }}
+              onSelectRevision={(rev) => { setPreviewRevisionData(rev?.data ?? null); setPreviewRevisionMeta(rev ? { id: rev.id, created_at: rev.created_at } : null); }}
               onRestore={async (data) => {
+                setPreviewRevisionData(null);
                 if (data?.slides) {
                   setSlides(data.slides);
                   setCurrentSlideIndex(0);
-                  await gw.savePresentation(presentationId, { slides: data.slides });
+                  dirtyRef.current = true;
+                  await save(0);
                   queryClient.invalidateQueries({ queryKey: ['presentation', presentationId] });
                 }
               }}
@@ -1671,6 +1777,15 @@ export function PresentationEditor({
               queryClient.invalidateQueries({ queryKey: ['content-items'] });
             }
           }}
+          statusText={
+            reliabilityStatus === 'flushing' ? t('content.saving') :
+            reliabilityStatus === 'dirty' ? t('content.unsaved') :
+            reliabilityStatus === 'flush_failed' ? t('content.saveFailed') :
+            lastSaved ? t('content.saved') :
+            undefined
+          }
+          statusError={reliabilityStatus === 'flush_failed'}
+          onRetry={reliabilityStatus === 'flush_failed' ? () => save(0) : undefined}
           onUndo={pptUndo}
           onRedo={pptRedo}
           canUndo={undoStackRef.current.length > 0}
@@ -1756,8 +1871,69 @@ export function PresentationEditor({
           onSlideComment={(i: number) => handleSlideComment('slide', null)}
         />
 
+        {/* Version Preview Overlay */}
+        {previewRevisionData && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <RevisionPreviewBanner
+              createdAt={previewRevisionMeta?.created_at || new Date().toISOString()}
+              onExit={() => { setPreviewRevisionData(null); setPreviewRevisionMeta(null); }}
+              onRestore={previewRevisionMeta ? async () => {
+                if (!confirm(t('content.restoreVersionWarning', { type: t('content.typePresentation') }))) return;
+                try {
+                  const result = await gw.restoreContentRevision(`presentation:${presentationId}`, previewRevisionMeta.id);
+                  setPreviewRevisionData(null);
+                  setPreviewRevisionMeta(null);
+                  setShowHistory(false);
+                  // Refresh slides in-place instead of full page reload
+                  if (result.data?.slides) {
+                    setSlides(result.data.slides);
+                    setCurrentSlideIndex(0);
+                  }
+                  queryClient.invalidateQueries({ queryKey: ['presentation', presentationId] });
+                } catch (e: unknown) {
+                  alert(e instanceof Error ? e.message : t('content.restoreVersionFailed'));
+                }
+              } : undefined}
+            />
+            <div className="flex-1 overflow-auto p-6 bg-muted/30">
+              {previewRevisionData?.slides ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
+                  {previewRevisionData.slides.map((slide: any, i: number) => {
+                    const elements = slide.elements || slide.objects || [];
+                    const textEls = elements.filter((e: any) => e.type === 'textbox' || e.text);
+                    const shapeEls = elements.filter((e: any) => e.type === 'shape');
+                    const imageEls = elements.filter((e: any) => e.type === 'image');
+                    const tableEls = elements.filter((e: any) => e.type === 'table');
+                    return (
+                      <div key={i} className="bg-white dark:bg-zinc-800 rounded-lg border border-border shadow-sm overflow-hidden" style={{ backgroundColor: slide.background || '#ffffff' }}>
+                        <div className="px-3 py-2 border-b border-border bg-muted/30">
+                          <span className="text-xs font-medium">{t('content.slideN', { n: i + 1 })}</span>
+                          <span className="text-[10px] text-muted-foreground ml-2">{elements.length} {t('content.objects')}</span>
+                        </div>
+                        <div className="p-3 min-h-[80px] space-y-1">
+                          {textEls.map((el: any, j: number) => (
+                            <div key={j} className="text-xs truncate text-foreground/80">
+                              {el.text || '(empty text)'}
+                            </div>
+                          ))}
+                          {shapeEls.length > 0 && <div className="text-[10px] text-muted-foreground">{shapeEls.length} shape(s): {shapeEls.map((s: any) => s.shapeType || 'rect').join(', ')}</div>}
+                          {imageEls.length > 0 && <div className="text-[10px] text-muted-foreground">{imageEls.length} image(s)</div>}
+                          {tableEls.length > 0 && <div className="text-[10px] text-muted-foreground">{tableEls.length} table(s)</div>}
+                          {elements.length === 0 && <div className="text-[10px] text-muted-foreground italic">(empty slide)</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center text-sm text-muted-foreground py-8">{t('content.noPreviewData')}</div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Canvas Area (center) */}
-        <SlideCanvas
+        {!previewRevisionData && <SlideCanvas
           canvasRef={canvasRef}
           canvasHostRef={canvasHostRef}
           canvasContainerRef={canvasContainerRef}
@@ -1771,10 +1947,10 @@ export function PresentationEditor({
           onAddImage={addImage}
           onAddTable={() => addTable(3, 3)}
           onInsertDiagram={insertDiagram}
-        />
+        />}
 
         {/* Property Panel (right) */}
-        {showPropertyPanel && (
+        {showPropertyPanel && !previewRevisionData && (
           <PropertyPanel
             selectedObj={selectedObj}
             canvas={canvasRef.current}
@@ -1827,13 +2003,17 @@ export function PresentationEditor({
           <div className="hidden md:flex w-[304px] bg-sidebar flex-col shrink-0 overflow-hidden h-full">
             <RevisionHistory
               contentType="presentation"
-              contentId={presentationId}
-              onClose={() => setShowHistory(false)}
+              contentId={`presentation:${presentationId}`}
+              onClose={() => { setShowHistory(false); setPreviewRevisionData(null); }}
+              onCreateManualVersion={async () => { await flushSave(); await gw.createContentManualSnapshot(`presentation:${presentationId}`); }}
+              onSelectRevision={(rev) => { setPreviewRevisionData(rev?.data ?? null); setPreviewRevisionMeta(rev ? { id: rev.id, created_at: rev.created_at } : null); }}
               onRestore={async (data) => {
+                setPreviewRevisionData(null);
                 if (data?.slides) {
                   setSlides(data.slides);
                   setCurrentSlideIndex(0);
-                  await gw.savePresentation(presentationId, { slides: data.slides });
+                  dirtyRef.current = true;
+                  await save(0);
                   queryClient.invalidateQueries({ queryKey: ['presentation', presentationId] });
                 }
               }}
@@ -1843,13 +2023,17 @@ export function PresentationEditor({
           <div className="contents md:hidden">
             <RevisionHistory
               contentType="presentation"
-              contentId={presentationId}
-              onClose={() => setShowHistory(false)}
+              contentId={`presentation:${presentationId}`}
+              onClose={() => { setShowHistory(false); setPreviewRevisionData(null); }}
+              onCreateManualVersion={async () => { await flushSave(); await gw.createContentManualSnapshot(`presentation:${presentationId}`); }}
+              onSelectRevision={(rev) => { setPreviewRevisionData(rev?.data ?? null); setPreviewRevisionMeta(rev ? { id: rev.id, created_at: rev.created_at } : null); }}
               onRestore={async (data) => {
+                setPreviewRevisionData(null);
                 if (data?.slides) {
                   setSlides(data.slides);
                   setCurrentSlideIndex(0);
-                  await gw.savePresentation(presentationId, { slides: data.slides });
+                  dirtyRef.current = true;
+                  await save(0);
                   queryClient.invalidateQueries({ queryKey: ['presentation', presentationId] });
                 }
               }}
