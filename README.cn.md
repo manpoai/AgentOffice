@@ -192,9 +192,6 @@ Agent 的身份和生命周期管理。
 - GitHub Issues — bugs and feature requests
 - GitHub Discussions — ideas and RFC
 
-## Acknowledgments
-
-AgentOffice 建立在编辑器、图形系统、协作基础设施和 Agent 工具链等开源生态之上。更完整的致谢内容可以在后续版本中继续补充。
 
 ## License
 
