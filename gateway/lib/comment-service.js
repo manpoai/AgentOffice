@@ -60,7 +60,7 @@ export function createUnifiedComment(db, deps, opts) {
   const contentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(targetId);
   const contentTitle = db.prepare('SELECT title FROM content_items WHERE id = ?').get(targetId)?.title || '';
   const contextPayload = buildContextPayload(db, {
-    targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName,
+    targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName, parentId,
   });
   db.prepare(`INSERT INTO comments (id, target_type, target_id, text, actor, actor_id, parent_id, anchor_type, anchor_id, anchor_meta, row_id, data_json, context_payload, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
@@ -120,6 +120,16 @@ export function setUnifiedCommentResolved(db, deps, commentId, resolved, actorId
   if (result.changes === 0) return null;
   if (comment) {
     const owner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(comment.target_id);
+    const contextPayload = buildContextPayload(db, {
+      targetType: comment.target_type,
+      targetId: comment.target_id,
+      anchorType: comment.anchor_type || null,
+      anchorId: comment.anchor_id || null,
+      anchorMeta: comment.anchor_meta ? JSON.parse(comment.anchor_meta) : null,
+      text: comment.text || '',
+      actorName,
+      parentId: comment.parent_id || null,
+    });
     emitCommentEvent(db, {
       eventType: resolved ? 'comment.resolved' : 'comment.unresolved',
       commentId,
@@ -132,6 +142,7 @@ export function setUnifiedCommentResolved(db, deps, commentId, resolved, actorId
       actorId,
       actorName,
       ownerActorId: owner?.owner_actor_id || null,
+      contextPayload,
       genId,
       pushEvent,
       pushHumanEvent,

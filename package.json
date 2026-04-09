@@ -1,0 +1,27 @@
+{
+  "name": "agentoffice-main",
+  "version": "1.0.1",
+  "description": "AgentOffice bootstrap package — one-command install for the runtime artifact.",
+  "type": "module",
+  "bin": {
+    "agentoffice-main": "bootstrap-cli.js"
+  },
+  "files": [
+    "bootstrap-cli.js",
+    "README.md",
+    "LICENSE",
+    "docs/"
+  ],
+  "keywords": [
+    "agentoffice",
+    "agent-office",
+    "workspace",
+    "ai-agent",
+    "collaboration",
+    "self-hosted"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20"
+  }
+}

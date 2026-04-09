@@ -1,0 +1,10 @@
+{
+  "name": "asuite-adapters",
+  "version": "0.1.0",
+  "description": "ASuite platform adapters — unified entry + platform plugins",
+  "type": "module",
+  "dependencies": {
+    "eventsource": "^2.0.2",
+    "ws": "^8.16.0"
+  }
+}

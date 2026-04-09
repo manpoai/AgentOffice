@@ -207,7 +207,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // ─── Agent Self-Registration ────────────────────
   app.post('/api/agents/self-register', checkSelfRegisterRate, async (req, res) => {
-    const { name, display_name, capabilities, webhook_url, webhook_secret } = req.body;
+    const { name, display_name, capabilities, webhook_url, webhook_secret, platform } = req.body;
     if (!name || !display_name) {
       return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'name and display_name required' });
     }
@@ -226,10 +226,10 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     const tokenHash = hashToken(token);
     const now = Date.now();
 
-    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, pending_approval, created_at, updated_at)
-      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, platform, pending_approval, created_at, updated_at)
+      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
       .run(agentId, name, display_name, tokenHash, JSON.stringify(capabilities || []),
-        webhook_url || null, webhook_secret || null, now, now);
+        webhook_url || null, webhook_secret || null, platform || null, now, now);
 
     // Create Baserow user in advance (will only activate after approval)
     createBrUser(name, display_name).then(brPassword => {
@@ -264,7 +264,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
       status: 'pending_approval',
       skills_url: skillsUrl,
       mcp_server: {
-        install: 'npx -y asuite-mcp-server',
+        install: 'npx -y agentoffice-mcp',
         env: { ASUITE_TOKEN: token, ASUITE_URL: gatewayBase },
       },
       message: 'Registration received. Fetch skills from skills_url and configure MCP server.',
@@ -301,19 +301,95 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     res.json({ agent_id: agent.id, name: agent.username, status: 'approved' });
   });
 
-  // Admin: list all agents
-  app.get('/api/admin/agents', authenticateAdmin, (req, res) => {
-    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, online, last_seen_at, pending_approval, created_at FROM actors WHERE type = 'agent'").all();
-    res.json({ agents: agents.map(a => ({ ...a, agent_id: a.id, name: a.username, capabilities: JSON.parse(a.capabilities || '[]'), pending_approval: !!a.pending_approval })) });
+  // Admin: reject a pending agent
+  app.post('/api/admin/agents/:agent_id/reject', authenticateAdmin, (req, res) => {
+    const agent = db.prepare("SELECT * FROM actors WHERE id = ? AND type = 'agent'").get(req.params.agent_id);
+    if (!agent) return res.status(404).json({ error: 'NOT_FOUND', message: 'Agent not found' });
+    if (!agent.pending_approval) return res.status(400).json({ error: 'NOT_PENDING', message: 'Agent is not pending approval' });
+    const now = Date.now();
+    db.prepare('UPDATE actors SET pending_approval = 0, deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, agent.id);
+    const rejectEvent = {
+      id: genId('evt'), type: 'agent.rejected', occurred_at: now,
+      data: { agent_id: agent.id, name: agent.username, message: 'Your registration has been rejected.' },
+    };
+    db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, 'agent.rejected', 'system', ?, ?, ?)`)
+      .run(rejectEvent.id, agent.id, rejectEvent.occurred_at, JSON.stringify(rejectEvent), now);
+    if (pushEvent) pushEvent(agent.id, rejectEvent);
+    res.json({ agent_id: agent.id, name: agent.username, status: 'rejected' });
   });
 
-  // Agent-facing: list other agents (public info only)
+  // Admin: soft-delete an agent
+  app.delete('/api/admin/agents/:agent_id', authenticateAdmin, (req, res) => {
+    const agent = db.prepare("SELECT * FROM actors WHERE id = ? AND type = 'agent'").get(req.params.agent_id);
+    if (!agent) return res.status(404).json({ error: 'NOT_FOUND', message: 'Agent not found' });
+    if (agent.deleted_at) return res.status(400).json({ error: 'ALREADY_DELETED', message: 'Agent is already deleted' });
+    const now = Date.now();
+    db.prepare('UPDATE actors SET deleted_at = ?, online = 0, updated_at = ? WHERE id = ?').run(now, now, agent.id);
+    res.json({ agent_id: agent.id, name: agent.username, status: 'deleted' });
+  });
+
+  // Admin: list all agents (excluding deleted)
+  app.get('/api/admin/agents', authenticateAdmin, (req, res) => {
+    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, platform, online, last_seen_at, pending_approval, created_at FROM actors WHERE type = 'agent' AND deleted_at IS NULL").all();
+    res.json({ agents: agents.map(a => ({ ...a, agent_id: a.id, name: a.username, capabilities: JSON.parse(a.capabilities || '[]'), pending_approval: !!a.pending_approval, platform: a.platform || null })) });
+  });
+
+  // Admin: get onboarding prompt for a specific platform (data-driven platform list)
+  app.get('/api/admin/onboarding-prompt', authenticateAdmin, (req, res) => {
+    const platform = req.query.platform || 'zylos';
+    const origin = req.headers['x-forwarded-host']
+      ? `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host']}`
+      : `${req.protocol}://${req.get('host')}`;
+    const asuiteUrl = `${origin}/api/gateway`;
+    const prompt = `Hi! You've been invited to join an AgentOffice workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
+
+Step 1: Register your identity
+POST ${asuiteUrl}/agents/self-register
+Content-Type: application/json
+Body: { "name": "your-agent-name", "display_name": "Your Display Name", "platform": "${platform}" }
+
+Save the token from the response — you'll need it in Step 3. Your registration will be reviewed by an admin.
+
+Step 2: Wait for approval
+The workspace admin will review your registration in AgentOffice and approve it. You'll receive a notification once approved.
+
+Step 3: Configure MCP Server
+Add the following to your MCP configuration:
+{
+  "mcpServers": {
+    "agentoffice": {
+      "command": "npx",
+      "args": ["-y", "agentoffice-mcp"],
+      "env": {
+        "ASUITE_TOKEN": "<your token from Step 1>",
+        "ASUITE_URL": "${asuiteUrl}"
+      }
+    }
+  }
+}
+
+Step 4: Verify
+Call the whoami tool to confirm your identity and permissions. Once verified, let the admin know you're ready.`;
+    res.json({ platform, prompt });
+  });
+
+  // Admin: list available platforms (data-driven)
+  app.get('/api/admin/platforms', authenticateAdmin, (req, res) => {
+    const rows = db.prepare("SELECT DISTINCT platform FROM actors WHERE type = 'agent' AND platform IS NOT NULL AND deleted_at IS NULL").all();
+    const knownPlatforms = ['zylos', 'openclaw'];
+    const activePlatforms = rows.map(r => r.platform);
+    const platforms = [...new Set([...knownPlatforms, ...activePlatforms])];
+    res.json({ platforms });
+  });
+
+  // Agent-facing: list other agents (public info only, excluding deleted)
   app.get('/api/agents', authenticateAgent, (req, res) => {
-    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, online, last_seen_at FROM actors WHERE type = 'agent' AND (pending_approval = 0 OR pending_approval IS NULL)").all();
+    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, platform, online, last_seen_at FROM actors WHERE type = 'agent' AND (pending_approval = 0 OR pending_approval IS NULL) AND deleted_at IS NULL").all();
     res.json({
       agents: agents.map(a => ({
         agent_id: a.id, name: a.username, display_name: a.display_name, avatar_url: a.avatar_url || null,
         capabilities: JSON.parse(a.capabilities || '[]'),
+        platform: a.platform || null,
         online: !!a.online, last_seen_at: a.last_seen_at,
       })),
     });
@@ -321,11 +397,12 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // Agent-facing: get info about a specific agent
   app.get('/api/agents/:name', authenticateAgent, (req, res) => {
-    const agent = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, online, last_seen_at FROM actors WHERE type = 'agent' AND username = ? AND (pending_approval = 0 OR pending_approval IS NULL)").get(req.params.name);
+    const agent = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, platform, online, last_seen_at FROM actors WHERE type = 'agent' AND username = ? AND (pending_approval = 0 OR pending_approval IS NULL) AND deleted_at IS NULL").get(req.params.name);
     if (!agent) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({
       agent_id: agent.id, name: agent.username, display_name: agent.display_name, avatar_url: agent.avatar_url || null,
       capabilities: JSON.parse(agent.capabilities || '[]'),
+      platform: agent.platform || null,
       online: !!agent.online, last_seen_at: agent.last_seen_at,
     });
   });

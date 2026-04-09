@@ -92,6 +92,26 @@ export async function approveAgent(agentId: string): Promise<void> {
   await gwFetch(`/admin/agents/${agentId}/approve`, { method: 'POST' });
 }
 
+/** Admin: reject a pending agent */
+export async function rejectAgent(agentId: string): Promise<void> {
+  await gwFetch(`/admin/agents/${agentId}/reject`, { method: 'POST' });
+}
+
+/** Admin: soft-delete an agent */
+export async function deleteAgent(agentId: string): Promise<void> {
+  await gwFetch(`/admin/agents/${agentId}`, { method: 'DELETE' });
+}
+
+/** Admin: get onboarding prompt for a specific platform */
+export async function getOnboardingPrompt(platform: string): Promise<{ platform: string; prompt: string }> {
+  return gwFetch(`/admin/onboarding-prompt?platform=${encodeURIComponent(platform)}`);
+}
+
+/** Admin: get list of available platforms (data-driven) */
+export async function listPlatforms(): Promise<{ platforms: string[] }> {
+  return gwFetch('/admin/platforms');
+}
+
 /** Admin: reset an agent's token */
 export async function resetAgentToken(agentId: string): Promise<{ token: string }> {
   return gwFetch(`/admin/agents/${agentId}/reset-token`, { method: 'POST' });

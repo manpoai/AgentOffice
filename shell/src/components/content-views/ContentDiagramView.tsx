@@ -199,7 +199,6 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 copyLink: () => onCopyLink(),
                 showHistory: () => { setShowHistory(true); onCloseComments(); },
                 showComments: () => { onShowComments(); setShowHistory(false); },
-                search: () => {},
               }),
             ]}
             actions={renderFixedTopBarActions(
@@ -217,7 +216,6 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 copyLink: () => onCopyLink(),
                 showHistory: () => { setShowHistory(v => !v); onCloseComments(); },
                 showComments: () => { onToggleComments(); setShowHistory(false); },
-                search: () => {},
                 showHistoryActive: showHistory,
                 showCommentsActive: showComments,
               }),

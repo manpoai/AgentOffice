@@ -5,14 +5,14 @@ import { TextSelection } from 'prosemirror-state';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as docApi from '@/lib/api/documents';
 import type { Document as DocType, Revision as DocRevision } from '@/lib/api/documents';
-import { X, Search, Clock, MessageSquare as MessageSquareIcon, Download, Smile, Maximize2, Link2, Pin, Undo2, Redo2, ExternalLink, AtSign, Share2, Pencil, Trash2 } from 'lucide-react';
+import { X, Search, Clock, MessageSquare as MessageSquareIcon, Download, Smile, Maximize2, Link2, Pin, Undo2, Redo2, ExternalLink, AtSign, Share2, Pencil, Trash2, ListTree } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime, formatDateTime } from '@/lib/utils/time';
 import dynamic from 'next/dynamic';
-import { SearchBar } from '@/components/editor';
+import { SearchBar, DocOutline, DocOutlineList, extractHeadings, scrollToHeading } from '@/components/editor';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
@@ -180,6 +180,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
   const [insightsEnabled, setInsightsEnabled] = useState(true);
   const isMobile = useIsMobile();
   const [mobileEditMode, setMobileEditMode] = useState(() => !!(isMobile && !doc.title && !doc.text));
+  const [showMobileOutline, setShowMobileOutline] = useState(false);
   const [previewRevision, setPreviewRevision] = useState<DocRevision | null>(null);
   const [prevRevision, setPrevRevision] = useState<DocRevision | null>(null);
   const [highlightChanges, setHighlightChanges] = useState(false);
@@ -538,6 +539,15 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
           onSave={handleMobileSave}
           onHistory={() => setShowHistory(true)}
           onComments={() => onToggleComments()}
+          extraMobileActions={!mobileEditMode ? (
+            <button
+              onClick={() => setShowMobileOutline(true)}
+              className="p-1.5 text-foreground"
+              title="目录"
+            >
+              <ListTree className="h-6 w-6" />
+            </button>
+          ) : undefined}
           menuItems={[
             ...buildContentTopBarCommonMenuItems(t, {
               id: doc.id,
@@ -716,6 +726,9 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
 
           {/* Editor / Revision preview area */}
           <div className="relative flex-1 min-h-0">
+            {!previewRevision && !isMobile && (
+              <DocOutline getView={getEditorView} />
+            )}
             {previewRevision ? (
               <RevisionPreview
                 key={previewRevision.id + (highlightChanges ? '-diff' : '')}
@@ -856,6 +869,27 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
       )}
 
       {/* Mobile: More menu is now handled by ContentTopBar via menuItems */}
+
+      {/* Mobile: Doc outline BottomSheet */}
+      {isMobile && (
+        <BottomSheet
+          open={showMobileOutline}
+          onClose={() => setShowMobileOutline(false)}
+          title="目录"
+          initialHeight="half"
+        >
+          <DocOutlineList
+            headings={(() => {
+              const view = getEditorView();
+              return view ? extractHeadings(view.state.doc) : [];
+            })()}
+            onSelect={(pos: number) => {
+              setShowMobileOutline(false);
+              setTimeout(() => scrollToHeading(getEditorView(), pos), 300);
+            }}
+          />
+        </BottomSheet>
+      )}
 
     </div>
   );

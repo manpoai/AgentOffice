@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Plus, Copy, X, Check, Key, Pencil, Trash2, Camera } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatRelativeTime } from '@/lib/utils/time';
 import { useT } from '@/lib/i18n';
 import * as gw from '@/lib/api/gateway';
 import { resolveAvatarUrl } from '@/lib/api/gateway';
@@ -16,10 +17,13 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const [showOnboardingPrompt, setShowOnboardingPrompt] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+  const [promptText, setPromptText] = useState('');
   const [resetTokenConfirmId, setResetTokenConfirmId] = useState<string | null>(null);
   const [resetTokenResult, setResetTokenResult] = useState<{ agentId: string; token: string } | null>(null);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [nameValue, setNameValue] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [uploadingAgentId, setUploadingAgentId] = useState<string | null>(null);
 
@@ -30,17 +34,13 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
     refetchInterval: 10_000,
   });
 
-  // Onboarding prompt
-  const [promptText, setPromptText] = useState('');
-  useEffect(() => {
-    if (promptText) return;
-    const url = window.location.origin;
-    gw.getAgentSkills()
-      .then(d => {
-        setPromptText((d.onboarding_prompt || '').replace(/\{ASUITE_URL\}/g, url));
-      })
-      .catch(() => {});
-  }, []);
+  // Available platforms (data-driven)
+  const { data: platformsData } = useQuery({
+    queryKey: ['admin-platforms'],
+    queryFn: gw.listPlatforms,
+    staleTime: 60_000,
+  });
+  const platforms = platformsData?.platforms || ['zylos', 'openclaw'];
 
   const isCompact = variant === 'bottomsheet';
   const styles = {
@@ -125,33 +125,63 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
         }}
       />
 
-      {/* Header: Add Agent + Onboarding Prompt */}
-      <div className="flex items-center justify-between mb-3 relative">
+      {/* Header: Add Agent */}
+      <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-foreground">{t('actions.agentMembers')}</h3>
         <button
-          onClick={() => setShowOnboardingPrompt(v => !v)}
+          onClick={() => { setShowOnboardingPrompt(v => !v); setSelectedPlatform(null); }}
           className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-sidebar-primary hover:bg-sidebar-primary/10 rounded transition-colors"
         >
           <Plus className="h-3 w-3" />
           {t('actions.addAgent')}
         </button>
-        {showOnboardingPrompt && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowOnboardingPrompt(false)} />
-            <div className={cn('absolute right-0 top-full mt-1 z-50 bg-white dark:bg-card border border-black/10 dark:border-border rounded-lg shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] p-3', styles.promptWidth)}>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-foreground">{t('actions.sendToAgent')}</span>
-                <button onClick={() => navigator.clipboard.writeText(promptText)} className="flex items-center gap-1 px-2 py-0.5 text-xs text-sidebar-primary hover:bg-sidebar-primary/10 rounded transition-colors">
-                  <Copy className="h-3 w-3" />{t('actions.copyPrompt')}
-                </button>
-              </div>
-              <pre className={cn('text-[11px] text-muted-foreground bg-black/[0.03] dark:bg-white/[0.05] rounded p-2 overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed', styles.promptMaxH)}>
-                {promptText}
-              </pre>
-            </div>
-          </>
-        )}
       </div>
+
+      {/* Step 1: platform selection — inline expand */}
+      {showOnboardingPrompt && !selectedPlatform && (
+        <div className="mb-3 p-3 bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.06] dark:border-border rounded-lg">
+          <p className="text-xs font-medium text-foreground mb-1">{t('actions.selectPlatform')}</p>
+          <p className="text-[11px] text-muted-foreground mb-3">{t('actions.platformDescription')}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {platforms.map(p => (
+              <button
+                key={p}
+                onClick={async () => {
+                  setSelectedPlatform(p);
+                  try {
+                    const data = await gw.getOnboardingPrompt(p);
+                    setPromptText(data.prompt);
+                  } catch {}
+                }}
+                className="flex flex-col items-center gap-2 p-3 rounded-lg border border-black/10 dark:border-border hover:border-sidebar-primary hover:bg-sidebar-primary/5 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-lg bg-sidebar-primary/10 flex items-center justify-center">
+                  <Bot className="h-5 w-5 text-sidebar-primary" />
+                </div>
+                <span className="text-xs font-medium">{p}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: show prompt for selected platform — inline expand */}
+      {showOnboardingPrompt && selectedPlatform && (
+        <div className="mb-3 p-3 bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.06] dark:border-border rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setSelectedPlatform(null)} className="text-xs text-muted-foreground hover:text-foreground">←</button>
+              <span className="text-xs font-medium text-foreground">{selectedPlatform} — {t('actions.sendToAgent')}</span>
+            </div>
+            <button onClick={() => navigator.clipboard.writeText(promptText)} className="flex items-center gap-1 px-2 py-0.5 text-xs text-sidebar-primary hover:bg-sidebar-primary/10 rounded transition-colors">
+              <Copy className="h-3 w-3" />{t('actions.copyPrompt')}
+            </button>
+          </div>
+          <pre className={cn('text-[11px] text-muted-foreground bg-black/[0.03] dark:bg-white/[0.05] rounded p-2 overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed', styles.promptMaxH)}>
+            {promptText}
+          </pre>
+        </div>
+      )}
 
       {/* Pending */}
       {pending.length > 0 && (
@@ -162,13 +192,14 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
               {renderAvatar(agent)}
               <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-foreground truncate block">{agent.display_name || agent.name}</span>
-                <span className="text-xs text-foreground/50">{agent.name}</span>
+                <span className="text-xs text-foreground/50">
+                  {agent.name}
+                  {agent.platform && <span className="ml-1.5 px-1.5 py-0.5 bg-sidebar-primary/10 text-sidebar-primary rounded text-[10px]">{agent.platform}</span>}
+                </span>
               </div>
-              {!isCompact && (
-                <button onClick={async () => { try { /* reject not implemented */ } catch {} }} className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0 hover:bg-red-100 transition-colors">
-                  <X className="h-4 w-4 text-red-500" />
-                </button>
-              )}
+              <button onClick={async () => { try { await gw.rejectAgent(agent.agent_id || agent.name); queryClient.invalidateQueries({ queryKey: ['admin-agents'] }); } catch {} }} className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center shrink-0 hover:bg-red-100 transition-colors">
+                <X className="h-4 w-4 text-red-500" />
+              </button>
               <button
                 onClick={async () => { try { await gw.approveAgent(agent.agent_id || agent.name); queryClient.invalidateQueries({ queryKey: ['admin-agents'] }); } catch {} }}
                 className="w-8 h-8 rounded-full bg-sidebar-primary flex items-center justify-center shrink-0 hover:opacity-90 transition-colors"
@@ -211,13 +242,28 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
                   ) : (
                     <span className="text-sm font-medium text-foreground truncate block">{agent.display_name || agent.name}</span>
                   )}
-                  <span className="text-xs text-foreground/50">{agent.name}</span>
+                  <span className="text-xs text-foreground/50">
+                    {agent.name}
+                    {agent.platform && <span className="ml-1.5 px-1.5 py-0.5 bg-sidebar-primary/10 text-sidebar-primary rounded text-[10px]">{agent.platform}</span>}
+                    {!agent.online && agent.last_seen_at && (
+                      <span className="text-[10px] text-foreground/30 ml-1">{formatRelativeTime(agent.last_seen_at)}</span>
+                    )}
+                  </span>
                 </div>
-                {/* Hover actions — desktop only */}
+                {/* Delete button — visible on all screen sizes */}
+                {deleteConfirmId === agentId ? (
+                  <div className="flex items-center gap-1 ml-1">
+                    <span className="text-[10px] text-foreground/60">{t('actions.confirmDelete')}</span>
+                    <button onClick={async () => { try { await gw.deleteAgent(agentId); queryClient.invalidateQueries({ queryKey: ['admin-agents'] }); } catch {} setDeleteConfirmId(null); }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">删除</button>
+                    <button onClick={() => setDeleteConfirmId(null)} className="px-1.5 py-0.5 text-[10px] font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors shrink-0">取消</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setDeleteConfirmId(agentId)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05] opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-3.5 w-3.5 text-foreground/40" /></button>
+                )}
+                {/* Edit and reset token — desktop only */}
                 {!isCompact && (
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => startEditing(agent)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05]"><Pencil className="h-3.5 w-3.5 text-foreground/40" /></button>
-                    <button className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05]"><Trash2 className="h-3.5 w-3.5 text-foreground/40" /></button>
                     {resetTokenConfirmId === agentId ? (
                       <div className="flex items-center gap-1 ml-1">
                         <span className="text-[10px] text-foreground/60">{t('actions.resetTokenConfirm')}</span>

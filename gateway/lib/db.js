@@ -28,6 +28,9 @@ function runMigrations(db) {
     db.exec("UPDATE actors SET platform = 'zylos' WHERE username IN ('zylos', 'zylos-thinker', 'zylos-digger') AND platform IS NULL");
   } catch (e) { console.warn('[gateway] platform seed error:', e.message); }
 
+  // Migrate: add deleted_at column to actors
+  try { db.exec('ALTER TABLE actors ADD COLUMN deleted_at INTEGER'); } catch { /* already exists */ }
+
   // Migrate: create content_snapshots table
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS content_snapshots (

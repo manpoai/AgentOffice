@@ -153,6 +153,17 @@ export function ContentSidebar({
     return () => document.removeEventListener('mousedown', handler);
   }, [showAgentsMenu]);
 
+  // Open agents manager from cross-panel events (e.g. notifications)
+  useEffect(() => {
+    const handler = () => {
+      setShowNotifications(false);
+      setShowMessageMenu(false);
+      setShowAgentsMenu(true);
+    };
+    window.addEventListener('open-agents-manager', handler);
+    return () => window.removeEventListener('open-agents-manager', handler);
+  }, []);
+
   // Close message menu when clicking outside
   useEffect(() => {
     if (!showMessageMenu) return;
@@ -436,7 +447,7 @@ export function ContentSidebar({
           {/* Search */}
           <button
             ref={cSearchBtnRef}
-            onClick={() => searchInputRef.current?.focus()}
+            onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
             className="p-2 text-[#939493] dark:text-[#818181] hover:text-foreground hover:bg-black/[0.04] rounded-lg transition-colors"
             title={t('toolbar.search')}
           >
@@ -474,28 +485,16 @@ export function ContentSidebar({
         </div>
       )}
 
-      {/* ─── Search box ─── */}
+      {/* ─── Search box (click to open command palette) ─── */}
       {!collapsed && (
         <div className="px-2 mb-2 shrink-0">
-          <div className="relative">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
+            className="w-full h-8 pl-8 pr-2 rounded-lg text-xs font-medium bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.05] dark:border-white/[0.05] text-black/40 dark:text-white/40 outline-none text-left relative flex items-center hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-colors"
+          >
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#939493] dark:text-[#818181]" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder={t('sidebar.searchPlaceholder')}
-              className="w-full h-8 pl-8 pr-2 rounded-lg text-xs font-medium bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.05] dark:border-white/[0.05] text-foreground placeholder:text-black/40 dark:placeholder:text-white/40 outline-none focus:ring-1 focus:ring-sidebar-primary/30"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => onSearchChange('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <span className="text-xs">×</span>
-              </button>
-            )}
-          </div>
+            {t('sidebar.searchPlaceholder')}
+          </button>
         </div>
       )}
 

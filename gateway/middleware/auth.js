@@ -48,6 +48,18 @@ export function createAuthMiddleware(db, JWT_SECRET, ADMIN_TOKEN) {
     const hash = hashToken(token);
     const agent = db.prepare('SELECT * FROM actors WHERE token_hash = ?').get(hash);
     if (agent) {
+      // Soft-delete check
+      if (agent.deleted_at) {
+        return res.status(403).json({ error: 'AGENT_DELETED', message: 'This agent has been deleted' });
+      }
+      // Pending approval check: only allow whoami + catchup endpoints
+      if (agent.pending_approval) {
+        const allowedPaths = ['/api/me', '/api/me/catchup', '/api/me/events/stream'];
+        const isAllowed = allowedPaths.some(p => req.path === p || req.path.startsWith(p + '?'));
+        if (!isAllowed) {
+          return res.status(403).json({ error: 'PENDING_APPROVAL', message: 'Your registration is pending approval' });
+        }
+      }
       db.prepare('UPDATE actors SET last_seen_at = ?, online = 1 WHERE id = ?').run(Date.now(), agent.id);
       req.actor = { id: agent.id, type: 'agent', username: agent.username, display_name: agent.display_name, role: 'agent', avatar_url: agent.avatar_url };
       req.agent = { id: agent.id, name: agent.username, display_name: agent.display_name, capabilities: agent.capabilities };

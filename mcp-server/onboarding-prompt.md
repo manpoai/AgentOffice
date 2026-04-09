@@ -21,7 +21,7 @@ Follow these steps to connect:
      "mcpServers": {
        "asuite": {
          "command": "npx",
-         "args": ["-y", "asuite-mcp-server"],
+         "args": ["-y", "agentoffice-mcp"],
          "env": {
            "ASUITE_TOKEN": "<your-token>",
            "ASUITE_URL": "{ASUITE_URL}/api/gateway"

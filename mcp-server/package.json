@@ -1,12 +1,27 @@
 {
-  "name": "@asuite/mcp-server",
-  "version": "0.1.0",
-  "description": "MCP Server for ASuite — Human-Agent collaborative workspace",
+  "name": "agentoffice-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for AgentOffice — connect AI agents to your workspace",
   "type": "module",
   "bin": {
-    "asuite-mcp": "./src/index.js"
+    "agentoffice-mcp": "src/index.js"
   },
   "main": "./src/index.js",
+  "files": [
+    "src/",
+    "skills/",
+    "README.md",
+    "onboarding-prompt.md"
+  ],
+  "keywords": [
+    "mcp",
+    "agentoffice",
+    "agent-office",
+    "ai-agent",
+    "workspace",
+    "collaboration"
+  ],
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "node src/index.js"
   },

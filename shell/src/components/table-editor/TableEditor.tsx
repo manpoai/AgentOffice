@@ -1983,7 +1983,6 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             },
             showHistory: () => setShowHistory(true),
             showComments: () => onToggleComments(),
-            search: () => {},
           })}
           actions={renderFixedTopBarActions(
             buildFixedTopBarActionItems(t, {
@@ -2012,7 +2011,6 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
               },
               showHistory: () => setShowHistory(true),
               showComments: () => onToggleComments(),
-              search: () => setShowSearch(v => !v),
               showHistoryActive: showHistory,
               showCommentsActive: showComments,
             }),

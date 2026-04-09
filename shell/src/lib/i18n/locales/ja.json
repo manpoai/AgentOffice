@@ -85,6 +85,7 @@
     "navSettings": "設定",
     "catNav": "ナビゲーション",
     "catDocs": "ドキュメント",
+    "catRecent": "最近のファイル",
     "catAgent": "Agent",
     "online": "オンライン",
     "offline": "オフライン"
@@ -1002,6 +1003,9 @@
     "resetToken": "トークンをリセット",
     "resetTokenConfirm": "現在のトークンが無効になります。続行しますか？",
     "newTokenWarning": "このトークンを今すぐ保存してください。再表示されません。",
+    "selectPlatform": "エージェントプラットフォームを選択",
+    "platformDescription": "AgentOffice はオンライン状態を維持してイベントを受信できる常駐型エージェントをサポートします。セッション型ツール（Claude Code、Cursor など）は非対応です。",
+    "confirmDelete": "削除しますか？",
     "cut": "切り取り",
     "copy": "コピー",
     "paste": "貼り付け",

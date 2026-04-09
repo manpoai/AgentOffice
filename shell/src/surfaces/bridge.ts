@@ -100,6 +100,7 @@ export function toContentMenuItems<TCtx>(
     if (!Icon) continue; // ContentMenuItem requires a component icon
 
     items.push({
+      id: action.id,
       icon: Icon,
       label: resolveLabel(action, t, ctx),
       onClick: () => action.execute(ctx),

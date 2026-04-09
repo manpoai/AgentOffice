@@ -13,13 +13,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { GatewayClient } from './gateway-client.js';
-import { registerMessageTools } from './tools/messages.js';
 import { registerDocTools } from './tools/docs.js';
-import { registerTaskTools } from './tools/tasks.js';
 import { registerDataTools } from './tools/data.js';
 import { registerSystemTools } from './tools/system.js';
 import { registerAgentTools } from './tools/agents.js';
-import { registerThreadTools } from './tools/threads.js';
+import { registerEventTools } from './tools/events.js';
+import { registerCommentTools } from './tools/comments.js';
+import { registerContentTools } from './tools/content.js';
 
 const ASUITE_URL = process.env.ASUITE_URL || 'http://localhost:4000';
 const ASUITE_TOKEN = process.env.ASUITE_TOKEN;
@@ -38,13 +38,13 @@ const server = new McpServer({
 const gw = new GatewayClient(ASUITE_URL, ASUITE_TOKEN);
 
 // Register all tool groups
-registerMessageTools(server, gw);
 registerDocTools(server, gw);
-registerTaskTools(server, gw);
 registerDataTools(server, gw);
 registerSystemTools(server, gw);
 registerAgentTools(server, gw);
-registerThreadTools(server, gw);
+registerEventTools(server, gw);
+registerCommentTools(server, gw);
+registerContentTools(server, gw);
 
 // Connect via stdio transport
 const transport = new StdioServerTransport();

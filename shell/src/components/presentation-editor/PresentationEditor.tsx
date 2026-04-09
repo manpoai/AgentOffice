@@ -1714,7 +1714,6 @@ export function PresentationEditor({
                 copyLink: () => onCopyLink?.(),
                 showHistory: () => { setShowHistory(true); onCloseComments(); },
                 showComments: () => { onShowComments(); setShowHistory(false); },
-                search: () => {},
               }),
               { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
             ]}
@@ -1838,7 +1837,6 @@ export function PresentationEditor({
               copyLink: () => onCopyLink?.(),
               showHistory: () => { setShowHistory(true); onCloseComments(); },
               showComments: () => { onShowComments(); setShowHistory(false); },
-              search: () => {},
             }),
             { icon: Play, label: t('toolbar.present'), onClick: () => startPresentation() },
           ]}
@@ -1857,7 +1855,6 @@ export function PresentationEditor({
               copyLink: onCopyLink,
               showHistory: () => { setShowHistory(v => !v); onCloseComments(); },
               showComments: () => { onToggleComments(); setShowHistory(false); },
-              search: () => {},
               showHistoryActive: showHistory,
               showCommentsActive: showComments,
               present: startPresentation,

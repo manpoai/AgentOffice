@@ -3,16 +3,22 @@
  * Provides structured context about the commented content for human and agent consumers.
  */
 
-export function buildContextPayload(db, { targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName }) {
+export function buildContextPayload(db, { targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName, parentId }) {
   const target = buildTarget(db, targetType, targetId);
   const anchor = buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta);
   const summary = buildSummary(targetType, anchorType, text, actorName);
+  const minimalContext = buildMinimalContext(db, targetType, targetId, anchorType, anchorId, parentId);
+  const writeBackTarget = buildWriteBackTarget(targetId, anchorType, anchorId);
+  const recentEdits = buildRecentEdits(db, targetId);
 
   return {
-    version: 1,
+    version: 2,
     target,
     anchor,
     summary,
+    minimal_required_context: minimalContext,
+    write_back_target: writeBackTarget,
+    recent_edits: recentEdits,
   };
 }
 
@@ -173,4 +179,67 @@ function buildSummary(targetType, anchorType, text, actorName) {
     comment_author: actorName,
     text_summary: textSummary,
   };
+}
+
+function buildMinimalContext(db, targetType, targetId, anchorType, anchorId, parentId) {
+  const ctx = {};
+
+  // Thread context: sibling comments in same thread
+  if (parentId) {
+    try {
+      const siblings = db.prepare(
+        'SELECT text, actor_id, created_at FROM comments WHERE parent_id = ? ORDER BY created_at ASC LIMIT 10'
+      ).all(parentId);
+      if (siblings.length > 0) {
+        ctx.thread_comments = siblings.map(c => ({ actor: c.actor_id, text: c.text, at: c.created_at }));
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Content snippet
+  try {
+    if (targetType === 'doc') {
+      const item = db.prepare('SELECT text FROM content_items WHERE id = ?').get(targetId);
+      if (item?.text) {
+        if (anchorType === 'text-range' && anchorId) {
+          // Try to extract surrounding context from the text
+          const text = item.text;
+          const idx = anchorId ? Math.max(0, text.indexOf(anchorId)) : 0;
+          const start = Math.max(0, idx - 500);
+          const end = Math.min(text.length, idx + 500);
+          ctx.content_snippet = text.slice(start, end);
+        } else {
+          ctx.content_snippet = item.text.slice(0, 1000);
+        }
+      }
+    } else if (targetType === 'table') {
+      // For table+row anchor, get the row data
+      if (anchorType === 'row' && anchorId) {
+        const row = db.prepare('SELECT data FROM table_rows WHERE id = ? OR row_id = ?').get(anchorId, anchorId);
+        if (row?.data) ctx.row_data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      }
+    }
+  } catch { /* ignore */ }
+
+  return Object.keys(ctx).length > 0 ? ctx : null;
+}
+
+function buildWriteBackTarget(targetId, anchorType, anchorId) {
+  return {
+    target_id: targetId,
+    anchor_type: anchorType || null,
+    anchor_id: anchorId || null,
+  };
+}
+
+function buildRecentEdits(db, targetId) {
+  try {
+    const revisions = db.prepare(
+      'SELECT actor_id, created_at, description FROM content_revisions WHERE content_id = ? ORDER BY created_at DESC LIMIT 3'
+    ).all(targetId);
+    if (revisions.length === 0) return null;
+    return revisions.map(r => ({ actor: r.actor_id, timestamp: r.created_at, description: r.description || null }));
+  } catch {
+    return null;
+  }
 }

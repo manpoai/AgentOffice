@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, Table2, Presentation, GitBranch, Users, Settings, Search, ArrowRight, Loader2, X } from 'lucide-react';
+import { FileText, Table2, Presentation, GitBranch, Search, ArrowRight, Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime, formatDate } from '@/lib/utils/time';
 import * as gw from '@/lib/api/gateway';
@@ -78,11 +78,16 @@ export function CommandPalette() {
 
   // Fetch data for fallback commands
   const { data: contentItems } = useQuery({ queryKey: ['content-items'], queryFn: gw.listContentItems, staleTime: 30_000 });
-  const docs = useMemo(() => contentItems?.filter(i => i.type === 'doc').map(i => ({
-    id: i.raw_id, title: i.title,
-    updated_at: i.updated_at || '',
-  })), [contentItems]);
-  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: gw.listAgents, staleTime: 30_000 });
+  const recentItems = useMemo(() => {
+    if (!contentItems) return [];
+    return [...contentItems]
+      .sort((a, b) => {
+        const ta = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+        const tb = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+        return tb - ta;
+      })
+      .slice(0, 15);
+  }, [contentItems]);
 
   // Listen for open-command-palette custom event (dispatched by KeyboardManager)
   useEffect(() => {
@@ -118,9 +123,11 @@ export function CommandPalette() {
   }, [open]);
 
   const navigate = useCallback((path: string) => {
-    router.push(path);
     setOpen(false);
-  }, [router]);
+    // Use history.pushState + popstate so the content page's own URL listener picks it up
+    window.history.pushState(null, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, []);
 
   // Determine if we're in search mode (user typed >= 2 chars)
   const isSearchMode = debouncedQuery.length >= 2;
@@ -135,61 +142,22 @@ export function CommandPalette() {
         ? (r.snippet.length > 80 ? r.snippet.slice(0, 80) + '...' : r.snippet)
         : formatTime(r.updated_at),
       icon: <span className="text-muted-foreground">{TYPE_ICON[r.type] || <FileText className="h-4 w-4" />}</span>,
-      action: () => navigate(`/content?id=${r.type}:${r.id}`),
+      action: () => navigate(`/content?id=${r.id}`),
       category: TYPE_LABEL[r.type] || r.type,
     }));
   }, [isSearchMode, searchData, navigate]);
 
-  // Build fallback command items (when no search query)
+  // Build fallback command items (when no search query) — recent files only
   const commandItems = useMemo<CommandItem[]>(() => {
-    const result: CommandItem[] = [];
-
-    // Navigation commands (always available)
-    const navItems = [
-      { label: t('command.navContent'), path: '/content', icon: <FileText className="h-4 w-4" /> },
-      { label: t('command.navContacts'), path: '/contacts', icon: <Users className="h-4 w-4" /> },
-      { label: t('command.navSettings'), path: '/settings', icon: <Settings className="h-4 w-4" /> },
-    ];
-    navItems.forEach(n => {
-      result.push({
-        id: `nav-${n.path}`,
-        label: n.label,
-        icon: n.icon,
-        action: () => navigate(n.path),
-        category: t('command.catNav'),
-      });
-    });
-
-    // Docs
-    if (docs) {
-      docs.forEach(d => {
-        result.push({
-          id: `doc-${d.id}`,
-          label: d.title,
-          sublabel: d.updated_at ? formatDate(d.updated_at) : '',
-          icon: <FileText className="h-4 w-4 text-muted-foreground" />,
-          action: () => navigate('/content'),
-          category: t('command.catDocs'),
-        });
-      });
-    }
-
-    // Agents
-    if (agents) {
-      agents.forEach(a => {
-        result.push({
-          id: `agent-${a.name}`,
-          label: a.display_name || a.name,
-          sublabel: a.online ? t('command.online') : t('command.offline'),
-          icon: <Users className="h-4 w-4 text-green-400" />,
-          action: () => navigate('/contacts'),
-          category: 'Agent',
-        });
-      });
-    }
-
-    return result;
-  }, [docs, agents, navigate, t]);
+    return recentItems.map(item => ({
+      id: `recent-${item.id}`,
+      label: item.title,
+      sublabel: item.updated_at ? formatDate(item.updated_at) : '',
+      icon: <span className="text-muted-foreground">{TYPE_ICON[item.type] || <FileText className="h-4 w-4" />}</span>,
+      action: () => navigate(`/content?id=${item.id}`),
+      category: t('command.catRecent') || '最近文件',
+    }));
+  }, [recentItems, navigate, t]);
 
   // Items to display: search results in search mode, otherwise filtered commands
   const displayItems = useMemo(() => {

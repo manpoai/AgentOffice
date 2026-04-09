@@ -11,6 +11,7 @@ import { useT } from '@/lib/i18n';
  * Define once per editor, used everywhere.
  */
 export interface ContentMenuItem {
+  id?: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
@@ -56,6 +57,9 @@ export interface ContentTopBarProps {
   statusError?: boolean;
   onRetry?: () => void;
 
+  // Extra mobile-only action buttons (rendered before history/comments/more)
+  extraMobileActions?: React.ReactNode;
+
   // Mobile home button
   onHome?: () => void;
 
@@ -83,6 +87,7 @@ export function ContentTopBar({
   menuItems,
   onHistory,
   onComments,
+  extraMobileActions,
   statusText,
   statusError,
   onRetry,
@@ -326,8 +331,9 @@ export function ContentTopBar({
           )}
 
           {/* ── Mobile: unified top bar actions (Figma: history + @ + •••) ── */}
-          {!isEdit && (onHistory || onComments || mobileItems.length > 0) && (
+          {!isEdit && (extraMobileActions || onHistory || onComments || mobileItems.length > 0) && (
             <div className="flex md:hidden items-center gap-0">
+              {extraMobileActions}
               {onHistory && (
                 <button onClick={onHistory} className="p-1.5 text-foreground" title={t('content.versionHistory')}>
                   <Clock className="h-6 w-6" />

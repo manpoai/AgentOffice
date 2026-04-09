@@ -84,11 +84,15 @@ export function NotificationPanel({ open, onClose, anchorRect }: NotificationPan
         await gw.markNotificationRead(notif.id);
         invalidate();
       }
+      if (notif.type === 'agent_registered') {
+        window.dispatchEvent(new CustomEvent('open-agents-manager'));
+        onClose();
+        return;
+      }
       if (notif.link) {
         const linkParams = new URLSearchParams(notif.link.split('?')[1] || '');
         const targetId = linkParams.get('id');
         const commentId = linkParams.get('comment_id');
-        const currentId = new URLSearchParams(window.location.search).get('id');
 
         if (window.location.pathname === '/content' && targetId) {
           // Already on content page — navigate in-app via custom event

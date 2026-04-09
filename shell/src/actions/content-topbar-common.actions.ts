@@ -47,5 +47,6 @@ const contentTopBarActionMap = {
 };
 
 export function buildContentTopBarCommonMenuItems(t: (key: string, params?: Record<string, string | number>) => string, ctx: ContentTopBarCommonCtx) {
-  return toContentMenuItems(contentTopBarSurfaces.moreMenu, contentTopBarActionMap, ctx, t);
+  const items = toContentMenuItems(contentTopBarSurfaces.moreMenu, contentTopBarActionMap, ctx, t);
+  return items.filter(item => item.id !== 'search' || ctx.search);
 }

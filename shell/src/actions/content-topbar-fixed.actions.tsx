@@ -68,12 +68,12 @@ function buildCommonFixedAction(id: 'search' | 'copy-link' | 'history' | 'commen
 }
 
 export function buildFixedTopBarActionItems(t: TFunc, ctx: FixedTopBarActionCtx): FixedActionRenderItem[] {
-  return [
-    buildCommonFixedAction('search', t, ctx),
-    buildCommonFixedAction('copy-link', t, ctx),
-    buildCommonFixedAction('history', t, ctx),
-    buildCommonFixedAction('comments', t, ctx),
-  ];
+  const items: FixedActionRenderItem[] = [];
+  if (ctx.search) items.push(buildCommonFixedAction('search', t, ctx));
+  items.push(buildCommonFixedAction('copy-link', t, ctx));
+  items.push(buildCommonFixedAction('history', t, ctx));
+  items.push(buildCommonFixedAction('comments', t, ctx));
+  return items;
 }
 
 export function renderFixedTopBarActions(items: FixedActionRenderItem[], opts: { t: TFunc; ctx: FixedTopBarActionCtx; includePresent?: boolean }) {

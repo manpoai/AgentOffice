@@ -1,0 +1,31 @@
+# Local environment and secrets
+.env
+.env.local
+*.db
+*.db-shm
+*.db-wal
+
+# VCS and editor noise
+.git
+.gitignore
+.DS_Store
+.worktrees/
+
+# Local runtime / process files
+ecosystem.config.cjs
+adapters/**/config*.json
+adapters/**/.last-event-*
+gateway/data/preferences/*.json
+gateway/uploads/
+shell/public/uploads/
+shell/tsconfig.tsbuildinfo
+
+# Source trees not needed in published root package
+mcp-server/
+adapters/
+outline-src/
+scripts/
+
+# Development artifacts
+**/node_modules/.cache/
+**/*.log

@@ -85,6 +85,7 @@
     "navSettings": "设置",
     "catNav": "导航",
     "catDocs": "文档",
+    "catRecent": "最近文件",
     "catAgent": "Agent",
     "online": "在线",
     "offline": "离线"
@@ -1022,7 +1023,10 @@
     "resetToken": "重置 Token",
     "resetTokenConfirm": "这将使当前 Token 失效，确认继续？",
     "newTokenWarning": "请立即保存此 Token，关闭后不可再查看。",
-    "duplicate": "复制"
+    "duplicate": "复制",
+    "selectPlatform": "选择 Agent 平台",
+    "platformDescription": "AgentOffice 支持长驻型 Agent（能保持在线并接收事件）。临时会话类工具（如 Claude Code、Cursor）暂不支持。",
+    "confirmDelete": "确认删除?"
   },
   "notification": {
     "noNotifications": "暂无通知",

@@ -85,6 +85,7 @@
     "navSettings": "설정",
     "catNav": "탐색",
     "catDocs": "문서",
+    "catRecent": "최근 파일",
     "catAgent": "Agent",
     "online": "온라인",
     "offline": "오프라인"
@@ -1002,6 +1003,9 @@
     "resetToken": "토큰 재설정",
     "resetTokenConfirm": "현재 토큰이 무효화됩니다. 계속하시겠습니까?",
     "newTokenWarning": "지금 이 토큰을 저장하세요. 다시 표시되지 않습니다.",
+    "selectPlatform": "에이전트 플랫폼 선택",
+    "platformDescription": "AgentOffice는 온라인 상태를 유지하며 이벤트를 수신하는 상주형 에이전트를 지원합니다. 세션형 도구(Claude Code, Cursor 등)는 지원되지 않습니다.",
+    "confirmDelete": "이 에이전트를 삭제하시겠습니까?",
     "cut": "잘라내기",
     "copy": "복사",
     "paste": "붙여넣기",

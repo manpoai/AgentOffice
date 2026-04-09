@@ -85,6 +85,7 @@
     "navSettings": "Settings",
     "catNav": "Navigation",
     "catDocs": "Documents",
+    "catRecent": "Recent Files",
     "catAgent": "Agent",
     "online": "Online",
     "offline": "Offline"
@@ -1022,7 +1023,10 @@
     "resetToken": "Reset Token",
     "resetTokenConfirm": "This will invalidate the agent's current token. Continue?",
     "newTokenWarning": "Save this token now. It won't be shown again.",
-    "duplicate": "Duplicate"
+    "duplicate": "Duplicate",
+    "selectPlatform": "Select Agent Platform",
+    "platformDescription": "AgentOffice supports hosted agents that stay online and receive events. Session-based tools (Claude Code, Cursor) are not supported.",
+    "confirmDelete": "Delete this agent?"
   },
   "notification": {
     "noNotifications": "No notifications",
