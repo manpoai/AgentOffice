@@ -3,11 +3,12 @@
 
 <u>English</u> | [中文](./README.cn.md) | [X](https://x.com/manpoai)
 
+
 # What is AgentOffice?
 
 ## An office suite for you and your Agents to work together
 
-AgentOffice brings documents, databases, slides, and flowcharts into one shared workspace. You can ask an Agent to create documents, update tables, organize slide decks, or add flowcharts, and you can also keep editing, leave comments, review version history, and restore content yourself. Tasks can start from the chat tools you already use, or continue directly inside AgentOffice through comments and `@agent`.
+AgentOffice brings documents, databases, slides, and flowcharts into one shared workspace. You can ask an Agent to create documents, update tables, organize slide decks, or add flowcharts, and you can also continue editing, writing comments, reviewing version history, and restoring content yourself. Tasks can start from the chat tools you already use, or continue directly inside AgentOffice through comments and `@agent`.
 
 In AgentOffice, you and your Agents work on the same content: creating, reading, editing, commenting, and tracking changes together, with the entire process staying inside the system. **It enables people and Agents, as equal participants, to keep collaborating around the same piece of content over time — without repeatedly re-explaining context in chat windows, and without switching back and forth across multiple tools.**
 
@@ -15,15 +16,29 @@ pic (to be added)
 
 ---
 
+
+## Quickstart
+
+### 1. Start a local AgentOffice workspace
+
+```bash
+npx agentoffice-main
+```
+
+This bootstrap package downloads the runtime artifact from GitHub Releases, initializes your local AgentOffice workspace, and automatically starts the local service.
+
+---
+
+
 ## How to connect an Agent
 
 | Step | Stage | Description |
 |---|---|---|
 | Step 1 | Onboard | Copy the onboarding prompt, send it to the Agent, and let the Agent initiate a registration request |
 | Step 2 | Activate | Review and approve the Agent’s registration request in AgentOffice |
-| Step 3 | Start collaborating | You can assign tasks to an Agent in your original chat platform, or start collaboration directly in AgentOffice comments with `@agent` |
+| Step 3 | Start collaborating | You can assign tasks to an Agent from your original chat platform, or start collaboration directly in AgentOffice comments with `@agent` |
 
-Support for host-style Agent platforms will continue to expand. Currently supported:
+Support for host-style Agent platforms will continue to expand. Current platforms include:
 
 - OpenClaw
 - Zylos
@@ -67,12 +82,6 @@ This keeps follow-up collaboration attached to the content itself, without movin
 - Keep collaboration attached to specific objects, instead of repeatedly copying content, re-explaining context, and pasting it back
 - Keep a record, version history, and restore points for Agent edits
 - Preserve permission boundaries and human intervention while bringing Agents into the workflow
-
----
-
-## Quickstart
-
-To be added by claw.
 
 ---
 
@@ -169,18 +178,27 @@ Global search across all major content types.
 
 ## Contributing
 
-To be added by claw.
+Contributions are welcome.
+
+Good ways to contribute right now include:
+
+- Submitting bug reports
+- Improving documentation
+- Fixing installation and self-hosting issues
+- Improving Agent integration capabilities
+- Fixing editor reliability issues
+
+For more details, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Community
 
-Discord  
-GitHub Issues — bugs and feature requests  
-GitHub Discussions — ideas and RFCs
+- Discord(https://discord.gg/HStjGVg6)
+- GitHub Issues — bugs and feature requests(https://github.com/manpoai/AgentOffice/issues)
 
-## Acknowledgments
-
-To be added by claw, including thanks to other open-source projects.
+  
 
 ## License
 
-Agent Office is currently planned to launch under GNU AGPL v3.0 or later as its open-source license. More details to be added by claw.
+Agent Office is currently planned to launch under GNU AGPL v3.0 or later as its open-source license.
+
+See [LICENSE](./LICENSE).
