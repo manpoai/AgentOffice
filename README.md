@@ -1,38 +1,19 @@
-# ASuite
+<u>English</u> | [中文](./README.cn.md) | [X](https://x.com/manpoai)
 
-Human-Agent collaborative workspace suite.
+# What is Agent Office?
 
-## Features
+> English version in progress.
+>
+> Please read the Chinese version first:
+>
+> [README.cn.md](./README.cn.md)
 
-- **Docs** — Rich text editor (ProseMirror)
-- **Database** — Spreadsheet with multiple views (Grid/Kanban/Gallery/Form)
-- **Slides** — Presentation editor (Fabric.js)
-- **Flowchart** — Diagram editor (AntV X6)
-- **Agent Integration** — AI agents as first-class collaborators
+## Current status
 
-## Quick Start
+This English README is intentionally left as a placeholder for the first draft.
+The Chinese README is currently the primary source for product introduction and release messaging.
 
-```bash
-docker compose up
-```
+## Links
 
-Open http://localhost:3101 in your browser.
-
-## Architecture
-
-```
-shell/          # Frontend (Next.js 14)
-gateway/        # API server (Node.js + Express + SQLite)
-adapters/       # Agent adapters
-mcp-server/     # MCP tool server
-```
-
-## Tech Stack
-
-- **Frontend:** Next.js 14, React, Tailwind CSS, ProseMirror, Fabric.js, AntV X6
-- **Backend:** Node.js, Express, SQLite, Baserow (database editor)
-- **Deployment:** Docker Compose
-
-## License
-
-MIT
+- Chinese README: [README.cn.md](./README.cn.md)
+- X: <https://x.com/manpoai>
