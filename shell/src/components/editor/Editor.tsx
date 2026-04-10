@@ -45,6 +45,7 @@ interface EditorProps {
 function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOnly = false, autoFocus = false, placeholder, className, documentId, onSearchOpen, commentQuotes }: EditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
+  const readOnlyRef = useRef(readOnly);
   const [error, setError] = useState<string | null>(null);
   const [contentLinkPicker, setContentLinkPicker] = useState<{ top: number; left: number } | null>(null);
   const [diagramPicker, setDiagramPicker] = useState<{ top: number; left: number } | null>(null);
@@ -212,7 +213,7 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
 
         view = new EditorView(editorRef.current!, {
           state,
-          editable: () => !readOnly,
+          editable: () => !readOnlyRef.current,
           nodeViews: createNodeViews(),
           clipboardTextSerializer(slice) {
             // Serialize tables as tab-separated text for plain-text clipboard
@@ -338,6 +339,14 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Dynamically update editable state without rebuilding the view
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+    if (viewRef.current) {
+      viewRef.current.setProps({ editable: () => !readOnly });
+    }
   }, [readOnly]);
 
   // Update comment highlights when quotes change
