@@ -58,6 +58,23 @@ export async function updateProfile(fields: { name?: string }): Promise<any> {
   });
 }
 
+/** Upload a slide thumbnail PNG blob; returns the public URL */
+export async function uploadSlideThumbnail(blob: Blob, filename: string): Promise<string> {
+  const form = new FormData();
+  form.append('file', blob, filename);
+  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${BASE}/uploads/thumbnails`, {
+    method: 'POST',
+    headers,
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Upload thumbnail: ${res.status}`);
+  const { url } = await res.json();
+  return url;
+}
+
 /** Upload own avatar (human) */
 export async function uploadUserAvatar(file: File): Promise<{ avatar_url: string }> {
   const form = new FormData();

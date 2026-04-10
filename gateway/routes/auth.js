@@ -527,6 +527,32 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
     });
   });
 
+  // POST /api/uploads/thumbnails — upload slide thumbnail (user JWT allowed)
+  const THUMBNAILS_DIR = path.join(GATEWAY_DIR, 'uploads', 'thumbnails');
+  if (!fs.existsSync(THUMBNAILS_DIR)) fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
+
+  const thumbnailUploadStorage = multer({
+    storage: multer.diskStorage({
+      destination: THUMBNAILS_DIR,
+      filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname) || '.png';
+        const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+        cb(null, name);
+      },
+    }),
+    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB max per thumbnail
+    fileFilter: (_req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) cb(null, true);
+      else cb(new Error('Only image files are allowed'));
+    },
+  });
+
+  app.post('/api/uploads/thumbnails', authenticateAny, thumbnailUploadStorage.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
+    const url = `/api/uploads/thumbnails/${req.file.filename}`;
+    res.status(201).json({ url });
+  });
+
     // GET /api/agent-skills — return skills package (no auth required, public)
   app.get('/api/agent-skills', (req, res) => {
     const skillsDir = path.join(GATEWAY_DIR, '..', 'mcp-server', 'skills');

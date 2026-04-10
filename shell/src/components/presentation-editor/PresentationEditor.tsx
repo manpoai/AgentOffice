@@ -1166,8 +1166,46 @@ export function PresentationEditor({
       background: canvas.backgroundColor || '#ffffff',
       backgroundImage: slides[currentSlideIndex]?.backgroundImage || undefined,
       notes: slides[currentSlideIndex]?.notes || '',
+      thumbnail: slides[currentSlideIndex]?.thumbnail,
     };
   }, [currentSlideIndex, slides]);
+
+  // ─── Thumbnail generation ──────────────────────
+  const thumbnailInFlightRef = useRef<number | null>(null);
+
+  const generateAndUploadThumbnail = useCallback(async (slideIndex: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    // Cancel any in-flight thumbnail for this slide
+    if (thumbnailInFlightRef.current !== null) {
+      thumbnailInFlightRef.current = slideIndex;
+      return;
+    }
+    thumbnailInFlightRef.current = slideIndex;
+    try {
+      const dataUrl: string = canvas.toDataURL({ format: 'png', multiplier: 0.5 });
+      const fetchRes = await fetch(dataUrl);
+      const blob = await fetchRes.blob();
+      const url = await gw.uploadSlideThumbnail(blob, `slide-${slideIndex}-thumb.png`);
+      // url from gateway is relative like /api/uploads/thumbnails/xxx.png
+      // make it go through the Next.js proxy
+      const proxyUrl = `/api/gateway/uploads/thumbnails/${url.split('/').pop()}`;
+      setSlides(prev => {
+        const updated = [...prev];
+        if (updated[slideIndex]) {
+          updated[slideIndex] = { ...updated[slideIndex], thumbnail: proxyUrl };
+        }
+        return updated;
+      });
+      dirtyRef.current = true;
+      setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+      scheduleSave();
+    } catch (e) {
+      console.warn('[slides] Thumbnail upload failed:', e);
+    } finally {
+      thumbnailInFlightRef.current = null;
+    }
+  }, [scheduleSave]);
 
   const saveCurrentSlideToState = useCallback(() => {
     const serialized = serializeCanvas();
@@ -1676,8 +1714,9 @@ export function PresentationEditor({
   // ─── Mobile Vertical Preview Mode (no editing) ────────────────
   if (isMobileView) {
     const previewSlides = slides.map((slide, i) => ({
-      id: String(i),
+      id: slide.id || String(i),
       data: slide,
+      thumbnail: slide.thumbnail,
     }));
 
     return (
@@ -1750,6 +1789,7 @@ export function PresentationEditor({
           onSlideSelect={(i) => {
             if (i !== currentSlideIndex) {
               saveCurrentSlideToState();
+              generateAndUploadThumbnail(currentSlideIndex);
             }
             setCurrentSlideIndex(i);
           }}
@@ -1898,6 +1938,7 @@ export function PresentationEditor({
           onSlideSelect={(i) => {
             if (i !== currentSlideIndex) {
               saveCurrentSlideToState();
+              generateAndUploadThumbnail(currentSlideIndex);
             }
             setCurrentSlideIndex(i);
             setSelectedSlideIndices(new Set([i]));
@@ -1941,32 +1982,33 @@ export function PresentationEditor({
             <div className="flex-1 overflow-auto p-6 bg-muted/30">
               {previewRevisionData?.slides ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
-                  {previewRevisionData.slides.map((slide: any, i: number) => {
-                    const elements = slide.elements || slide.objects || [];
-                    const textEls = elements.filter((e: any) => e.type === 'textbox' || e.text);
-                    const shapeEls = elements.filter((e: any) => e.type === 'shape');
-                    const imageEls = elements.filter((e: any) => e.type === 'image');
-                    const tableEls = elements.filter((e: any) => e.type === 'table');
-                    return (
-                      <div key={i} className="bg-white dark:bg-zinc-800 rounded-lg border border-border shadow-sm overflow-hidden" style={{ backgroundColor: slide.background || '#ffffff' }}>
-                        <div className="px-3 py-2 border-b border-border bg-muted/30">
-                          <span className="text-xs font-medium">{t('content.slideN', { n: i + 1 })}</span>
-                          <span className="text-[10px] text-muted-foreground ml-2">{elements.length} {t('content.objects')}</span>
-                        </div>
-                        <div className="p-3 min-h-[80px] space-y-1">
-                          {textEls.map((el: any, j: number) => (
-                            <div key={j} className="text-xs truncate text-foreground/80">
-                              {el.text || '(empty text)'}
-                            </div>
-                          ))}
-                          {shapeEls.length > 0 && <div className="text-[10px] text-muted-foreground">{shapeEls.length} shape(s): {shapeEls.map((s: any) => s.shapeType || 'rect').join(', ')}</div>}
-                          {imageEls.length > 0 && <div className="text-[10px] text-muted-foreground">{imageEls.length} image(s)</div>}
-                          {tableEls.length > 0 && <div className="text-[10px] text-muted-foreground">{tableEls.length} table(s)</div>}
-                          {elements.length === 0 && <div className="text-[10px] text-muted-foreground italic">(empty slide)</div>}
-                        </div>
+                  {previewRevisionData.slides.map((slide: any, i: number) => (
+                    <div key={i} className="rounded-lg border border-border shadow-sm overflow-hidden">
+                      <div className="px-3 py-2 border-b border-border bg-muted/30">
+                        <span className="text-xs font-medium">{t('content.slideN', { n: i + 1 })}</span>
                       </div>
-                    );
-                  })}
+                      <div
+                        className="relative w-full overflow-hidden bg-white"
+                        style={{ aspectRatio: `${SLIDE_WIDTH} / ${SLIDE_HEIGHT}` }}
+                      >
+                        {slide.thumbnail ? (
+                          <img
+                            src={slide.thumbnail}
+                            alt={t('content.slideN', { n: i + 1 })}
+                            className="absolute inset-0 w-full h-full object-contain"
+                            draggable={false}
+                          />
+                        ) : (
+                          <div
+                            className="absolute inset-0 flex items-center justify-center text-[10px] text-muted-foreground"
+                            style={{ backgroundColor: slide.background || '#ffffff' }}
+                          >
+                            {(slide.elements || []).length} {t('content.objects')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div className="text-center text-sm text-muted-foreground py-8">{t('content.noPreviewData')}</div>

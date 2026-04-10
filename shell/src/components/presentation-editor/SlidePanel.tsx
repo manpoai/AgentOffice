@@ -29,6 +29,16 @@ const pptSlideActionMap = buildActionMap(pptSlideActions);
 
 // ─── Slide Thumbnail ─────────────────────────────────
 function SlideThumb({ slide }: { slide: SlideData }) {
+  if (slide.thumbnail) {
+    return (
+      <img
+        src={slide.thumbnail}
+        alt="Slide preview"
+        className="absolute inset-0 w-full h-full object-contain"
+        draggable={false}
+      />
+    );
+  }
   const scale = THUMB_WIDTH / SLIDE_WIDTH;
   return (
     <div className="relative w-full h-full overflow-hidden" style={{ backgroundColor: slide.background || '#fff' }}>

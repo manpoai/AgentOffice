@@ -6,6 +6,7 @@ export interface SlideData {
   background: string;
   backgroundImage?: string;
   notes: string;
+  thumbnail?: string;
 }
 
 export interface PresentationData {
