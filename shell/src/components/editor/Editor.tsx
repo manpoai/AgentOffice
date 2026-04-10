@@ -214,7 +214,7 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
         view = new EditorView(editorRef.current!, {
           state,
           editable: () => !readOnlyRef.current,
-          nodeViews: createNodeViews(),
+          nodeViews: createNodeViews(() => documentId),
           clipboardTextSerializer(slice) {
             // Serialize tables as tab-separated text for plain-text clipboard
             const parts: string[] = [];
@@ -460,7 +460,7 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
       {imageToolbarInfo && !readOnly && (
         <FloatingToolbar
           items={getDocsImageItems()}
-          handler={createDocsImageHandler(imageToolbarInfo.view, imageToolbarInfo.nodePos)}
+          handler={createDocsImageHandler(imageToolbarInfo.view, imageToolbarInfo.nodePos, () => documentId)}
           anchor={imageToolbarInfo.anchor}
           visible={true}
         />
