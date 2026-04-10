@@ -213,6 +213,12 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
 
   // Update sidebar doc list via Gateway when title/emoji change
   const updateDocCache = useCallback((newTitle: string, newEmoji: string | null) => {
+    queryClient.setQueryData(['content-items'], (old: any) => {
+      if (!old) return old;
+      return old.map((item: any) =>
+        item.id === `doc:${doc.id}` ? { ...item, title: newTitle, icon: newEmoji } : item
+      );
+    });
     gw.updateContentItem(`doc:${doc.id}`, { title: newTitle, icon: newEmoji }).then(() => {
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
     }).catch(() => {});

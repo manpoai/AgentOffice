@@ -580,6 +580,40 @@ function X6DiagramEditorInner({
     };
   }, [graph]);
 
+  // ─── Normalize agent-created cells to flowchart-node format ──
+  function normalizeDiagramCells(cells: any[]): any[] {
+    return cells.map(cell => {
+      if (cell.shape === 'edge') return cell;
+      if (cell.shape === 'flowchart-node' && cell.data?.flowchartShape) return cell;
+      const label = cell.attrs?.label?.text || cell.data?.label || '';
+      const bodyFill = cell.attrs?.body?.fill || '#ffffff';
+      const bodyStroke = cell.attrs?.body?.stroke || '#374151';
+      return {
+        ...cell,
+        shape: 'flowchart-node',
+        data: {
+          label,
+          flowchartShape: 'rounded-rect',
+          bgColor: bodyFill,
+          borderColor: bodyStroke,
+          textColor: '#1f2937',
+          fontSize: 14,
+          fontWeight: 'normal',
+          fontStyle: 'normal',
+          ...(cell.data || {}),
+        },
+        attrs: undefined,
+      };
+    });
+  }
+
+  function loadDataToGraph(g: any, data: any) {
+    if (data?.cells) {
+      data = { ...data, cells: normalizeDiagramCells(data.cells) };
+    }
+    g.fromJSON(data);
+  }
+
   // ─── Load diagram data ──
   const { data: diagram } = useQuery({
     queryKey: ['diagram', diagramId],
@@ -595,7 +629,7 @@ function X6DiagramEditorInner({
     if (!rawData) return;
 
     if (rawData?.cells) {
-      graph.fromJSON(rawData);
+      loadDataToGraph(graph, rawData);
       if (rawData.viewport) {
         graph.translate(rawData.viewport.x || 0, rawData.viewport.y || 0);
         graph.zoomTo(rawData.viewport.zoom || 1);
@@ -1656,7 +1690,7 @@ function X6DiagramEditorInner({
     restoreFromSnapshot: async (data: any) => {
       if (graph && data) {
         await gw.saveDiagram(diagramId, data);
-        graph.fromJSON(data);
+        loadDataToGraph(graph, data);
         queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
       }
     },
@@ -1929,7 +1963,7 @@ function X6DiagramEditorInner({
               onRestore={async (data) => {
                 if (graph && data) {
                   await gw.saveDiagram(diagramId, data);
-                  graph.fromJSON(data);
+                  loadDataToGraph(graph, data);
                   queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
                 }
               }}
@@ -1943,7 +1977,7 @@ function X6DiagramEditorInner({
               onRestore={async (data) => {
                 if (graph && data) {
                   await gw.saveDiagram(diagramId, data);
-                  graph.fromJSON(data);
+                  loadDataToGraph(graph, data);
                   queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
                 }
               }}

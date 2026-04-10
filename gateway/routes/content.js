@@ -12,6 +12,34 @@ import {
   setUnifiedCommentResolved,
 } from '../lib/comment-service.js';
 import { createSnapshot, isAgentRequest } from '../lib/snapshot-helper.js';
+
+/** Normalize agent-created diagram cells to flowchart-node format */
+function normalizeDiagramCells(cells) {
+  if (!Array.isArray(cells)) return cells;
+  return cells.map(cell => {
+    if (cell.shape === 'edge') return cell;
+    if (cell.shape === 'flowchart-node' && cell.data?.flowchartShape) return cell;
+    const label = cell.attrs?.label?.text || cell.data?.label || '';
+    const bodyFill = cell.attrs?.body?.fill || '#ffffff';
+    const bodyStroke = cell.attrs?.body?.stroke || '#374151';
+    return {
+      ...cell,
+      shape: 'flowchart-node',
+      data: {
+        label,
+        flowchartShape: 'rounded-rect',
+        bgColor: bodyFill,
+        borderColor: bodyStroke,
+        textColor: '#1f2937',
+        fontSize: 14,
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        ...(cell.data || {}),
+      },
+      attrs: undefined,
+    };
+  });
+}
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -241,8 +269,11 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
     if (!row) return res.status(404).json({ error: 'Diagram not found' });
     const agentName = actorName(req) || 'unknown';
     const now = Date.now();
-    const { data } = req.body;
+    let { data } = req.body;
     if (!data) return res.status(400).json({ error: 'data is required' });
+    if (data.cells && isAgentRequest(req)) {
+      data = { ...data, cells: normalizeDiagramCells(data.cells) };
+    }
 
     if (isAgentRequest(req)) {
       createSnapshot(db, { genId }, {

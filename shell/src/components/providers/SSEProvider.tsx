@@ -29,6 +29,10 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           // Invalidate all comment queries for the target — queryKey prefix ['comments'] covers all variants
           queryClient.invalidateQueries({ queryKey: ['comments'] });
         }
+
+        if (event.event === 'content.changed') {
+          queryClient.invalidateQueries({ queryKey: ['content-items'] });
+        }
       } catch {
         // ignore parse errors
       }
