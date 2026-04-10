@@ -286,6 +286,15 @@ export function createDocsTableHandler(view: EditorView): ToolbarHandler {
       const canMerge = isCellSel && !!mergeCells(view.state);
       const canSplit = !!splitCell(view.state);
 
+      // Detect full-row / full-column selection for conditional delete buttons
+      let isRowSel = false;
+      let isColSel = false;
+      if (isCellSel) {
+        const cs = sel as CellSelection;
+        isRowSel = cs.isRowSelection();
+        isColSel = cs.isColSelection();
+      }
+
       return {
         bold: isMarkActive(view, 'strong'),
         italic: isMarkActive(view, 'em'),
@@ -294,6 +303,9 @@ export function createDocsTableHandler(view: EditorView): ToolbarHandler {
         code: isMarkActive(view, 'code'),
         canMerge: canMerge,
         canSplit: canSplit,
+        // Show delete buttons only when applicable (false = hidden)
+        deleteRow: isRowSel,
+        deleteCol: isColSel && !isRowSel,
       };
     },
 

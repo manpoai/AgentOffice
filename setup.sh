@@ -57,7 +57,7 @@ else
 
 # Admin
 ADMIN_EMAIL=admin@asuite.local
-ADMIN_PASSWORD=Asuite2026!
+ADMIN_PASSWORD=123456
 
 # Mattermost
 POSTGRES_MM_PASS=$(gen_short)

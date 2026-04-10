@@ -395,7 +395,7 @@ function X6DiagramEditorInner({
   const minimapRef = useRef<HTMLDivElement>(null);
 
   // X6 graph
-  const { graph, ready, error: graphError } = useX6Graph(containerRef, minimapRef);
+  const { graph, ready, error: graphError, isConnectingRef } = useX6Graph(containerRef, minimapRef);
 
   // Mobile detection — editing not supported on mobile
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -1501,9 +1501,18 @@ function X6DiagramEditorInner({
       hoveredPortInfo = null;
     };
 
+    // Debounce port click to prevent duplicate node creation from rapid clicks
+    let lastPortClickTime = 0;
+
     const handlePortClick = ({ e, node, port }: { e: MouseEvent; node: Node; port: string }) => {
       if (activeTool !== 'select') return;
       if (node.getData()?.mindmapGroupId) return;
+      // Suppress during edge drag
+      if (isConnectingRef.current) return;
+      // Debounce rapid clicks (300ms)
+      const now = Date.now();
+      if (now - lastPortClickTime < 300) return;
+      lastPortClickTime = now;
       hidePreview();
       restorePortStyle();
       const newNode = quickCreateNode(graph, node, port);
@@ -1515,6 +1524,8 @@ function X6DiagramEditorInner({
     const handlePortEnter = ({ node, port }: { e: MouseEvent; node: Node; port: string }) => {
       if (activeTool !== 'select') return;
       if (node.getData()?.mindmapGroupId) return;
+      // Suppress preview during edge drag
+      if (isConnectingRef.current) return;
 
       restorePortStyle();
 
@@ -1577,11 +1588,20 @@ function X6DiagramEditorInner({
       hidePreview();
     };
 
+    // When edge drag starts, immediately hide the preview
+    const handleEdgeAdded = ({ isNew }: any) => {
+      if (isNew) {
+        hidePreview();
+        restorePortStyle();
+      }
+    };
+
     graph.on('node:port:click', handlePortClick);
     graph.on('node:port:mouseenter', handlePortEnter);
     graph.on('node:port:mouseleave', handlePortLeave);
     graph.on('blank:click', handleCleanup);
     graph.on('blank:mousedown', handleCleanup);
+    graph.on('edge:added', handleEdgeAdded);
 
     // Also clean up any leftover _isPreview cells from old code
     const oldOrphans = graph.getCells().filter(c => c.getData()?._isPreview);
@@ -1593,6 +1613,7 @@ function X6DiagramEditorInner({
       graph.off('node:port:mouseleave', handlePortLeave);
       graph.off('blank:click', handleCleanup);
       graph.off('blank:mousedown', handleCleanup);
+      graph.off('edge:added', handleEdgeAdded);
       previewEl.remove();
       lineSvg.remove();
     };

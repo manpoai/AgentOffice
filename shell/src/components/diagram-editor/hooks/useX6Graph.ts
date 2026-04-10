@@ -12,6 +12,7 @@ export function useX6Graph(
   minimapRef: React.RefObject<HTMLDivElement | null>,
 ) {
   const graphRef = useRef<Graph | null>(null);
+  const isConnectingRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -132,6 +133,10 @@ export function useX6Graph(
           showNodeSelectionBox: true,
           multiple: true,
           movable: true,
+          // Allow pointer events to pass through to port magnets on the
+          // selection box overlay. Without this, the selection box intercepts
+          // mousedown on ports and starts node-move instead of edge-connect.
+          pointerEvents: 'none',
         }));
         graph.use(new Snapline({ enabled: true }));
         // Keyboard shortcuts are handled at DOM level in X6DiagramEditor.tsx
@@ -191,6 +196,8 @@ export function useX6Graph(
           showPortsOn(node);
         };
         const onNodeLeave = (e: any) => {
+          // Don't hide ports while user is dragging a connection
+          if (isConnectingRef.current) return;
           // Delay hiding so user can reach the port circles outside the node
           if (hidePortsTimer) clearTimeout(hidePortsTimer);
           hidePortsTimer = setTimeout(() => {
@@ -202,6 +209,8 @@ export function useX6Graph(
           if (hidePortsTimer) { clearTimeout(hidePortsTimer); hidePortsTimer = null; }
         };
         const onPortLeave = () => {
+          // Don't hide ports while user is dragging a connection
+          if (isConnectingRef.current) return;
           // Start hide timer again when leaving a port
           if (hidePortsTimer) clearTimeout(hidePortsTimer);
           hidePortsTimer = setTimeout(() => {
@@ -230,6 +239,25 @@ export function useX6Graph(
           hideAllPorts();
         };
 
+        // ── Connection drag lifecycle ──
+        // Detect when user starts dragging an edge from a port (X6 fires
+        // edge:added with isNew when creating via drag, then edge:connected
+        // or edge:removed depending on success/cancel).
+        const onEdgeAdded = ({ edge, isNew }: any) => {
+          if (isNew) {
+            isConnectingRef.current = true;
+            // Pause the hide-ports timer so ports stay visible during drag
+            if (hidePortsTimer) { clearTimeout(hidePortsTimer); hidePortsTimer = null; }
+          }
+        };
+        const onEdgeConnected = () => {
+          isConnectingRef.current = false;
+        };
+        const onEdgeRemoved = () => {
+          // Also clear connecting state when edge is cancelled/removed mid-drag
+          isConnectingRef.current = false;
+        };
+
         graph.on('node:mouseenter', onNodeEnter);
         graph.on('node:mouseleave', onNodeLeave);
         graph.on('node:port:mouseenter', onPortEnter);
@@ -237,6 +265,9 @@ export function useX6Graph(
         graph.on('node:click', onNodeClick);
         graph.on('blank:click', onBlankClick);
         graph.on('selection:changed', onSelectionChanged);
+        graph.on('edge:added', onEdgeAdded);
+        graph.on('edge:connected', onEdgeConnected);
+        graph.on('edge:removed', onEdgeRemoved);
 
         // ── Two-finger trackpad panning ──
         // Trackpad two-finger scroll sends wheel events with deltaX/deltaY.
@@ -273,5 +304,5 @@ export function useX6Graph(
     };
   }, [containerRef, minimapRef]);
 
-  return { graph: graphRef.current, ready, error };
+  return { graph: graphRef.current, ready, error, isConnectingRef };
 }

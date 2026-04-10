@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID } from './baserow.js';
 import { initDatabase } from './lib/db.js';
 import { genId, hashToken, hashPassword, verifyPassword } from './lib/utils.js';
+import { stopTunnel } from './lib/tunnel.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { sseClients, humanClients, pushEvent, pushHumanEvent, deliverWebhook, pollComments } from './lib/sse.js';
 import { createContentSync } from './lib/content-sync.js';
@@ -74,4 +75,14 @@ app.listen(PORT, () => {
   console.log(`[gateway] ASuite API Gateway listening on :${PORT}`);
   console.log(`[gateway] Admin token: ${ADMIN_TOKEN.slice(0, 8)}...`);
   console.log('[gateway] Content items managed by Gateway (no periodic sync)');
+});
+
+// ─── Cleanup ────────────────────────────────────
+process.on('SIGTERM', () => {
+  stopTunnel();
+  process.exit(0);
+});
+process.on('SIGINT', () => {
+  stopTunnel();
+  process.exit(0);
 });

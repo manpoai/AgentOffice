@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 import { useT } from '@/lib/i18n';
@@ -13,9 +13,13 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // If already logged in, redirect
+  useEffect(() => {
+    if (actor) {
+      router.push('/content');
+    }
+  }, [actor, router]);
+
   if (actor) {
-    router.push('/content');
     return null;
   }
 
@@ -48,9 +52,9 @@ export default function LoginPage() {
         width: '320px',
         padding: '40px',
       }}>
-        <h1 style={{ fontFamily: 'Allura, cursive', fontSize: '40px', textAlign: 'center', margin: '0 0 24px 0' }}>
-          @suite
-        </h1>
+        <div style={{ textAlign: 'center', margin: '0 0 24px 0' }}>
+          <img src="/logo.png" alt="AgentOffice" style={{ height: '40px', margin: '0 auto' }} />
+        </div>
 
         {error && (
           <div style={{ color: '#ef4444', fontSize: '14px', textAlign: 'center' }}>

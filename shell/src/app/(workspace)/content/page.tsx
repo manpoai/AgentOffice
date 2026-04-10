@@ -47,6 +47,8 @@ import { contentItemSurfaces } from '@/surfaces/content-item.surfaces';
 import { toContextMenuItems, toContentMenuItems } from '@/surfaces/bridge';
 import { AgentPanelContent } from '@/components/shared/AgentPanelContent';
 import { buildActionMap } from '@/actions/types';
+import { buildContentLink } from '@/lib/hooks/use-content-tree';
+import { getPublicOrigin } from '@/lib/remote-access';
 import {
   DndContext,
   closestCenter,
@@ -187,12 +189,7 @@ function syncSelectionToURL(sel: Selection | null, replace = false) {
   }
 }
 
-/** Build a shareable link for a content item */
-function buildContentLink(sel: NonNullable<Selection>): string {
-  const url = new URL(window.location.href);
-  url.searchParams.set('id', `${sel.type}:${sel.id}`);
-  return url.toString();
-}
+// buildContentLink imported from '@/lib/hooks/use-content-tree'
 
 // ═══════════════════════════════════════════════════
 // Main Page
@@ -1906,7 +1903,7 @@ function DraggableTreeNode({
     type: node.type,
     title: node.title,
     pinned: node.pinned ?? false,
-    url: `${window.location.origin}/content?id=${node.type}:${node.rawId}`,
+    url: `${getPublicOrigin()}/content?id=${node.type}:${node.rawId}`,
     startRename: () => {
       setRenameValue(node.title);
       setIsRenaming(true);

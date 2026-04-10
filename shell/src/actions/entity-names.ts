@@ -1,4 +1,4 @@
-import { FileText, Table2, Presentation, GitBranch, Users } from 'lucide-react';
+import { FileText, Table2, Presentation, Workflow, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface EntityNameDef {
@@ -35,7 +35,7 @@ export const ENTITY_NAMES: Record<string, EntityNameDef> = {
     singular: 'Flowchart',
     singularKey: 'entities.flowchart',
     createLabelKey: 'actions.newFlowchart',
-    icon: GitBranch,
+    icon: Workflow,
     type: 'diagram',
   },
   agent: {

@@ -73,6 +73,23 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
         actorId: agentName,
         title,
       });
+
+      // Notify human users
+      const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+      for (const actor of humanActors) {
+        const notifId = genId('notif');
+        db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
+          VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
+          notifId, agentName, actor.id, 'doc_created',
+          title || '新文档',
+          `${agentName} 创建了文档「${title || docId}」`,
+          `/content?id=doc:${docId}`,
+          JSON.stringify({ doc_id: docId }),
+          Date.now()
+        );
+        pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'doc_created', doc_id: docId, title } });
+        pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type: 'doc', id: docId, title } });
+      }
     }
 
     res.status(201).json({
@@ -347,21 +364,21 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
 
     // Notify human users when an agent creates a document
     if (isAgentRequest(req)) {
-      const notifId = genId('notif');
-      db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
-        VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
-        notifId,
-        agentName,
-        'human:default',
-        'doc_created',
-        title || '新文档',
-        `${agentName} 创建了文档「${title || docId}」`,
-        `/content?id=doc:${docId}`,
-        JSON.stringify({ doc_id: docId }),
-        Date.now()
-      );
-      pushHumanEvent('default', { event: 'notification.created', data: { id: notifId, type: 'doc_created', doc_id: docId, title } });
-      pushHumanEvent('default', { event: 'content.changed', data: { action: 'created', type: 'doc', id: docId, title } });
+      const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+      for (const actor of humanActors) {
+        const notifId = genId('notif');
+        db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
+          VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
+          notifId, agentName, actor.id, 'doc_created',
+          title || '新文档',
+          `${agentName} 创建了文档「${title || docId}」`,
+          `/content?id=doc:${docId}`,
+          JSON.stringify({ doc_id: docId }),
+          Date.now()
+        );
+        pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'doc_created', doc_id: docId, title } });
+        pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type: 'doc', id: docId, title } });
+      }
     }
 
     res.status(201).json(doc);

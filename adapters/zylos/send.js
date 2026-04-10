@@ -77,14 +77,12 @@ async function main() {
   const text = message.trim();
 
   // Route based on endpoint type
-  if (parsed.channelId.startsWith('doc:')) {
-    // Outline doc comment reply
-    const docId = parsed.channelId.slice(4);
-    const body = { doc_id: docId, text };
-    if (parsed.comment) body.parent_comment_id = parsed.comment;
-
-    const data = await sendRequest(`${GATEWAY_URL}/api/comments`, body);
-    if (data.comment_id) {
+  if (parsed.comment) {
+    // Content item comment reply (doc, presentation, spreadsheet, etc.)
+    const contentId = parsed.channelId;
+    const body = { text, parent_comment_id: parsed.comment };
+    const data = await sendRequest(`${GATEWAY_URL}/api/content-items/${encodeURIComponent(contentId)}/comments`, body);
+    if (data.id || data.comment_id) {
       console.log('Comment posted successfully');
     } else {
       console.error(`Failed: ${JSON.stringify(data)}`);

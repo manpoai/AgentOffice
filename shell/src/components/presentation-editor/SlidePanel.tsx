@@ -31,12 +31,14 @@ const pptSlideActionMap = buildActionMap(pptSlideActions);
 function SlideThumb({ slide }: { slide: SlideData }) {
   if (slide.thumbnail) {
     return (
-      <img
-        src={slide.thumbnail}
-        alt="Slide preview"
-        className="absolute inset-0 w-full h-full object-contain"
-        draggable={false}
-      />
+      <div className="relative w-full h-full overflow-hidden">
+        <img
+          src={slide.thumbnail}
+          alt="Slide preview"
+          className="absolute inset-0 w-full h-full object-cover"
+          draggable={false}
+        />
+      </div>
     );
   }
   const scale = THUMB_WIDTH / SLIDE_WIDTH;
@@ -123,7 +125,7 @@ function SortableSlideItem({ slide, index, isSelected, onClick, onContextMenu }:
         )}
       >
         <div
-          className="w-full rounded-sm overflow-hidden"
+          className="relative w-full rounded-sm overflow-hidden"
           style={{ aspectRatio: `${SLIDE_WIDTH}/${SLIDE_HEIGHT}`, backgroundColor: slide.background || '#fff' }}
         >
           <SlideThumb slide={slide} />

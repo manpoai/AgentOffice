@@ -34,6 +34,15 @@ Override the runtime artifact download URL used by `agentoffice-main`.
 
 Default points to the GitHub Release asset for the current public bootstrap flow.
 
+### `PUBLIC_BASE_URL`
+If set before startup, the CLI skips the interactive remote access prompt and uses this value directly. Useful for automated deployments.
+
+Example:
+
+```bash
+PUBLIC_BASE_URL=https://office.example.com npx agentoffice-main
+```
+
 ## Runtime-generated config
 
 On first start, AgentOffice writes:
@@ -47,6 +56,9 @@ Current fields include:
 - `admin_password`
 - `shell_port`
 - `gateway_port`
+- `remoteAccess.publicBaseUrl` — the configured public URL (set by CLI or browser fallback)
+- `remoteAccess.mode` — `public_tunnel` or `public_custom_domain`
+- `remoteAccess.status` — `not_ready`, `configuring`, `ready`, or `failed`
 
 Treat this file as sensitive.
 

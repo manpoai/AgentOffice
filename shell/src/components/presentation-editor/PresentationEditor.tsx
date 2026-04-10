@@ -28,6 +28,7 @@ import { useT, getT } from '@/lib/i18n';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
+import { getPublicOrigin } from '@/lib/remote-access';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
@@ -1910,7 +1911,7 @@ export function PresentationEditor({
               type: 'slides',
               title: presentation?.title || t('content.presentation'),
               pinned: isPinned ?? false,
-              url: typeof window !== 'undefined' ? window.location.href : '',
+              url: typeof window !== 'undefined' ? `${getPublicOrigin()}${window.location.pathname}${window.location.search}` : '',
               startRename: () => {},
               openIconPicker: () => {},
               togglePin: () => onTogglePin?.(),

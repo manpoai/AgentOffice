@@ -33,6 +33,7 @@ import { ColTypeDef, COLUMN_TYPES } from './types';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { LinkRecordPicker } from './LinkRecordPicker';
 import { RevisionHistory, type RevisionItem } from '@/components/shared/RevisionHistory';
+import { getPublicOrigin } from '@/lib/remote-access';
 import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
 
 interface SnapshotPreview {
@@ -1963,7 +1964,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             title: meta?.title || '',
             pinned: isPinned ?? false,
             url: typeof window !== 'undefined' ? (() => {
-              const url = new URL(window.location.href);
+              const url = new URL(`${getPublicOrigin()}${window.location.pathname}${window.location.search}`);
               url.searchParams.set('id', `table:${tableId}`);
               return url.toString();
             })() : '',
@@ -1976,7 +1977,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             copyLink: () => {
               if (onCopyLink) onCopyLink();
               else {
-                const url = new URL(window.location.href);
+                const url = new URL(`${getPublicOrigin()}${window.location.pathname}${window.location.search}`);
                 url.searchParams.set('id', `table:${tableId}`);
                 navigator.clipboard.writeText(url.toString());
               }
@@ -1991,7 +1992,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
               title: meta?.title || '',
               pinned: isPinned ?? false,
               url: typeof window !== 'undefined' ? (() => {
-                const url = new URL(window.location.href);
+                const url = new URL(`${getPublicOrigin()}${window.location.pathname}${window.location.search}`);
                 url.searchParams.set('id', `table:${tableId}`);
                 return url.toString();
               })() : '',
@@ -2004,7 +2005,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
               copyLink: () => {
                 if (onCopyLink) onCopyLink();
                 else {
-                  const url = new URL(window.location.href);
+                  const url = new URL(`${getPublicOrigin()}${window.location.pathname}${window.location.search}`);
                   url.searchParams.set('id', `table:${tableId}`);
                   navigator.clipboard.writeText(url.toString());
                 }

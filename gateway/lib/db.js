@@ -35,6 +35,7 @@ export function initDatabase(gatewayDir) {
 
   runMigrations(db);
   runWriteSmokeTest(db);
+  seedExampleContent(db, gatewayDir);
 
   return db;
 }
@@ -483,4 +484,53 @@ function migrateAgentAccounts(db) {
       console.log('[gateway] Dropped legacy agent_accounts table');
     }
   } catch (e) { console.warn('[gateway] agent_accounts migration:', e.message); }
+}
+
+function seedExampleContent(db, gatewayDir) {
+  // Only seed if content_items table is empty (first deployment)
+  const count = db.prepare('SELECT COUNT(*) as n FROM content_items').get().n;
+  if (count > 0) return;
+
+  const seedPath = path.join(gatewayDir, 'seed-data.json');
+  if (!fs.existsSync(seedPath)) return;
+
+  try {
+    const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    const now = new Date().toISOString();
+    const nowMs = Date.now();
+
+    // Seed document
+    if (seed.doc) {
+      const ci = seed.doc.content_item;
+      const doc = seed.doc.document;
+      db.prepare(
+        `INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, sort_order, collection_id, created_by, updated_by, created_at, updated_at, synced_at, pinned)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', 'admin', ?, ?, ?, 0)`
+      ).run(ci.id, ci.raw_id, ci.type, ci.title, ci.icon, ci.parent_id, ci.sort_order || 0, ci.collection_id, now, now, nowMs);
+
+      db.prepare(
+        `INSERT INTO documents (id, title, text, data_json, icon, full_width, created_by, updated_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'admin', 'admin', ?, ?)`
+      ).run(doc.id, doc.title, doc.text, doc.data_json, doc.icon, doc.full_width || 0, now, now);
+    }
+
+    // Seed presentation
+    if (seed.presentation) {
+      const ci = seed.presentation.content_item;
+      const pres = seed.presentation.presentation;
+      db.prepare(
+        `INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, sort_order, collection_id, created_by, updated_by, created_at, updated_at, synced_at, pinned)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', 'admin', ?, ?, ?, 0)`
+      ).run(ci.id, ci.raw_id, ci.type, ci.title, ci.icon, ci.parent_id, ci.sort_order || 0, ci.collection_id, now, now, nowMs);
+
+      db.prepare(
+        `INSERT INTO presentations (id, data_json, created_by, updated_by, created_at, updated_at)
+         VALUES (?, ?, 'admin', 'admin', ?, ?)`
+      ).run(pres.id, pres.data_json, now, now);
+    }
+
+    console.log('[gateway] Seeded example content (Welcome doc + Overview presentation)');
+  } catch (e) {
+    console.warn('[gateway] Failed to seed example content:', e.message);
+  }
 }

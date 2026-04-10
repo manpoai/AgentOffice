@@ -4,6 +4,8 @@
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { detectCloudflared, startTunnel, getTunnelStatus } from '../lib/tunnel.js';
+import { readAgentOfficeConfig, writeAgentOfficeConfig } from '../lib/config.js';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import { fileURLToPath } from 'url';
@@ -15,6 +17,37 @@ const GATEWAY_DIR = path.dirname(__dirname);
 const selfRegisterLimiter = new Map(); // IP → { count, resetTime }
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour
+
+function getConfiguredPublicBaseUrl() {
+  const configured = process.env.PUBLIC_BASE_URL?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+  const fileConfig = readAgentOfficeConfig();
+  const fromFile = fileConfig?.remoteAccess?.publicBaseUrl?.trim?.();
+  return fromFile ? fromFile.replace(/\/$/, '') : null;
+}
+
+async function validatePublicBaseUrl(publicBaseUrl) {
+  try {
+    const url = new URL('/api/gateway/auth/me', publicBaseUrl).toString();
+    const res = await fetch(url, { method: 'GET' });
+    return { ok: res.status !== 404 };
+  } catch {
+    return { ok: false };
+  }
+}
+
+// detectCloudflared imported from ../lib/tunnel.js
+
+function getPublicBaseUrl(req) {
+  const configured = getConfiguredPublicBaseUrl();
+  if (configured) {
+    return configured;
+  }
+  const origin = req.headers['x-forwarded-host']
+    ? `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host']}`
+    : `${req.protocol}://${req.get('host')}`;
+  return origin.replace(/\/$/, '');
+}
 
 // Clean up expired entries every 10 minutes
 setInterval(() => {
@@ -81,6 +114,93 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   app.get('/api/auth/me', authenticateAny, (req, res) => {
     const a = req.actor;
     res.json({ id: a.id, type: a.type, username: a.username, display_name: a.display_name, role: a.role, avatar_url: a.avatar_url });
+  });
+
+  // GET /api/auth/remote-access — current remote access runtime semantics
+  app.get('/api/auth/remote-access', authenticateAny, (_req, res) => {
+    const tunnelStatus = getTunnelStatus();
+    const publicBaseUrl = getConfiguredPublicBaseUrl();
+
+    // If tunnel mode and tunnel is actively running, use live state
+    if (tunnelStatus.state === 'running' && tunnelStatus.publicUrl) {
+      return res.json({
+        status: 'ready',
+        mode: 'public_tunnel',
+        publicBaseUrl: tunnelStatus.publicUrl,
+      });
+    }
+
+    res.json({
+      status: publicBaseUrl ? 'ready' : 'not_ready',
+      mode: publicBaseUrl ? 'public_custom_domain' : 'public_tunnel',
+      publicBaseUrl,
+    });
+  });
+
+  // PATCH /api/auth/remote-access — update custom domain config (first executable path)
+  app.patch('/api/auth/remote-access', authenticateAny, async (req, res) => {
+    if (req.actor.type !== 'human') return res.status(403).json({ error: 'FORBIDDEN' });
+    const { publicBaseUrl, mode } = req.body || {};
+    const current = readAgentOfficeConfig() || {};
+
+    if (mode === 'public_tunnel') {
+      const cloudflared = detectCloudflared();
+      if (!cloudflared.installed) {
+        current.remoteAccess = {
+          ...(current.remoteAccess || {}),
+          status: 'failed',
+          mode: 'public_tunnel',
+          publicBaseUrl: null,
+        };
+        writeAgentOfficeConfig(current);
+        return res.json({
+          ...current.remoteAccess,
+          cloudflared,
+          nextAction: 'install_cloudflared',
+        });
+      }
+
+      // cloudflared is installed — start tunnel (target = this gateway)
+      const gatewayPort = process.env.GATEWAY_PORT || 4000;
+      const targetUrl = process.env.TUNNEL_TARGET_URL || `http://127.0.0.1:${gatewayPort}`;
+      try {
+        const { publicUrl } = await startTunnel(targetUrl);
+        return res.json({
+          status: 'ready',
+          mode: 'public_tunnel',
+          publicBaseUrl: publicUrl,
+        });
+      } catch (e) {
+        current.remoteAccess = {
+          ...(current.remoteAccess || {}),
+          status: 'failed',
+          mode: 'public_tunnel',
+          publicBaseUrl: null,
+        };
+        writeAgentOfficeConfig(current);
+        return res.json({
+          ...current.remoteAccess,
+          error: e.message,
+        });
+      }
+    }
+
+    if (!publicBaseUrl || typeof publicBaseUrl !== 'string' || !/^https:\/\//.test(publicBaseUrl)) {
+      return res.status(400).json({ error: 'INVALID_PUBLIC_BASE_URL' });
+    }
+    const normalized = publicBaseUrl.replace(/\/$/, '');
+    const validation = await validatePublicBaseUrl(normalized);
+    current.remoteAccess = {
+      ...(current.remoteAccess || {}),
+      status: validation.ok ? 'ready' : 'failed',
+      mode: 'public_custom_domain',
+      publicBaseUrl: normalized,
+    };
+    writeAgentOfficeConfig(current);
+    res.json({
+      ...current.remoteAccess,
+      validation: validation.ok ? 'passed' : 'failed',
+    });
   });
 
   // PATCH /api/auth/password — change password (human only)
@@ -251,10 +371,8 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
           now);
     }
 
-    const origin = req.headers['x-forwarded-host']
-      ? `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host']}`
-      : `${req.protocol}://${req.get('host')}`;
-    const gatewayBase = `${origin}/api/gateway`;
+    const publicBaseUrl = getPublicBaseUrl(req);
+    const gatewayBase = `${publicBaseUrl}/api/gateway`;
     const skillsUrl = `${gatewayBase}/agent-skills`;
     res.status(201).json({
       agent_id: agentId,
@@ -337,9 +455,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   // Admin: get onboarding prompt for a specific platform (data-driven platform list)
   app.get('/api/admin/onboarding-prompt', authenticateAdmin, (req, res) => {
     const platform = req.query.platform || 'zylos';
-    const origin = req.headers['x-forwarded-host']
-      ? `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host']}`
-      : `${req.protocol}://${req.get('host')}`;
+    const origin = getPublicBaseUrl(req);
     const asuiteUrl = `${origin}/api/gateway`;
     const prompt = `Hi! You've been invited to join an AgentOffice workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
 

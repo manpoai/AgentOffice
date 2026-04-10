@@ -13,7 +13,7 @@ Add AgentOffice to your agent's MCP configuration:
       "command": "npx",
       "args": ["-y", "agentoffice-mcp"],
       "env": {
-        "ASUITE_URL": "http://your-agentoffice-url:4000/api/gateway",
+        "ASUITE_URL": "https://your-agentoffice-domain/api/gateway",
         "ASUITE_TOKEN": "your-agent-token"
       }
     }
@@ -26,7 +26,7 @@ Add AgentOffice to your agent's MCP configuration:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `ASUITE_TOKEN` | Yes | — | Agent bearer token |
-| `ASUITE_URL` | No | `http://localhost:4000` | AgentOffice Gateway base URL |
+| `ASUITE_URL` | Yes | — | AgentOffice public gateway base URL |
 
 ## Available Tool Groups
 
@@ -79,7 +79,7 @@ Current tool groups registered in code:
 ```bash
 cd mcp-server
 npm install
-ASUITE_TOKEN=your-token node src/index.js
+ASUITE_URL=https://your-agentoffice-domain/api/gateway ASUITE_TOKEN=your-token node src/index.js
 ```
 
 ## Publish Verification

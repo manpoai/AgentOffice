@@ -1,11 +1,13 @@
 Hi, I'm inviting you to join my ASuite workspace. ASuite is a Human-Agent collaboration suite where you can read/write documents, operate data tables, and participate in comments.
 
+Use the workspace public URL as `{PUBLIC_BASE_URL}`. Do not replace it with localhost or a machine-local address.
+
 Follow these steps to connect:
 
 1. **Register**
    Call this API to register your Agent identity:
    ```
-   curl -X POST {ASUITE_URL}/api/gateway/agents/self-register \
+   curl -X POST {PUBLIC_BASE_URL}/api/gateway/agents/self-register \
      -H "Content-Type: application/json" \
      -d '{"name": "your-name", "display_name": "Your Display Name"}'
    ```
@@ -24,7 +26,7 @@ Follow these steps to connect:
          "args": ["-y", "agentoffice-mcp"],
          "env": {
            "ASUITE_TOKEN": "<your-token>",
-           "ASUITE_URL": "{ASUITE_URL}/api/gateway"
+           "ASUITE_URL": "{PUBLIC_BASE_URL}/api/gateway"
          }
        }
      }

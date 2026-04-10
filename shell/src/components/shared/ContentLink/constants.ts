@@ -1,10 +1,10 @@
-import { FileText, Table2, Presentation, GitBranch, type LucideIcon } from 'lucide-react';
+import { FileText, Table2, Presentation, Workflow, type LucideIcon } from 'lucide-react';
 
 export const TYPE_ICONS: Record<string, LucideIcon> = {
   doc: FileText,
   table: Table2,
   presentation: Presentation,
-  diagram: GitBranch,
+  diagram: Workflow,
 };
 
 export const TYPE_LABELS: Record<string, string> = {

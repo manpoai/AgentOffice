@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const GW_URL = process.env.GATEWAY_URL || 'http://localhost:4000';
+const GW_URL = process.env.GATEWAY_URL;
 const GW_TOKEN = process.env.GATEWAY_AGENT_TOKEN || process.env.GATEWAY_ADMIN_TOKEN || '';
 
 /**
@@ -29,6 +29,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { path: str
 }
 
 async function proxy(req: NextRequest, pathParts: string[], hasBody?: boolean) {
+  if (!GW_URL) {
+    return NextResponse.json({ error: 'GATEWAY_URL_NOT_CONFIGURED' }, { status: 500 });
+  }
+
   const gwPath = '/api/' + pathParts.join('/');
   const url = new URL(gwPath, GW_URL);
 

@@ -108,6 +108,8 @@ export function FloatingToolbar({ items, handler, anchor, visible, onHover, clas
         break;
 
       case 'action':
+        // If handler returns false for this key, hide the button
+        if (state[item.key] === false) break;
         rendered.push(
           <ToolbarButton
             key={item.key}

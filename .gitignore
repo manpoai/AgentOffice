@@ -19,9 +19,18 @@ gateway/uploads/
 gateway/.nc-poll-state.json
 gateway/.plane-poll-state.json
 adapters/zylos/.last-event-ts
+adapters/zylos/.last-event-ts-*
+
+# Runtime data
+gateway/data/preferences/
 
 # Next.js
 shell/.next/
+shell/tsconfig.tsbuildinfo
+shell/nohup.out
+
+# Platform-specific agent icons
+shell/public/icons/platform-*
 
 # OS
 .DS_Store

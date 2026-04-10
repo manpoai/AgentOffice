@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import type { Primitive } from "utility-types";
 import { isSafari } from "../../utils/browser";
 import Storage from "../../utils/Storage";
+import { getPublicOrigin } from "@/lib/remote-access";
 import backspaceToParagraph from "../commands/backspaceToParagraph";
 import splitHeading from "../commands/splitHeading";
 import toggleBlockType from "../commands/toggleBlockType";
@@ -159,10 +160,8 @@ export default class Heading extends Node {
 
     // the existing url might contain a hash already, lets make sure to remove
     // that rather than appending another one.
-    const normalizedUrl = window.location.href
-      .split("#")[0]
-      .replace("/edit", "");
-    copy(normalizedUrl + hash);
+    const pathAndQuery = (window.location.pathname + window.location.search).replace("/edit", "");
+    copy(getPublicOrigin() + pathAndQuery + hash);
 
     toast.message(this.options.dictionary.linkCopied);
   };

@@ -12,6 +12,7 @@ import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
 import { EditorSkeleton } from '@/components/shared/Skeleton';
+import { DiagramPreview } from '@/components/shared/EmbeddedDiagram/DiagramPreview';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { MobileCommentBar } from '@/components/shared/MobileCommentBar';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
@@ -20,6 +21,7 @@ import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
 import type { DiagramEditorHandle, DiagramSaveStatus } from '@/components/diagram-editor/X6DiagramEditor';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
+import { getPublicOrigin } from '@/lib/remote-access';
 
 const DiagramEditor = dynamic(
   () => import('@/components/diagram-editor/X6DiagramEditor'),
@@ -207,7 +209,7 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 type: 'diagram',
                 title: title || t('content.untitledDiagram'),
                 pinned: isPinned ?? false,
-                url: typeof window !== 'undefined' ? window.location.href : '',
+                url: typeof window !== 'undefined' ? `${getPublicOrigin()}${window.location.pathname}${window.location.search}` : '',
                 startRename: () => {},
                 openIconPicker: () => {},
                 togglePin: () => onTogglePin?.(),
@@ -244,44 +246,12 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 }
               } : undefined}
             />
-            <div className="flex-1 overflow-auto p-6 bg-muted/30">
+            <div className="flex-1 overflow-auto p-6 bg-muted/30 flex items-center justify-center">
               {previewRevisionData?.cells ? (
-                (() => {
-                  const cells = previewRevisionData.cells;
-                  const nodes = cells.filter((c: any) => c.shape && !c.shape.includes('edge'));
-                  const edges = cells.filter((c: any) => c.shape?.includes('edge'));
-                  const nodeMap = new Map(nodes.map((n: any) => [n.id, n.data?.label || n.attrs?.text?.text || '']));
-                  return (
-                    <div className="max-w-4xl mx-auto space-y-3">
-                      <div className="text-xs text-muted-foreground mb-2">{nodes.length} node(s), {edges.length} edge(s)</div>
-                      {nodes.map((node: any, i: number) => (
-                        <div key={node.id || i} className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-zinc-800 rounded-lg border border-border shadow-sm">
-                          <div className="w-8 h-8 rounded bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-xs font-medium text-blue-700 dark:text-blue-300">
-                            {i + 1}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate">{node.data?.label || node.attrs?.text?.text || t('content.untitledNode')}</div>
-                          </div>
-                        </div>
-                      ))}
-                      {edges.length > 0 && (
-                        <div className="pt-2 border-t border-border space-y-1">
-                          <div className="text-xs font-medium text-muted-foreground">{t('content.connections')}</div>
-                          {edges.map((edge: any, i: number) => {
-                            const srcLabel = nodeMap.get(edge.source?.cell || edge.source) || '?';
-                            const tgtLabel = nodeMap.get(edge.target?.cell || edge.target) || '?';
-                            return (
-                              <div key={edge.id || i} className="text-xs text-muted-foreground pl-4">
-                                {srcLabel || `Node ${nodes.findIndex((n: any) => n.id === (edge.source?.cell || edge.source)) + 1}`} → {tgtLabel || `Node ${nodes.findIndex((n: any) => n.id === (edge.target?.cell || edge.target)) + 1}`}
-                                {edge.data?.label ? ` (${edge.data.label})` : ''}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()
+                <DiagramPreview
+                  data={previewRevisionData}
+                  className="w-full h-full max-w-4xl"
+                />
               ) : (
                 <div className="text-center text-sm text-muted-foreground py-8">{t('content.noPreviewData')}</div>
               )}
@@ -289,8 +259,8 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
           </div>
         )}
 
-        {/* DiagramEditor — only the canvas area */}
-        {!previewRevisionData && <div className="flex-1 min-h-0 flex flex-col">
+        {/* DiagramEditor — keep mounted but hidden during version preview to preserve state */}
+        <div className={cn("flex-1 min-h-0 flex flex-col", previewRevisionData && "hidden")}>
           <DiagramEditor
             diagramId={diagramId}
             editorRef={editorRef}
@@ -305,7 +275,7 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
               setFocusAnchorState({ type: cellType, id: cellId });
             }}
           />
-        </div>}
+        </div>
         {/* Mobile: bottom comment bar — no editing on mobile */}
         <MobileCommentBar
           onClick={() => { onShowComments(); setShowHistory(false); }}

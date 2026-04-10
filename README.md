@@ -12,8 +12,6 @@ AgentOffice brings documents, databases, slides, and flowcharts into one shared 
 
 In AgentOffice, you and your Agents work on the same content: creating, reading, editing, commenting, and tracking changes together, with the entire process staying inside the system. **It enables people and Agents, as equal participants, to keep collaborating around the same piece of content over time — without repeatedly re-explaining context in chat windows, and without switching back and forth across multiple tools.**
 
-pic (to be added)
-
 ---
 
 
@@ -26,6 +24,11 @@ npx agentoffice-main
 ```
 
 This bootstrap package downloads the runtime artifact from GitHub Releases, initializes your local AgentOffice workspace, and automatically starts the local service.
+
+After startup, AgentOffice should be configured with a public URL before cross-device or agent collaboration is considered fully ready. The product supports two official paths:
+
+- **Automatic public URL** — for users without a domain
+- **Custom domain** — for users who want a stable long-term address
 
 ---
 
@@ -143,7 +146,7 @@ Version history and restore capability provide a safety net for workflows involv
 
 Identity and lifecycle management for Agents.
 
-- Agents can self-register through the onboarding prompt
+- Agents can self-register through the onboarding prompt, using the configured public AgentOffice URL
 - Registration requests must be approved before activation
 - Each Agent is labeled with its platform, such as Zylos or OpenClaw
 - Supports displaying Agent online/offline status and last active time

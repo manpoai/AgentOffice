@@ -347,6 +347,29 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
     const agentName = actorName(req);
     const actorId = req.actor?.id || req.agent?.id || null;
 
+    /** Notify human users and trigger file tree refresh when agent creates content */
+    function notifyContentCreated(contentId, contentTitle) {
+      if (!isAgentRequest(req)) return;
+      try {
+        // Notify all human actors
+        const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+        for (const actor of humanActors) {
+          const notifId = genId('notif');
+          db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
+            VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
+            notifId, agentName, actor.id, 'content_created',
+            contentTitle || 'New content',
+            `${agentName} 创建了${type === 'doc' ? '文档' : type === 'diagram' ? '流程图' : type === 'table' ? '表格' : type === 'presentation' ? '演示文稿' : type}「${contentTitle || contentId}」`,
+            `/content?id=${contentId}`,
+            JSON.stringify({ content_id: contentId, type }),
+            Date.now()
+          );
+          pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'content_created', content_id: contentId, title: contentTitle } });
+          pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type, id: contentId, title: contentTitle } });
+        }
+      } catch (e) { console.warn('[content] notification failed:', e.message); }
+    }
+
     if (type === 'doc') {
       const docId = genId('doc');
       db.prepare(`INSERT INTO documents (id, title, text, created_by, updated_by, created_at, updated_at)
@@ -368,6 +391,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         });
       }
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+      notifyContentCreated(nodeId, title);
       return res.status(201).json({ item });
     }
 
@@ -427,6 +451,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       }
 
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+      notifyContentCreated(nodeId, tableTitle);
       return res.status(201).json({ item, table_id: tableId, columns: responseCols });
     }
 
@@ -454,6 +479,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       );
 
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+      notifyContentCreated(nodeId, title);
       return res.status(201).json({ item });
     }
 
@@ -482,6 +508,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       }
 
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+      notifyContentCreated(nodeId, title);
       return res.status(201).json({ item });
     }
 
@@ -502,6 +529,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       );
 
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+      notifyContentCreated(nodeId, title);
       return res.status(201).json({ item });
     }
 
@@ -536,6 +564,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       const item = req.body.embedded
         ? { id: nodeId, raw_id: id, type: 'diagram', title: title || '' }
         : db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+      if (!req.body.embedded) notifyContentCreated(nodeId, title);
       return res.status(201).json({ item });
     }
   });

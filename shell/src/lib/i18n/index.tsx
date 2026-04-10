@@ -43,7 +43,7 @@ interface I18nContextType {
 }
 
 const I18nContext = createContext<I18nContextType>({
-  locale: 'zh',
+  locale: 'en',
   setLocale: () => {},
   t: (key) => key,
 });

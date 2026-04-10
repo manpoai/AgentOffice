@@ -16,14 +16,15 @@ export function translateEvent(event, ctx) {
   switch (event.event) {
     case 'comment.mentioned': {
       const d = event.data;
-      const cp = d.context_payload || {};
+      const cp = d.context || {};
       const target = cp.target || {};
       const anchor = cp.anchor || {};
-      const summary = cp.summary || d.text_without_mention || d.text || '';
+      const summaryObj = cp.summary || {};
+      const summaryText = summaryObj.comment_text || d.text || '';
 
-      let content = `[ASuite] ${d.sender?.name || 'Someone'} mentioned you in a comment`;
+      let content = `[ASuite] ${d.actor || 'Someone'} mentioned you in a comment`;
       if (target.title) content += ` on "${target.title}"`;
-      content += `:\n${summary}`;
+      content += `:\n${summaryText}`;
 
       if (anchor.type && anchor.preview) {
         content += `\n\n[Anchor: ${anchor.type}]\n${anchor.preview}`;
@@ -32,54 +33,60 @@ export function translateEvent(event, ctx) {
         content += `\n\n[Context]\n${cp.minimal_required_context.content_snippet}`;
       }
 
-      content += `\n\n---- reply via: [use reply_to_comment MCP tool with comment_id: ${d.comment_id}]`;
+      // reply via is auto-appended by c4-receive.js — no need to add here
 
-      const endpoint = `${d.content_id || d.doc_id}|comment:${d.comment_id}`;
+      const endpoint = `${d.target_id}|comment:${d.comment_id}`;
       return { endpoint, content };
     }
 
     case 'comment.on_owned_content': {
       const d = event.data;
-      const cp = d.context_payload || {};
+      const cp = d.context || {};
       const target = cp.target || {};
 
-      let content = `[ASuite] ${d.sender?.name || 'Someone'} commented on your content`;
+      let content = `[ASuite] ${d.actor || 'Someone'} commented on your content`;
       if (target.title) content += ` "${target.title}"`;
       content += `:\n${d.text || ''}`;
 
-      content += `\n\n---- use list_comments or reply_to_comment MCP tool`;
+      // reply via is auto-appended by c4-receive.js
 
-      const endpoint = `${d.content_id || d.doc_id}|comment:${d.comment_id}`;
+      const endpoint = `${d.target_id}|comment:${d.comment_id}`;
       return { endpoint, content };
     }
 
     case 'comment.replied': {
       const d = event.data;
-      let content = `[ASuite] ${d.sender?.name || 'Someone'} replied to your comment`;
-      if (d.content_title) content += ` on "${d.content_title}"`;
+      const cp = d.context || {};
+      const target = cp.target || {};
+      let content = `[ASuite] ${d.actor || 'Someone'} replied to your comment`;
+      if (target.title) content += ` on "${target.title}"`;
       content += `:\n${d.text || ''}`;
-      content += `\n\n---- use reply_to_comment MCP tool with comment_id: ${d.comment_id}`;
+      // reply via is auto-appended by c4-receive.js
 
-      const endpoint = `${d.content_id || d.doc_id}|comment:${d.comment_id}`;
+      const endpoint = `${d.target_id}|comment:${d.comment_id}`;
       return { endpoint, content };
     }
 
     case 'comment.resolved': {
       const d = event.data;
-      let content = `[ASuite] ${d.sender?.name || 'Someone'} resolved a comment`;
-      if (d.content_title) content += ` on "${d.content_title}"`;
+      const cp = d.context || {};
+      const target = cp.target || {};
+      let content = `[ASuite] ${d.actor || 'Someone'} resolved a comment`;
+      if (target.title) content += ` on "${target.title}"`;
       content += `. No action needed unless you want to reopen it.`;
       return null; // typically no action needed, suppress
     }
 
     case 'comment.unresolved': {
       const d = event.data;
-      let content = `[ASuite] ${d.sender?.name || 'Someone'} reopened a comment`;
-      if (d.content_title) content += ` on "${d.content_title}"`;
+      const cp = d.context || {};
+      const target = cp.target || {};
+      let content = `[ASuite] ${d.actor || 'Someone'} reopened a comment`;
+      if (target.title) content += ` on "${target.title}"`;
       content += `:\n${d.text || ''}`;
-      content += `\n\n---- use reply_to_comment or resolve_comment MCP tool`;
+      // reply via is auto-appended by c4-receive.js
 
-      const endpoint = `${d.content_id || d.doc_id}|comment:${d.comment_id}`;
+      const endpoint = `${d.target_id}|comment:${d.comment_id}`;
       return { endpoint, content };
     }
 
@@ -99,9 +106,11 @@ export function translateEvent(event, ctx) {
     case 'comment.mentioned_legacy':
     case 'doc.mentioned': {
       const d = event.data;
-      let content = `[ASuite] ${d.sender?.name || 'Someone'} mentioned you in "${d.doc_title || d.content_title}":\n${d.text_without_mention || d.text || ''}`;
-      content += `\n\n---- use read_doc / update_doc / reply_to_comment MCP tools`;
-      const endpoint = `${d.doc_id || d.content_id}|comment:${d.comment_id || 'none'}`;
+      const cp = d.context || {};
+      const target = cp.target || {};
+      let content = `[ASuite] ${d.actor || d.sender?.name || 'Someone'} mentioned you in "${target.title || d.doc_title || d.content_title}":\n${d.text_without_mention || d.text || ''}`;
+      // reply via is auto-appended by c4-receive.js
+      const endpoint = `${d.target_id || d.doc_id || d.content_id}|comment:${d.comment_id || 'none'}`;
       return { endpoint, content };
     }
 

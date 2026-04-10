@@ -6,6 +6,7 @@ import * as docApi from '@/lib/api/documents';
 import * as gw from '@/lib/api/gateway';
 import { useT } from '@/lib/i18n';
 import { showError } from '@/lib/utils/error';
+import { getPublicOrigin } from '@/lib/remote-access';
 import {
   DragOverEvent,
   DragMoveEvent,
@@ -127,7 +128,8 @@ export function syncSelectionToURL(sel: Selection | null, replace = false) {
 
 /** Build a shareable link for a content item */
 export function buildContentLink(sel: NonNullable<Selection>): string {
-  const url = new URL(window.location.href);
+  const origin = getPublicOrigin();
+  const url = new URL('/content', origin);
   url.searchParams.set('id', `${sel.type}:${sel.id}`);
   return url.toString();
 }

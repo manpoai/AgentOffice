@@ -8,6 +8,7 @@
  *
  * Usage: ZYLOS_DIR=/path/to/agent node adapters/index.js
  * Config: loaded from adapters/<platform>/config-<agentDirName>.json
+ * The gateway URL must be an externally reachable AgentOffice public gateway URL when the adapter runs outside the AgentOffice host.
  */
 
 import fs from 'fs';
@@ -46,7 +47,7 @@ function loadConfig() {
 let config = loadConfig();
 
 // Supplement with env vars
-const GATEWAY_URL = config.gateway_url || process.env.ASUITE_GATEWAY_URL || 'http://localhost:4000';
+const GATEWAY_URL = config.gateway_url || process.env.ASUITE_GATEWAY_URL;
 const AGENT_TOKEN = config.agent_token || process.env.ASUITE_AGENT_TOKEN;
 const AGENT_NAME  = config.agent_name  || agentDirName;
 const PLATFORM    = config.platform    || 'zylos';
@@ -57,6 +58,11 @@ config = { ...config, zylos_dir: AGENT_ZYLOS_DIR, zylos_home: zylosHome, gateway
 
 if (!AGENT_TOKEN) {
   console.error('[adapter] ASUITE_AGENT_TOKEN is required. Set in config or env.');
+  process.exit(1);
+}
+
+if (!GATEWAY_URL) {
+  console.error('[adapter] ASUITE_GATEWAY_URL is required. Use the public AgentOffice gateway URL.');
   process.exit(1);
 }
 
