@@ -110,3 +110,10 @@ html, body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Prevent iOS Safari auto-zoom on input focus (triggers when font-size < 16px) */
+@media (pointer: coarse) {
+  input, textarea, select {
+    font-size: max(16px, 1em) !important;
+  }
+}

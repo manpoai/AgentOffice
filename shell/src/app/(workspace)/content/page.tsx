@@ -1872,6 +1872,7 @@ function DraggableTreeNode({
     if (!trimmed || trimmed === node.title) return;
     try {
       await gw.updateContentItem(node.id, { title: trimmed });
+      queryClient.invalidateQueries({ queryKey: ['content-items'] });
     } catch (e) {
       showError(t('errors.renameItemFailed'), e);
     }

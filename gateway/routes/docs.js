@@ -344,6 +344,26 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
     }
 
     const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(docId);
+
+    // Notify human users when an agent creates a document
+    if (isAgentRequest(req)) {
+      const notifId = genId('notif');
+      db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
+        VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
+        notifId,
+        agentName,
+        'human:default',
+        'doc_created',
+        title || '新文档',
+        `${agentName} 创建了文档「${title || docId}」`,
+        `/content?id=doc:${docId}`,
+        JSON.stringify({ doc_id: docId }),
+        Date.now()
+      );
+      pushHumanEvent('default', { event: 'notification.created', data: { id: notifId, type: 'doc_created', doc_id: docId, title } });
+      pushHumanEvent('default', { event: 'content.changed', data: { action: 'created', type: 'doc', id: docId, title } });
+    }
+
     res.status(201).json(doc);
   });
 
