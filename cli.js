@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
@@ -18,6 +18,9 @@ const DB_PATH = path.join(DATA_SUBDIR, 'gateway.db');
 
 const REQUESTED_SHELL_PORT = Number(process.env.PORT || 3000);
 const REQUESTED_GATEWAY_PORT = Number(process.env.GATEWAY_PORT || (REQUESTED_SHELL_PORT + 1000));
+const REQUESTED_BASEROW_PORT = Number(process.env.BASEROW_PORT || 8280);
+const BASEROW_CONTAINER_NAME = process.env.AGENTOFFICE_BASEROW_CONTAINER || 'agentoffice-baserow';
+const BASEROW_IMAGE = process.env.AGENTOFFICE_BASEROW_IMAGE || 'baserow/baserow:1.29.2';
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -95,15 +98,154 @@ function prefixLogs(child, name) {
   child.stderr?.on('data', (buf) => process.stderr.write(`[${name}] ${buf}`));
 }
 
+function runChecked(command, args, options = {}) {
+  const result = spawnSync(command, args, { encoding: 'utf8', ...options });
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || `${command} failed`).trim());
+  }
+  return result.stdout?.trim() || '';
+}
+
+function ensureDockerAvailable() {
+  runChecked('docker', ['--version']);
+  runChecked('docker', ['info']);
+}
+
+function ensureBaserowContainer(baserowPort, config) {
+  ensureDockerAvailable();
+  const dataDir = path.join(DATA_DIR, 'baserow-data');
+  ensureDir(dataDir);
+  if (!config.baserow) {
+    config.baserow = {};
+  }
+  config.baserow.port = baserowPort;
+  config.baserow.url = `http://127.0.0.1:${baserowPort}`;
+  config.baserow.email = config.baserow.email || 'admin@agentoffice.local';
+  config.baserow.password = config.baserow.password || crypto.randomBytes(16).toString('hex');
+
+  const existing = spawnSync('docker', ['ps', '-a', '--filter', `name=^/${BASEROW_CONTAINER_NAME}$`, '--format', '{{.Names}}'], { encoding: 'utf8' });
+  const hasContainer = (existing.stdout || '').split('\n').includes(BASEROW_CONTAINER_NAME);
+  if (!hasContainer) {
+    runChecked('docker', [
+      'run', '-d',
+      '--name', BASEROW_CONTAINER_NAME,
+      '-p', `${baserowPort}:80`,
+      '-v', `${dataDir}:/baserow/data`,
+      '-e', `BASEROW_PUBLIC_URL=http://127.0.0.1:${baserowPort}`,
+      '-e', `BASEROW_CADDY_ADDRESSES=:80`,
+      '-e', `DATABASE_URL=sqlite:////baserow/data/db.sqlite3`,
+      '-e', `BASEROW_DEFAULT_ADMIN_EMAIL=${config.baserow.email}`,
+      '-e', `BASEROW_DEFAULT_ADMIN_PASSWORD=${config.baserow.password}`,
+      BASEROW_IMAGE,
+    ]);
+  } else {
+    const running = spawnSync('docker', ['ps', '--filter', `name=^/${BASEROW_CONTAINER_NAME}$`, '--format', '{{.Names}}'], { encoding: 'utf8' });
+    const isRunning = (running.stdout || '').split('\n').includes(BASEROW_CONTAINER_NAME);
+    if (!isRunning) {
+      runChecked('docker', ['start', BASEROW_CONTAINER_NAME]);
+    }
+  }
+}
+
+async function waitForHttpOk(url, timeoutMs = 120000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return;
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  throw new Error(`Timed out waiting for ${url}`);
+}
+
+async function baserowRequest(config, method, pathName, body) {
+  const res = await fetch(`${config.baserow.url}${pathName}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  return { status: res.status, data };
+}
+
+async function ensureBaserowDatabase(config) {
+  if (!config.baserow) throw new Error('Missing baserow config');
+  const auth = await baserowRequest(config, 'POST', '/api/user/token-auth/', {
+    email: config.baserow.email,
+    password: config.baserow.password,
+  });
+  if (auth.status >= 400 || !auth.data?.access_token) {
+    throw new Error(`Failed to authenticate to Baserow: ${JSON.stringify(auth.data)}`);
+  }
+  const token = auth.data.access_token;
+  const authedFetch = async (method, pathName, body) => {
+    const res = await fetch(`${config.baserow.url}${pathName}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `JWT ${token}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+    return { status: res.status, data };
+  };
+
+  const workspaces = await authedFetch('GET', '/api/workspaces/');
+  if (workspaces.status >= 400) {
+    throw new Error(`Failed to list Baserow workspaces: ${JSON.stringify(workspaces.data)}`);
+  }
+  const workspace = Array.isArray(workspaces.data) && workspaces.data.length > 0
+    ? workspaces.data[0]
+    : (await authedFetch('POST', '/api/workspaces/', { name: 'AgentOffice' })).data;
+  if (!workspace?.id) {
+    throw new Error('Failed to ensure Baserow workspace');
+  }
+
+  const applications = await authedFetch('GET', `/api/applications/workspace/${workspace.id}/`);
+  if (applications.status >= 400) {
+    throw new Error(`Failed to list Baserow applications: ${JSON.stringify(applications.data)}`);
+  }
+  const existingDatabase = Array.isArray(applications.data)
+    ? applications.data.find(app => app.type === 'database')
+    : null;
+  if (existingDatabase?.id) {
+    config.baserow.database_id = existingDatabase.id;
+    return;
+  }
+
+  const created = await authedFetch('POST', '/api/applications/', {
+    name: 'AgentOffice',
+    type: 'database',
+    workspace: workspace.id,
+  });
+  if (created.status >= 400 || !created.data?.id) {
+    throw new Error(`Failed to create Baserow database: ${JSON.stringify(created.data)}`);
+  }
+  config.baserow.database_id = created.data.id;
+}
+
 async function main() {
   const config = loadOrCreateConfig();
   const shellPort = await findAvailablePort(REQUESTED_SHELL_PORT, 50, isShellPortFree);
   const gatewayPort = await findAvailablePort(REQUESTED_GATEWAY_PORT, 50, isGatewayPortFree);
+  const baserowPort = await findAvailablePort(REQUESTED_BASEROW_PORT, 50, isGatewayPortFree);
   config.shell_port = shellPort;
   config.gateway_port = gatewayPort;
+  config.baserow_port = baserowPort;
+  ensureBaserowContainer(baserowPort, config);
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 
   console.log('Starting AgentOffice...');
+  console.log(`Baserow: ${config.baserow?.url || `http://127.0.0.1:${baserowPort}`}`);
+  await waitForHttpOk(`${config.baserow?.url || `http://127.0.0.1:${baserowPort}`}/api/_health/`);
+  await ensureBaserowDatabase(config);
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 
   let shuttingDown = false;
   const stopChildren = () => {
@@ -124,6 +266,10 @@ async function main() {
       ADMIN_PASSWORD: config.admin_password,
       UPLOADS_DIR,
       CORS_ORIGIN: `http://127.0.0.1:${shellPort}`,
+      BASEROW_URL: config.baserow.url,
+      BASEROW_EMAIL: config.baserow.email,
+      BASEROW_PASSWORD: config.baserow.password,
+      BASEROW_DATABASE_ID: String(config.baserow.database_id || ''),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -173,6 +319,9 @@ async function main() {
   console.log(`URL: http://127.0.0.1:${shellPort}`);
   console.log(`Gateway: http://127.0.0.1:${gatewayPort}`);
   console.log(`Data dir: ${DATA_DIR}`);
+  console.log('Default admin credentials:');
+  console.log('  username: admin');
+  console.log(`  password: ${config.admin_password}`);
   console.log('');
   console.log('Press Ctrl+C to stop.');
 }

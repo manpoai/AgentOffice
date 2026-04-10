@@ -5,16 +5,27 @@ import path from 'node:path';
 import https from 'node:https';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const require = createRequire(import.meta.url);
 const HOME_DIR = process.env.AGENTOFFICE_HOME || path.join(os.homedir(), '.agentoffice');
 const RUNTIME_DIR = path.join(HOME_DIR, 'runtime');
-const ARTIFACT_URL = process.env.AGENTOFFICE_ARTIFACT_URL || 'https://github.com/manpoai/AgentOffice/releases/download/v1.0.2/agentoffice-runtime.tar.gz';
+const ARTIFACT_URL = process.env.AGENTOFFICE_ARTIFACT_URL || 'https://github.com/manpoai/AgentOffice/releases/download/v1.0.8/agentoffice-runtime.tar.gz';
 
 function exists(p) { return fs.existsSync(p); }
 function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
+
+function assertSupportedNode() {
+  const major = Number(process.versions.node.split('.')[0] || 0);
+  if (!Number.isFinite(major) || major < 20 || major >= 25) {
+    console.error(`Unsupported Node.js version: ${process.version}`);
+    console.error('AgentOffice currently supports Node.js 20, 22, or 24 LTS.');
+    process.exit(1);
+  }
+}
 
 function download(url, dest, redirectCount = 0) {
   return new Promise((resolve, reject) => {
@@ -44,6 +55,23 @@ function download(url, dest, redirectCount = 0) {
   });
 }
 
+function run(command, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, stdio: 'inherit', env: process.env });
+    child.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`${command} exited with ${code}`)));
+  });
+}
+
+async function ensureGatewayDeps() {
+  const gatewayDir = path.join(RUNTIME_DIR, 'gateway');
+  const nodeModulesDir = path.join(gatewayDir, 'node_modules');
+  if (exists(nodeModulesDir)) {
+    fs.rmSync(nodeModulesDir, { recursive: true, force: true });
+  }
+  console.log('Installing AgentOffice gateway dependencies...');
+  await run('npm', ['install', '--omit=dev'], gatewayDir);
+}
+
 async function ensureRuntime() {
   ensureDir(HOME_DIR);
   if (exists(path.join(RUNTIME_DIR, 'cli.js'))) return;
@@ -66,7 +94,9 @@ async function ensureRuntime() {
 }
 
 async function main() {
+  assertSupportedNode();
   await ensureRuntime();
+  await ensureGatewayDeps();
   const runtimeCli = path.join(RUNTIME_DIR, 'cli.js');
   const child = spawn('node', [runtimeCli], {
     cwd: RUNTIME_DIR,

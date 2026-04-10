@@ -7,13 +7,58 @@ import Database from 'better-sqlite3';
 
 export function initDatabase(gatewayDir) {
   const DB_PATH = process.env.GATEWAY_DB_PATH || path.join(gatewayDir, 'gateway.db');
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
+  let db = openDatabase(DB_PATH);
+  try {
+    const integrity = db.pragma('integrity_check', { simple: true });
+    if (integrity !== 'ok') {
+      throw new Error(`integrity_check failed: ${integrity}`);
+    }
+  } catch (err) {
+    console.warn(`[gateway] Corrupted SQLite database detected at ${DB_PATH}: ${err.message}`);
+    try { db.close(); } catch {}
+    const backupPath = `${DB_PATH}.corrupt-${Date.now()}`;
+    try {
+      if (fs.existsSync(DB_PATH)) fs.renameSync(DB_PATH, backupPath);
+      if (fs.existsSync(`${DB_PATH}-wal`)) fs.renameSync(`${DB_PATH}-wal`, `${backupPath}-wal`);
+      if (fs.existsSync(`${DB_PATH}-shm`)) fs.renameSync(`${DB_PATH}-shm`, `${backupPath}-shm`);
+      console.warn(`[gateway] Moved corrupt database to ${backupPath}`);
+    } catch (moveErr) {
+      console.warn(`[gateway] Failed to move corrupt database aside: ${moveErr.message}`);
+      try { fs.rmSync(DB_PATH, { force: true }); } catch {}
+      try { fs.rmSync(`${DB_PATH}-wal`, { force: true }); } catch {}
+      try { fs.rmSync(`${DB_PATH}-shm`, { force: true }); } catch {}
+    }
+    db = openDatabase(DB_PATH);
+  }
   const schema = fs.readFileSync(path.join(gatewayDir, 'init-db.sql'), 'utf8');
   db.exec(schema);
 
   runMigrations(db);
+  runWriteSmokeTest(db);
 
+  return db;
+}
+
+function runWriteSmokeTest(db) {
+  try {
+    const id = `smoke_${Date.now()}`;
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO documents (id, title, text, data_json, icon, full_width, created_by, updated_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, 'smoke', '', null, null, 0, 'system', 'system', now, now);
+    db.prepare('UPDATE documents SET text = ?, updated_at = ?, updated_by = ? WHERE id = ?')
+      .run('ok', now, 'system', id);
+    db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+  } catch (err) {
+    throw new Error(`database write smoke test failed: ${err.message}`);
+  }
+}
+
+function openDatabase(dbPath) {
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = DELETE');
+  db.pragma('synchronous = FULL');
+  db.pragma('foreign_keys = ON');
   return db;
 }
 
@@ -186,18 +231,24 @@ function runMigrations(db) {
   } catch { /* already exists */ }
 
   // Migrate: FTS5 virtual table and sync triggers for documents
+  db.exec('DROP TRIGGER IF EXISTS documents_ai');
+  db.exec('DROP TRIGGER IF EXISTS documents_au');
+  db.exec('DROP TRIGGER IF EXISTS documents_ad');
+  db.exec('DROP TABLE IF EXISTS documents_fts');
   db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
     id UNINDEXED, title, text, content='documents', content_rowid='rowid'
   )`);
-  db.exec(`CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
-    INSERT INTO documents_fts(id, title, text) VALUES (new.id, new.title, new.text);
+  db.exec(`INSERT INTO documents_fts(rowid, id, title, text)
+    SELECT rowid, id, title, text FROM documents WHERE deleted_at IS NULL`);
+  db.exec(`CREATE TRIGGER documents_ai AFTER INSERT ON documents BEGIN
+    INSERT INTO documents_fts(rowid, id, title, text) VALUES (new.rowid, new.id, new.title, new.text);
   END`);
-  db.exec(`CREATE TRIGGER IF NOT EXISTS documents_au AFTER UPDATE ON documents BEGIN
-    DELETE FROM documents_fts WHERE id = old.id;
-    INSERT INTO documents_fts(id, title, text) VALUES (new.id, new.title, new.text);
+  db.exec(`CREATE TRIGGER documents_au AFTER UPDATE ON documents BEGIN
+    INSERT INTO documents_fts(documents_fts, rowid, id, title, text) VALUES ('delete', old.rowid, old.id, old.title, old.text);
+    INSERT INTO documents_fts(rowid, id, title, text) VALUES (new.rowid, new.id, new.title, new.text);
   END`);
-  db.exec(`CREATE TRIGGER IF NOT EXISTS documents_ad AFTER DELETE ON documents BEGIN
-    DELETE FROM documents_fts WHERE id = old.id;
+  db.exec(`CREATE TRIGGER documents_ad AFTER DELETE ON documents BEGIN
+    INSERT INTO documents_fts(documents_fts, rowid, id, title, text) VALUES ('delete', old.rowid, old.id, old.title, old.text);
   END`);
 
   // Migrate: agent_accounts -> actors (final migration, then drop)

@@ -9,7 +9,6 @@ try {
 }
 
 const nextConfig = {
-  output: 'standalone',
   typescript: {
     // Pre-existing type errors from dependency version mismatch; build works at runtime
     ignoreBuildErrors: true,
