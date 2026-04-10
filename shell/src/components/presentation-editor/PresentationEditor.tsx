@@ -50,7 +50,7 @@ import { useKeyboardScope } from '@/lib/keyboard';
 import type { ShortcutRegistration } from '@/lib/keyboard';
 import {
   type SlideData,
-  SLIDE_WIDTH, SLIDE_HEIGHT, DEFAULT_SLIDE,
+  SLIDE_WIDTH, SLIDE_HEIGHT, DEFAULT_SLIDE, generateSlideId,
   fitCanvasToContainer, getObjType, formatRelativeTime, FONT_FAMILIES,
 } from './types';
 import { SlidePanel } from './SlidePanel';
@@ -299,7 +299,8 @@ export function PresentationEditor({
   // Initialize slides from fetched data
   useEffect(() => {
     if (presentation?.data?.slides) {
-      const s = presentation.data.slides.length > 0 ? presentation.data.slides : [{ ...DEFAULT_SLIDE }];
+      const raw = presentation.data.slides.length > 0 ? presentation.data.slides : [{ ...DEFAULT_SLIDE }];
+      const s = raw.map((slide: SlideData) => slide.id ? slide : { ...slide, id: generateSlideId() });
       setSlides(s);
       setCurrentSlideIndex(0);
     }
@@ -710,7 +711,7 @@ export function PresentationEditor({
     if (slideClipboardRef.current.length === 0) return;
     const newSlides = [...slides];
     const insertAt = currentSlideIndex + 1;
-    const pasted = slideClipboardRef.current.map(s => JSON.parse(JSON.stringify(s)));
+    const pasted = slideClipboardRef.current.map(s => ({ ...JSON.parse(JSON.stringify(s)), id: generateSlideId() }));
     newSlides.splice(insertAt, 0, ...pasted);
     setSlides(newSlides);
     setCurrentSlideIndex(insertAt);
@@ -731,7 +732,7 @@ export function PresentationEditor({
 
   const handleSlideDuplicate = useCallback((_i: number) => {
     const indices = Array.from(selectedSlideIndices).sort((a, b) => a - b);
-    const dupes = indices.map(i => JSON.parse(JSON.stringify(slides[i])));
+    const dupes = indices.map(i => ({ ...JSON.parse(JSON.stringify(slides[i])), id: generateSlideId() }));
     const newSlides = [...slides];
     const insertAt = Math.max(...indices) + 1;
     newSlides.splice(insertAt, 0, ...dupes);
@@ -739,6 +740,23 @@ export function PresentationEditor({
     setCurrentSlideIndex(insertAt);
     setSelectedSlideIndices(new Set([insertAt]));
   }, [slides, selectedSlideIndices, setSlides, setCurrentSlideIndex]);
+
+  const handleSlideDragEnd = useCallback((fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    saveCurrentSlideToState();
+    setSlides(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+    // Keep current slide tracking the moved slide
+    setCurrentSlideIndex(toIndex);
+    setSelectedSlideIndices(new Set([toIndex]));
+    dirtyRef.current = true;
+    setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
+    scheduleSave();
+  }, [saveCurrentSlideToState, scheduleSave]);
 
   const handleSlideBackground = useCallback((_i: number) => {
     // Slide background editing is handled via the property panel
@@ -1143,6 +1161,7 @@ export function PresentationEditor({
     }
 
     return {
+      id: slides[currentSlideIndex]?.id || generateSlideId(),
       elements,
       background: canvas.backgroundColor || '#ffffff',
       backgroundImage: slides[currentSlideIndex]?.backgroundImage || undefined,
@@ -1229,7 +1248,7 @@ export function PresentationEditor({
   // ─── Slide Operations ─────────────────────────────
   const addSlide = useCallback(() => {
     saveCurrentSlideToState();
-    setSlides(prev => [...prev, { ...DEFAULT_SLIDE }]);
+    setSlides(prev => [...prev, { ...DEFAULT_SLIDE, id: generateSlideId() }]);
     setCurrentSlideIndex(slides.length);
     dirtyRef.current = true;
     setReliabilityStatus(prev => prev === 'flush_failed' ? prev : 'dirty');
@@ -1241,7 +1260,8 @@ export function PresentationEditor({
     if (!serialized) return;
     setSlides(prev => {
       const updated = [...prev];
-      updated.splice(currentSlideIndex + 1, 0, JSON.parse(JSON.stringify(serialized)));
+      const dupe = { ...JSON.parse(JSON.stringify(serialized)), id: generateSlideId() };
+      updated.splice(currentSlideIndex + 1, 0, dupe);
       return updated;
     });
     setCurrentSlideIndex(currentSlideIndex + 1);
@@ -1891,6 +1911,7 @@ export function PresentationEditor({
           onSlideDuplicate={handleSlideDuplicate}
           onSlideBackground={handleSlideBackground}
           onSlideComment={(i: number) => handleSlideComment('slide', null)}
+          onSlideDragEnd={handleSlideDragEnd}
         />
 
         {/* Version Preview Overlay */}

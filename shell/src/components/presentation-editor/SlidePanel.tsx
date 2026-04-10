@@ -9,6 +9,21 @@ import { pptSurfaces } from '@/surfaces/ppt.surfaces';
 import { toContextMenuItems } from '@/surfaces/bridge';
 import { buildActionMap } from '@/actions/types';
 import { useT } from '@/lib/i18n';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers';
 
 const pptSlideActionMap = buildActionMap(pptSlideActions);
 
@@ -58,6 +73,56 @@ function SlideThumb({ slide }: { slide: SlideData }) {
   );
 }
 
+// ─── Sortable Slide Item ──────────────────────────────
+interface SortableSlideItemProps {
+  slide: SlideData;
+  index: number;
+  isSelected: boolean;
+  onClick: (i: number, e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent, i: number) => void;
+}
+
+function SortableSlideItem({ slide, index, isSelected, onClick, onContextMenu }: SortableSlideItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: slide.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <button
+        {...listeners}
+        onClick={(e) => onClick(index, e)}
+        onContextMenu={(e) => onContextMenu(e, index)}
+        className={cn(
+          'w-[160px] rounded border transition-all overflow-hidden cursor-grab active:cursor-grabbing',
+          isSelected
+            ? 'border-[#2FCC71] border-2'
+            : 'border-black/10 dark:border-white/10 hover:border-black/20'
+        )}
+      >
+        <div
+          className="w-full rounded-sm overflow-hidden"
+          style={{ aspectRatio: `${SLIDE_WIDTH}/${SLIDE_HEIGHT}`, backgroundColor: slide.background || '#fff' }}
+        >
+          <SlideThumb slide={slide} />
+        </div>
+      </button>
+    </div>
+  );
+}
+
 // ─── Slide Panel ─────────────────────────────────────
 export interface SlidePanelProps {
   slides: SlideData[];
@@ -73,6 +138,7 @@ export interface SlidePanelProps {
   onSlideDuplicate: (i: number) => void;
   onSlideBackground: (i: number) => void;
   onSlideComment: (i: number) => void;
+  onSlideDragEnd: (fromIndex: number, toIndex: number) => void;
 }
 
 export function SlidePanel({
@@ -89,9 +155,16 @@ export function SlidePanel({
   onSlideDuplicate,
   onSlideBackground,
   onSlideComment,
+  onSlideDragEnd,
 }: SlidePanelProps) {
   const { t } = useT();
   const lastClickedIdx = useRef<number>(currentSlideIndex);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    })
+  );
 
   const handleClick = useCallback((i: number, e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey) {
@@ -145,6 +218,15 @@ export function SlidePanel({
     }
   }, [selectedIndices, onSlideSelect, onMultiSelect, onSlideCut, onSlideCopy, onSlidePaste, onSlideDelete, onSlideDuplicate, onSlideBackground, onSlideComment, t]);
 
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIndex = slides.findIndex(s => s.id === active.id);
+    const toIndex = slides.findIndex(s => s.id === over.id);
+    if (fromIndex === -1 || toIndex === -1) return;
+    onSlideDragEnd(fromIndex, toIndex);
+  }, [slides, onSlideDragEnd]);
+
   return (
     <div className="w-[192px] flex-col shrink-0 bg-[#F5F7F5] dark:bg-sidebar hidden md:flex shadow-[0px_0px_20px_0px_rgba(0,0,0,0.02)]">
       <div className="px-4 pt-4 pb-2">
@@ -157,26 +239,28 @@ export function SlidePanel({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
-        {slides.map((slide, i) => (
-          <button
-            key={i}
-            onClick={(e) => handleClick(i, e)}
-            onContextMenu={(e) => handleContextMenu(e, i)}
-            className={cn(
-              'w-[160px] rounded border transition-all overflow-hidden',
-              selectedIndices.has(i)
-                ? 'border-[#2FCC71] border-2'
-                : 'border-black/10 dark:border-white/10 hover:border-black/20'
-            )}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={slides.map(s => s.id)}
+            strategy={verticalListSortingStrategy}
           >
-            <div
-              className="w-full rounded-sm overflow-hidden"
-              style={{ aspectRatio: `${SLIDE_WIDTH}/${SLIDE_HEIGHT}`, backgroundColor: slide.background || '#fff' }}
-            >
-              <SlideThumb slide={slide} />
-            </div>
-          </button>
-        ))}
+            {slides.map((slide, i) => (
+              <SortableSlideItem
+                key={slide.id}
+                slide={slide}
+                index={i}
+                isSelected={selectedIndices.has(i)}
+                onClick={handleClick}
+                onContextMenu={handleContextMenu}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       </div>
     </div>
   );

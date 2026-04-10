@@ -1,6 +1,7 @@
 // ─── Shared Types & Constants for Presentation Editor ──────────────────
 
 export interface SlideData {
+  id: string;
   elements: any[];
   background: string;
   backgroundImage?: string;
@@ -28,7 +29,12 @@ export const SLIDE_HEIGHT = 540;
 export const THUMB_WIDTH = 180;
 export const THUMB_HEIGHT = Math.round(THUMB_WIDTH * (SLIDE_HEIGHT / SLIDE_WIDTH));
 
+export function generateSlideId(): string {
+  return `slide-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export const DEFAULT_SLIDE: SlideData = {
+  id: '',
   elements: [],
   background: '#ffffff',
   notes: '',
