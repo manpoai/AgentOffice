@@ -31,6 +31,8 @@ interface ContentSidebarProps {
   children: React.ReactNode;
   /** Open trash overlay */
   onToggleTrash: () => void;
+  /** Open change password dialog */
+  onOpenChangePassword: () => void;
   showNewMenu: boolean;
   onShowNewMenuChange: (show: boolean) => void;
   creating: boolean;
@@ -48,6 +50,7 @@ export function ContentSidebar({
   visible,
   children,
   onToggleTrash,
+  onOpenChangePassword,
   showNewMenu,
   onShowNewMenuChange,
   creating,
@@ -360,7 +363,7 @@ export function ContentSidebar({
 
                   {/* Menu items — proper icons from Lucide */}
                   <button
-                    onClick={() => { setShowProfileMenu(false); }}
+                    onClick={() => { setShowProfileMenu(false); onOpenChangePassword(); }}
                     className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
                   >
                     <Key className="h-4 w-4 text-[#939493] dark:text-[#818181]" />

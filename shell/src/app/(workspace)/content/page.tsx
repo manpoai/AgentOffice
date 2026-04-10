@@ -21,6 +21,7 @@ import { EditorSkeleton, TableSkeleton } from '@/components/shared/Skeleton';
 import { MobileNav } from '@/components/shared/MobileNav';
 import { NotificationPanel } from '@/components/shared/NotificationPanel';
 import { BottomSheet } from '@/components/shared/BottomSheet';
+import { ChangePasswordDialog } from '@/components/shared/ChangePasswordDialog';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from 'next-themes';
@@ -220,6 +221,7 @@ export default function ContentPage() {
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [dropIntent, setDropIntent] = useState<DropIntent>(null);
   const [showTrash, setShowTrash] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
   const [libraryCollapsed, setLibraryCollapsed] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ nodeId: string; hasChildren: boolean } | null>(null);
@@ -1047,6 +1049,7 @@ export default function ContentPage() {
         onWidthChange={handleSidebarWidthChange}
         visible={docListVisible && mobileView === 'list' || docListVisible}
         onToggleTrash={() => setShowTrash(v => !v)}
+        onOpenChangePassword={() => setShowChangePassword(true)}
         showNewMenu={showNewMenu}
         onShowNewMenuChange={setShowNewMenu}
         creating={creating}
@@ -1315,6 +1318,9 @@ export default function ContentPage() {
           </div>
         </BottomSheet>
       )}
+
+      {/* Change Password Dialog */}
+      <ChangePasswordDialog open={showChangePassword} onClose={() => setShowChangePassword(false)} />
 
       {/* Mobile sidebar (only visible on mobile when in list view) */}
       {mobileView === 'list' && (
@@ -1711,7 +1717,7 @@ export default function ContentPage() {
 
             {/* Menu items */}
             <button
-              onClick={() => { setShowMobileProfile(false); }}
+              onClick={() => { setShowMobileProfile(false); setShowChangePassword(true); }}
               className="flex items-center gap-3 w-full px-4 py-3 text-base text-foreground active:bg-accent transition-colors"
             >
               <Key className="h-5 w-5 text-[#939493] dark:text-[#818181]" />
