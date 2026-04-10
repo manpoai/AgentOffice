@@ -37,3 +37,5 @@ docs/superpowers/
 shell/docs/superpowers/
 
 dist/
+
+*.tgz
