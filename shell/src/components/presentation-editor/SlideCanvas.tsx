@@ -42,10 +42,25 @@ export function SlideCanvas({
   onAddTable,
   onInsertDiagram,
 }: SlideCanvasProps) {
-  const [zoomVersion, setZoomVersion] = useState(0);
-  const bumpZoom = () => setZoomVersion(v => v + 1);
+  const [zoom, setZoom] = useState(1);
 
-  // Ctrl+wheel zoom
+  const applyZoom = (newZoom: number) => {
+    const canvas = canvasRef.current;
+    const container = canvasContainerRef.current;
+    if (!canvas || !container) return;
+    fitCanvasToContainer(canvas, container, newZoom);
+    setZoom(newZoom);
+  };
+
+  const resetZoom = () => {
+    const canvas = canvasRef.current;
+    const container = canvasContainerRef.current;
+    if (!canvas || !container) return;
+    fitCanvasToContainer(canvas, container);
+    setZoom(canvas.getZoom());
+  };
+
+  // Ctrl+wheel zoom (proportional)
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
@@ -54,10 +69,10 @@ export function SlideCanvas({
       e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const delta = -e.deltaY * 0.001;
-      const newZoom = Math.max(0.2, Math.min(3, canvas.getZoom() + delta));
+      const currentZoom = canvas.getZoom();
+      const newZoom = Math.max(0.2, Math.min(3, currentZoom * (1 - e.deltaY * 0.003)));
       fitCanvasToContainer(canvas, container, newZoom);
-      bumpZoom();
+      setZoom(newZoom);
     };
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => container.removeEventListener('wheel', handleWheel);
@@ -87,14 +102,14 @@ export function SlideCanvas({
 
         const canvas = canvasRef.current!;
         const container = canvasContainerRef.current!;
-        const zoom = canvas.getZoom() || 1;
+        const canvasZoom = canvas.getZoom() || 1;
         const wrapper = container.querySelector('.canvas-wrapper') as HTMLElement;
         const containerRect = container.getBoundingClientRect();
         const wrapperLeft = wrapper ? parseFloat(wrapper.style.marginLeft || '0') : 0;
         const wrapperTop = wrapper ? parseFloat(wrapper.style.marginTop || '0') : 0;
-        const objLeft = (selectedObj.left || 0) * zoom + wrapperLeft;
-        const objTop = (selectedObj.top || 0) * zoom + wrapperTop;
-        const objWidth = (selectedObj.width || 0) * (selectedObj.scaleX || 1) * zoom;
+        const objLeft = (selectedObj.left || 0) * canvasZoom + wrapperLeft;
+        const objTop = (selectedObj.top || 0) * canvasZoom + wrapperTop;
+        const objWidth = (selectedObj.width || 0) * (selectedObj.scaleX || 1) * canvasZoom;
         const anchor = {
           top: containerRect.top + objTop,
           left: containerRect.left + objLeft,
@@ -139,10 +154,10 @@ export function SlideCanvas({
 
       {/* Zoom Bar */}
       <ZoomBar
-        canvasRef={canvasRef}
-        canvasContainerRef={canvasContainerRef}
-        zoomVersion={zoomVersion}
-        onZoomChange={bumpZoom}
+        zoom={zoom}
+        onZoomIn={() => applyZoom(Math.min(3, zoom + 0.1))}
+        onZoomOut={() => applyZoom(Math.max(0.2, zoom - 0.1))}
+        onResetZoom={resetZoom}
       />
     </div>
   );

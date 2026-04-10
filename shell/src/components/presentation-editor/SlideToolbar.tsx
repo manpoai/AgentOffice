@@ -9,7 +9,6 @@ import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { ShapePicker } from '@/components/shared/ShapeSet';
 import type { ShapeType } from '@/components/shared/ShapeSet/shapes';
-import { fitCanvasToContainer } from './types';
 
 // ─── Toolbar Button ─────────────────────────────────
 function ToolBtn({ icon: Icon, onClick, active, title }: {
@@ -89,50 +88,37 @@ export function SlideToolbar({
 
 // ─── Zoom Bar (bottom right of canvas) ──────────────
 export interface ZoomBarProps {
-  canvasRef: React.RefObject<any>;
-  canvasContainerRef: React.RefObject<HTMLDivElement | null>;
-  zoomVersion: number;
-  onZoomChange: () => void;
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onResetZoom: () => void;
 }
 
-export function ZoomBar({ canvasRef, canvasContainerRef, zoomVersion: _, onZoomChange }: ZoomBarProps) {
+export function ZoomBar({ zoom, onZoomIn, onZoomOut, onResetZoom }: ZoomBarProps) {
   const { t } = useT();
+  const atMin = zoom <= 0.2;
+  const atMax = zoom >= 3;
   return (
     <div className="absolute bottom-3 right-3 z-20 flex items-center gap-1 bg-card/50 backdrop-blur-sm rounded border border-black/10 dark:border-white/10 px-3 h-10">
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-black/[0.04] text-black/70 dark:text-white/70"
-        onClick={() => {
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          const newZoom = Math.max(0.2, canvas.getZoom() - 0.1);
-          fitCanvasToContainer(canvas, canvasContainerRef.current!, newZoom);
-          onZoomChange();
-        }}
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-black/[0.04] text-black/70 dark:text-white/70 disabled:opacity-30 disabled:cursor-not-allowed"
+        onClick={onZoomOut}
+        disabled={atMin}
         title={t('toolbar.zoomOut')}
       >
         <Minus className="h-3.5 w-3.5" />
       </button>
       <button
-        className="text-sm font-medium text-black/70 dark:text-white/70 w-10 text-center tabular-nums hover:text-black dark:hover:text-white transition-colors"
-        onClick={() => {
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          fitCanvasToContainer(canvas, canvasContainerRef.current!);
-          onZoomChange();
-        }}
+        className="text-sm font-medium text-black/70 dark:text-white/70 w-10 text-center tabular-nums rounded hover:bg-black/[0.04] cursor-pointer transition-colors"
+        onClick={onResetZoom}
         title={t('toolbar.resetZoom')}
       >
-        {canvasRef.current ? Math.round(canvasRef.current.getZoom() * 100) : 100}%
+        {Math.round(zoom * 100)}%
       </button>
       <button
-        className="w-7 h-7 flex items-center justify-center rounded hover:bg-black/[0.04] text-black/70 dark:text-white/70"
-        onClick={() => {
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          const newZoom = Math.min(3, canvas.getZoom() + 0.1);
-          fitCanvasToContainer(canvas, canvasContainerRef.current!, newZoom);
-          onZoomChange();
-        }}
+        className="w-7 h-7 flex items-center justify-center rounded hover:bg-black/[0.04] text-black/70 dark:text-white/70 disabled:opacity-30 disabled:cursor-not-allowed"
+        onClick={onZoomIn}
+        disabled={atMax}
         title={t('toolbar.zoomIn')}
       >
         <Plus className="h-3.5 w-3.5" />
