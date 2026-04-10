@@ -29,9 +29,8 @@ interface ContentSidebarProps {
   visible: boolean;
   /** Content tree rendering slot - passed as children */
   children: React.ReactNode;
-  /** Header area: view menu + create button */
-  sidebarView: 'library' | 'trash';
-  onSidebarViewChange: (view: 'library' | 'trash') => void;
+  /** Open trash overlay */
+  onToggleTrash: () => void;
   showNewMenu: boolean;
   onShowNewMenuChange: (show: boolean) => void;
   creating: boolean;
@@ -48,8 +47,7 @@ export function ContentSidebar({
   onWidthChange,
   visible,
   children,
-  sidebarView,
-  onSidebarViewChange,
+  onToggleTrash,
   showNewMenu,
   onShowNewMenuChange,
   creating,
@@ -396,7 +394,7 @@ export function ContentSidebar({
                     )}
                   </div>
                   <button
-                    onClick={() => { setShowProfileMenu(false); onSidebarViewChange(sidebarView === 'trash' ? 'library' : 'trash'); }}
+                    onClick={() => { setShowProfileMenu(false); onToggleTrash(); }}
                     className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
                   >
                     <Trash2 className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
