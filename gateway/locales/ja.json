@@ -1155,6 +1155,14 @@
     "defaults": {
       "newContent": "新しいコンテンツ",
       "newDoc": "新しいドキュメント"
+    },
+    "comments": {
+      "comment_on_content_titled": "{{actor}} が「{{title}}」にコメントしました",
+      "comment_on_content": "{{actor}} があなたのコンテンツにコメントしました",
+      "comment_reply": "{{actor}} があなたのコメントに返信しました",
+      "mention": "{{actor}} がコメントであなたにメンションしました",
+      "comment_resolved": "{{actor}} があなたのコメントを解決しました",
+      "comment_unresolved": "{{actor}} があなたのコメントを再オープンしました"
     }
   }
 }

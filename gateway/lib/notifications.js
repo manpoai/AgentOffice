@@ -43,8 +43,9 @@ function getRecipientLang(db, targetActorId) {
  * @param {string} payload.type - notification type (e.g. 'doc_created')
  * @param {string} payload.titleKey - i18n key for title
  * @param {object} [payload.titleParams] - params for title
- * @param {string} [payload.bodyKey] - i18n key for body
+ * @param {string} [payload.bodyKey] - i18n key for body (mutually exclusive with bodyRaw)
  * @param {object} [payload.bodyParams] - params for body
+ * @param {string} [payload.bodyRaw] - raw body string (user-authored text, not translatable)
  * @param {string} [payload.link] - optional link
  * @param {object} [payload.meta] - optional meta object (stored as JSON)
  * @returns {{ id: string, created_at: number }}
@@ -53,7 +54,7 @@ export function insertNotification(db, deps, payload) {
   const { genId } = deps;
   const {
     actorId, targetActorId, type,
-    titleKey, titleParams, bodyKey, bodyParams,
+    titleKey, titleParams, bodyKey, bodyParams, bodyRaw,
     link, meta,
   } = payload;
 
@@ -63,7 +64,9 @@ export function insertNotification(db, deps, payload) {
 
   const lang = getRecipientLang(db, targetActorId);
   const titleRendered = tServer(lang, titleKey, resolveParams(lang, titleParams));
-  const bodyRendered = bodyKey ? tServer(lang, bodyKey, resolveParams(lang, bodyParams)) : null;
+  const bodyRendered = bodyKey
+    ? tServer(lang, bodyKey, resolveParams(lang, bodyParams))
+    : (bodyRaw != null ? bodyRaw : null);
 
   const id = genId('notif');
   const now = Math.floor(Date.now() / 1000);

@@ -1155,6 +1155,14 @@
     "defaults": {
       "newContent": "새 콘텐츠",
       "newDoc": "새 문서"
+    },
+    "comments": {
+      "comment_on_content_titled": "{{actor}}님이 \"{{title}}\"에 댓글을 남겼습니다",
+      "comment_on_content": "{{actor}}님이 회원님의 콘텐츠에 댓글을 남겼습니다",
+      "comment_reply": "{{actor}}님이 회원님의 댓글에 답글을 남겼습니다",
+      "mention": "{{actor}}님이 댓글에서 회원님을 멘션했습니다",
+      "comment_resolved": "{{actor}}님이 회원님의 댓글을 해결했습니다",
+      "comment_unresolved": "{{actor}}님이 회원님의 댓글을 다시 열었습니다"
     }
   }
 }

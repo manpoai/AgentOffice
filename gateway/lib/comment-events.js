@@ -2,6 +2,7 @@
  * Shared comment event dispatcher.
  * Called by content.js, docs.js, and data.js after any comment mutation.
  */
+import { insertNotification } from './notifications.js';
 
 /**
  * Build a navigation link for a comment notification.
@@ -18,14 +19,20 @@ export function buildCommentLink(targetId, anchorType, anchorId, commentId) {
 }
 
 /**
- * Write a notification row for a human actor.
+ * Write a notification row for a human actor, using canonical i18n keys.
+ * Wraps insertNotification with the comment-flow params contract.
  */
-function createNotification(db, { genId, actorId, targetActorId, type, title, body, link, meta }) {
-  const id = genId('notif');
-  db.prepare(
-    `INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, unixepoch() * 1000)`
-  ).run(id, actorId || null, targetActorId, type, title, body || null, link || null, meta ? JSON.stringify(meta) : null);
+function createNotification(db, { genId, actorId, targetActorId, type, titleKey, titleParams, body, link, meta }) {
+  insertNotification(db, { genId }, {
+    actorId,
+    targetActorId,
+    type,
+    titleKey,
+    titleParams,
+    bodyRaw: body || '',
+    link,
+    meta,
+  });
 }
 
 /**
@@ -96,7 +103,10 @@ export function emitCommentEvent(db, {
           actorId,
           targetActorId: ownerActorId,
           type: 'comment_on_content',
-          title: targetTitle ? `${actorName} 评论了《${targetTitle}》` : `${actorName} 评论了你的内容`,
+          titleKey: targetTitle
+            ? 'serverNotifications.comments.comment_on_content_titled'
+            : 'serverNotifications.comments.comment_on_content',
+          titleParams: { actor: actorName, title: targetTitle || '' },
           body: contextPayload?.summary?.comment_text || (text || '').substring(0, 200),
           link,
           meta: {
@@ -144,7 +154,8 @@ export function emitCommentEvent(db, {
             actorId,
             targetActorId: parentComment.actor_id,
             type: 'comment_reply',
-            title: `${actorName} 回复了你的评论`,
+            titleKey: 'serverNotifications.comments.comment_reply',
+            titleParams: { actor: actorName },
             body: (text || '').substring(0, 200),
             link,
           });
@@ -215,7 +226,8 @@ export function emitCommentEvent(db, {
           actorId,
           targetActorId: target.id,
           type: 'mention',
-          title: `${actorName} 在评论中提到了你`,
+          titleKey: 'serverNotifications.comments.mention',
+          titleParams: { actor: actorName },
           body: (text || '').substring(0, 200),
           link,
         });
@@ -239,9 +251,10 @@ export function emitCommentEvent(db, {
             actorId,
             targetActorId: comment.actor_id,
             type: notifType,
-            title: eventType === 'comment.resolved'
-              ? `${actorName} 解决了你的评论`
-              : `${actorName} 重新打开了你的评论`,
+            titleKey: eventType === 'comment.resolved'
+              ? 'serverNotifications.comments.comment_resolved'
+              : 'serverNotifications.comments.comment_unresolved',
+            titleParams: { actor: actorName },
             body: (text || '').substring(0, 200),
             link,
           });

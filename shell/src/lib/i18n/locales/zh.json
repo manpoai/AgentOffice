@@ -1155,6 +1155,14 @@
     "defaults": {
       "newContent": "新内容",
       "newDoc": "新文档"
+    },
+    "comments": {
+      "comment_on_content_titled": "{{actor}} 评论了《{{title}}》",
+      "comment_on_content": "{{actor}} 评论了你的内容",
+      "comment_reply": "{{actor}} 回复了你的评论",
+      "mention": "{{actor}} 在评论中提到了你",
+      "comment_resolved": "{{actor}} 解决了你的评论",
+      "comment_unresolved": "{{actor}} 重新打开了你的评论"
     }
   }
 }

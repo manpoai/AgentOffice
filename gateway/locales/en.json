@@ -1155,6 +1155,14 @@
     "defaults": {
       "newContent": "New content",
       "newDoc": "New document"
+    },
+    "comments": {
+      "comment_on_content_titled": "{{actor}} commented on \"{{title}}\"",
+      "comment_on_content": "{{actor}} commented on your content",
+      "comment_reply": "{{actor}} replied to your comment",
+      "mention": "{{actor}} mentioned you in a comment",
+      "comment_resolved": "{{actor}} resolved your comment",
+      "comment_unresolved": "{{actor}} reopened your comment"
     }
   }
 }
