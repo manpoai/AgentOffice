@@ -1133,16 +1133,16 @@
   },
   "serverNotifications": {
     "content_created": {
-      "title": "{{title}}",
-      "body": "{{agent}} が{{kind}}「{{title}}」を作成しました"
+      "title": "{title}",
+      "body": "{agent} が{kind}「{title}」を作成しました"
     },
     "doc_created": {
-      "title": "{{title}}",
-      "body": "{{agent}} がドキュメント「{{title}}」を作成しました"
+      "title": "{title}",
+      "body": "{agent} がドキュメント「{title}」を作成しました"
     },
     "agent_registered": {
-      "title": "新しいエージェント「{{displayName}}」がアクセスを申請しています",
-      "body": "エージェント「{{name}}」が登録され、承認待ちです。"
+      "title": "新しいエージェント「{displayName}」がアクセスを申請しています",
+      "body": "エージェント「{name}」が登録され、承認待ちです。"
     },
     "kinds": {
       "doc": "ドキュメント",
@@ -1157,12 +1157,12 @@
       "newDoc": "新しいドキュメント"
     },
     "comments": {
-      "comment_on_content_titled": "{{actor}} が「{{title}}」にコメントしました",
-      "comment_on_content": "{{actor}} があなたのコンテンツにコメントしました",
-      "comment_reply": "{{actor}} があなたのコメントに返信しました",
-      "mention": "{{actor}} がコメントであなたにメンションしました",
-      "comment_resolved": "{{actor}} があなたのコメントを解決しました",
-      "comment_unresolved": "{{actor}} があなたのコメントを再オープンしました"
+      "comment_on_content_titled": "{actor} が「{title}」にコメントしました",
+      "comment_on_content": "{actor} があなたのコンテンツにコメントしました",
+      "comment_reply": "{actor} があなたのコメントに返信しました",
+      "mention": "{actor} がコメントであなたにメンションしました",
+      "comment_resolved": "{actor} があなたのコメントを解決しました",
+      "comment_unresolved": "{actor} があなたのコメントを再オープンしました"
     }
   },
   "commentContext": {
@@ -1172,26 +1172,26 @@
       "table": "テーブル",
       "diagram_embed": "ダイアグラム",
       "mermaid": "Mermaid ダイアグラム",
-      "slide": "スライド {{index}}",
+      "slide": "スライド {index}",
       "element": "要素",
       "node": "ノード",
       "edge": "エッジ",
-      "row": "Row #{{id}}"
+      "row": "Row #{id}"
     },
     "previews": {
       "image": "画像",
       "table": "埋め込みテーブル",
       "diagram_embed": "埋め込みダイアグラム",
       "mermaid": "Mermaid ダイアグラム",
-      "slide": "スライド {{index}}",
+      "slide": "スライド {index}",
       "element_fallback": "要素",
       "node": "ダイアグラムノード",
       "edge": "ダイアグラムエッジ"
     },
     "summary": {
-      "comment_on_whole": "{{kind}}全体へのコメント",
+      "comment_on_whole": "{kind}全体へのコメント",
       "comment_on_row": "テーブル行へのコメント",
-      "comment_on_anchor": "{{anchor}}へのコメント",
+      "comment_on_anchor": "{anchor}へのコメント",
       "kinds": {
         "doc": "ドキュメント",
         "table": "データテーブル",

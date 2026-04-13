@@ -490,6 +490,13 @@ export interface Notification {
     target_id?: string;
     target_title?: string;
   } | null;
+  // Phase 6 i18n: when present, client should render from these keys+params
+  // using its own locale instead of the pre-rendered title/body strings
+  // (which were rendered in the recipient's preferred_language at write time).
+  title_key?: string | null;
+  title_params?: string | null;
+  body_key?: string | null;
+  body_params?: string | null;
 }
 
 export async function getNotifications(unread?: boolean, limit?: number): Promise<Notification[]> {

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
+import { renderField } from '@/lib/i18n/renderField';
 import {
   listContentRevisions,
   restoreContentRevision,
@@ -37,6 +38,8 @@ export interface RevisionItem {
   content_id?: string;
   trigger_type: string | null;
   description?: string | null;
+  description_key?: string | null;
+  description_params?: string | null;
   data?: any;
   created_at: string;
   created_by?: string | null;
@@ -235,8 +238,10 @@ export function RevisionHistory({
                       </span>
                     )}
                   </div>
-                  {revision.description && (
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{revision.description}</p>
+                  {(revision.description_key || revision.description) && (
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                      {renderField(t, revision.description_key, revision.description_params, revision.description)}
+                    </p>
                   )}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                     <span>{formatRelativeTime(revision.created_at)}</span>

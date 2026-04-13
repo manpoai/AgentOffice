@@ -11,6 +11,7 @@ import { useT } from '@/lib/i18n';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { showError } from '@/lib/utils/error';
 import { BottomSheet } from '@/components/shared/BottomSheet';
+import { renderField } from '@/lib/i18n/renderField';
 
 const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
   doc: <FileText className="h-4 w-4" />,
@@ -144,11 +145,11 @@ export function NotificationPanel({ open, onClose, anchorRect }: NotificationPan
                 'text-sm truncate',
                 notif.read ? 'text-muted-foreground' : 'text-foreground font-medium'
               )}>
-                {notif.title}
+                {renderField(t, notif.title_key, notif.title_params, notif.title)}
               </p>
-              {notif.body && (
+              {(notif.body_key || notif.body) && (
                 <p className="text-xs text-muted-foreground truncate mt-0.5">
-                  {notif.body}
+                  {renderField(t, notif.body_key, notif.body_params, notif.body)}
                 </p>
               )}
               <p className="text-[10px] text-muted-foreground/60 mt-1">

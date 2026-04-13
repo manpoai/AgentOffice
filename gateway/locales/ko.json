@@ -1133,16 +1133,16 @@
   },
   "serverNotifications": {
     "content_created": {
-      "title": "{{title}}",
-      "body": "{{agent}}님이 {{kind}} \"{{title}}\"을(를) 생성했습니다"
+      "title": "{title}",
+      "body": "{agent}님이 {kind} \"{title}\"을(를) 생성했습니다"
     },
     "doc_created": {
-      "title": "{{title}}",
-      "body": "{{agent}}님이 문서 \"{{title}}\"을(를) 생성했습니다"
+      "title": "{title}",
+      "body": "{agent}님이 문서 \"{title}\"을(를) 생성했습니다"
     },
     "agent_registered": {
-      "title": "새 에이전트 \"{{displayName}}\" 액세스 요청",
-      "body": "에이전트 \"{{name}}\"이(가) 등록되어 승인 대기 중입니다."
+      "title": "새 에이전트 \"{displayName}\" 액세스 요청",
+      "body": "에이전트 \"{name}\"이(가) 등록되어 승인 대기 중입니다."
     },
     "kinds": {
       "doc": "문서",
@@ -1157,12 +1157,12 @@
       "newDoc": "새 문서"
     },
     "comments": {
-      "comment_on_content_titled": "{{actor}}님이 \"{{title}}\"에 댓글을 남겼습니다",
-      "comment_on_content": "{{actor}}님이 회원님의 콘텐츠에 댓글을 남겼습니다",
-      "comment_reply": "{{actor}}님이 회원님의 댓글에 답글을 남겼습니다",
-      "mention": "{{actor}}님이 댓글에서 회원님을 멘션했습니다",
-      "comment_resolved": "{{actor}}님이 회원님의 댓글을 해결했습니다",
-      "comment_unresolved": "{{actor}}님이 회원님의 댓글을 다시 열었습니다"
+      "comment_on_content_titled": "{actor}님이 \"{title}\"에 댓글을 남겼습니다",
+      "comment_on_content": "{actor}님이 회원님의 콘텐츠에 댓글을 남겼습니다",
+      "comment_reply": "{actor}님이 회원님의 댓글에 답글을 남겼습니다",
+      "mention": "{actor}님이 댓글에서 회원님을 멘션했습니다",
+      "comment_resolved": "{actor}님이 회원님의 댓글을 해결했습니다",
+      "comment_unresolved": "{actor}님이 회원님의 댓글을 다시 열었습니다"
     }
   },
   "commentContext": {
@@ -1172,26 +1172,26 @@
       "table": "테이블",
       "diagram_embed": "다이어그램",
       "mermaid": "Mermaid 다이어그램",
-      "slide": "슬라이드 {{index}}",
+      "slide": "슬라이드 {index}",
       "element": "요소",
       "node": "노드",
       "edge": "엣지",
-      "row": "Row #{{id}}"
+      "row": "Row #{id}"
     },
     "previews": {
       "image": "이미지",
       "table": "임베디드 테이블",
       "diagram_embed": "임베디드 다이어그램",
       "mermaid": "Mermaid 다이어그램",
-      "slide": "슬라이드 {{index}}",
+      "slide": "슬라이드 {index}",
       "element_fallback": "요소",
       "node": "다이어그램 노드",
       "edge": "다이어그램 엣지"
     },
     "summary": {
-      "comment_on_whole": "{{kind}} 전체에 대한 댓글",
+      "comment_on_whole": "{kind} 전체에 대한 댓글",
       "comment_on_row": "테이블 행에 대한 댓글",
-      "comment_on_anchor": "{{anchor}}에 대한 댓글",
+      "comment_on_anchor": "{anchor}에 대한 댓글",
       "kinds": {
         "doc": "문서",
         "table": "데이터 테이블",

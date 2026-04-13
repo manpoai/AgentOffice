@@ -1133,16 +1133,16 @@
   },
   "serverNotifications": {
     "content_created": {
-      "title": "{{title}}",
-      "body": "{{agent}} created {{kind}} \"{{title}}\""
+      "title": "{title}",
+      "body": "{agent} created {kind} \"{title}\""
     },
     "doc_created": {
-      "title": "{{title}}",
-      "body": "{{agent}} created doc \"{{title}}\""
+      "title": "{title}",
+      "body": "{agent} created doc \"{title}\""
     },
     "agent_registered": {
-      "title": "New agent \"{{displayName}}\" requests access",
-      "body": "Agent \"{{name}}\" has registered and is pending approval."
+      "title": "New agent \"{displayName}\" requests access",
+      "body": "Agent \"{name}\" has registered and is pending approval."
     },
     "kinds": {
       "doc": "doc",
@@ -1157,12 +1157,12 @@
       "newDoc": "New document"
     },
     "comments": {
-      "comment_on_content_titled": "{{actor}} commented on \"{{title}}\"",
-      "comment_on_content": "{{actor}} commented on your content",
-      "comment_reply": "{{actor}} replied to your comment",
-      "mention": "{{actor}} mentioned you in a comment",
-      "comment_resolved": "{{actor}} resolved your comment",
-      "comment_unresolved": "{{actor}} reopened your comment"
+      "comment_on_content_titled": "{actor} commented on \"{title}\"",
+      "comment_on_content": "{actor} commented on your content",
+      "comment_reply": "{actor} replied to your comment",
+      "mention": "{actor} mentioned you in a comment",
+      "comment_resolved": "{actor} resolved your comment",
+      "comment_unresolved": "{actor} reopened your comment"
     }
   },
   "commentContext": {
@@ -1172,26 +1172,26 @@
       "table": "Table",
       "diagram_embed": "Diagram",
       "mermaid": "Mermaid diagram",
-      "slide": "Slide {{index}}",
+      "slide": "Slide {index}",
       "element": "Element",
       "node": "Node",
       "edge": "Edge",
-      "row": "Row #{{id}}"
+      "row": "Row #{id}"
     },
     "previews": {
       "image": "Image",
       "table": "Embedded table",
       "diagram_embed": "Embedded diagram",
       "mermaid": "Mermaid diagram",
-      "slide": "Slide {{index}}",
+      "slide": "Slide {index}",
       "element_fallback": "Element",
       "node": "Diagram node",
       "edge": "Diagram edge"
     },
     "summary": {
-      "comment_on_whole": "Comment on entire {{kind}}",
+      "comment_on_whole": "Comment on entire {kind}",
       "comment_on_row": "Comment on a table row",
-      "comment_on_anchor": "Comment on {{anchor}}",
+      "comment_on_anchor": "Comment on {anchor}",
       "kinds": {
         "doc": "document",
         "table": "data table",

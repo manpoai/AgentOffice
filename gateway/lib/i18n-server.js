@@ -42,9 +42,16 @@ function resolveKey(dict, key) {
 
 function interpolate(tpl, params) {
   if (!params) return tpl;
-  return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name) =>
-    params[name] != null ? String(params[name]) : `{{${name}}}`
-  );
+  // Support both {{name}} (gateway convention) and {name} (shell convention).
+  // Resolve double-brace first so {{x}} doesn't accidentally match inside
+  // a later single-brace pass.
+  return tpl
+    .replace(/\{\{\s*(\w+)\s*\}\}/g, (_, name) =>
+      params[name] != null ? String(params[name]) : `{{${name}}}`
+    )
+    .replace(/\{\s*(\w+)\s*\}/g, (_, name) =>
+      params[name] != null ? String(params[name]) : `{${name}}`
+    );
 }
 
 /**
