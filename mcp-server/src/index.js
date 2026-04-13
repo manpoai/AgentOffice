@@ -37,6 +37,7 @@ import { registerEventTools } from './tools/events.js';
 import { registerCommentTools } from './tools/comments.js';
 import { registerContentTools } from './tools/content.js';
 import { CONFIG_PATH, loadEffectiveConfig, readConfig, writeConfig } from './config.js';
+import { EventBridge } from './event-bridge.js';
 
 function maskToken(t) {
   if (!t || typeof t !== 'string') return '(none)';
@@ -108,8 +109,38 @@ async function startServer() {
   console.error(`[mcp] url source: ${cfg.source}`);
   console.error(`[mcp] base_url: ${cfg.base_url}`);
 
-  const server = new McpServer({ name: 'asuite', version: '0.1.0' });
+  const server = new McpServer(
+    { name: 'asuite', version: '0.1.0' },
+    { capabilities: { logging: {} } },
+  );
   const gw = new GatewayClient(cfg.base_url, cfg.token);
+
+  // Wrap server.tool so every tool response can be annotated with a
+  // pending-events hint. This is the fallback for MCP hosts that do not
+  // surface notifications/message to the agent — the agent still sees the
+  // hint the next time it calls any tool.
+  const bridgeRef = { current: null };
+  const origTool = server.tool.bind(server);
+  server.tool = (name, ...rest) => {
+    const handler = rest[rest.length - 1];
+    if (typeof handler !== 'function') return origTool(name, ...rest);
+    const wrappedHandler = async (...args) => {
+      const result = await handler(...args);
+      const bridge = bridgeRef.current;
+      if (bridge && Array.isArray(result?.content)) {
+        const pending = bridge.takePendingHint();
+        if (pending > 0) {
+          result.content.push({
+            type: 'text',
+            text: `[agentoffice-bridge] ${pending} new event(s) arrived since your last tool call. Call get_unread_events to inspect.`,
+          });
+        }
+      }
+      return result;
+    };
+    rest[rest.length - 1] = wrappedHandler;
+    return origTool(name, ...rest);
+  };
 
   registerDocTools(server, gw);
   registerDataTools(server, gw);
@@ -121,6 +152,43 @@ async function startServer() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // ─── Event bridge: push gateway events to host via MCP notifications ──
+  const pushMode = (process.env.ASUITE_PUSH || 'sse').toLowerCase();
+  let bridge = null;
+  if (pushMode !== 'off') {
+    try {
+      const me = await gw.get('/me');
+      const agentId = me.agent_id || me.id;
+      if (!agentId) {
+        console.error('[mcp] bridge skipped: /me did not return an agent id');
+      } else {
+        const pollIntervalMs = parseInt(process.env.ASUITE_POLL_INTERVAL_MS || '15000', 10);
+        bridge = new EventBridge({
+          baseUrl: cfg.base_url,
+          token: cfg.token,
+          agentId,
+          mcpServer: server,
+          mode: pushMode,
+          pollIntervalMs,
+        });
+        await bridge.start();
+        bridgeRef.current = bridge;
+        console.error(`[mcp] event bridge started (mode=${pushMode})`);
+      }
+    } catch (e) {
+      console.error(`[mcp] event bridge start failed: ${e.message}`);
+    }
+  } else {
+    console.error('[mcp] event bridge disabled (ASUITE_PUSH=off)');
+  }
+
+  const shutdown = async () => {
+    if (bridge) await bridge.stop();
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 const sub = process.argv[2];
