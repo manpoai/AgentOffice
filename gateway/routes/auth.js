@@ -75,7 +75,8 @@ function checkSelfRegisterRate(req, res, next) {
 export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, authenticateAny, authenticateAdmin, authenticateAgent, genId, hashToken, hashPassword, verifyPassword, createBrUser, pushEvent }) {
 
   // ─── Shared: Avatar upload setup ─────────────────
-  const AVATAR_DIR = path.join(GATEWAY_DIR, 'uploads', 'avatars');
+  const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(GATEWAY_DIR, 'uploads');
+  const AVATAR_DIR = path.join(UPLOADS_ROOT, 'avatars');
   if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
 
   const avatarUpload = multer({
@@ -595,8 +596,8 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   // Intentionally public (no auth): avatar images are referenced in <img src> tags across all
   // authenticated views. Requiring auth would break image loading. express.static already
   // prevents path traversal (resolves to absolute path within the uploads directory).
-  app.use('/uploads', express.static(path.join(GATEWAY_DIR, 'uploads')));
-  app.use('/api/uploads', express.static(path.join(GATEWAY_DIR, 'uploads')));
+  app.use('/uploads', express.static(UPLOADS_ROOT));
+  app.use('/api/uploads', express.static(UPLOADS_ROOT));
 
   app.post('/api/agents/:name/avatar', authenticateAgent, avatarUpload.single('avatar'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
@@ -617,12 +618,12 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   });
 
   // ─── File Upload (general) ───────────────────────
-  const UPLOADS_DIR = path.join(GATEWAY_DIR, 'uploads', 'files');
-  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  const FILES_DIR = path.join(UPLOADS_ROOT, 'files');
+  if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
 
   const fileUploadStorage = multer({
     storage: multer.diskStorage({
-      destination: UPLOADS_DIR,
+      destination: FILES_DIR,
       filename: (req, file, cb) => {
         const ext = path.extname(file.originalname) || '.bin';
         const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
@@ -644,7 +645,7 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   });
 
   // POST /api/uploads/thumbnails — upload slide thumbnail (user JWT allowed)
-  const THUMBNAILS_DIR = path.join(GATEWAY_DIR, 'uploads', 'thumbnails');
+  const THUMBNAILS_DIR = path.join(UPLOADS_ROOT, 'thumbnails');
   if (!fs.existsSync(THUMBNAILS_DIR)) fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
 
   const thumbnailUploadStorage = multer({
@@ -739,8 +740,8 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   // is prevented by the startsWith check below. For sensitive file uploads,
   // consider a signed-URL approach in future.
   app.get('/api/uploads/files/:filename', (req, res) => {
-    const filePath = path.join(UPLOADS_DIR, req.params.filename);
-    if (!filePath.startsWith(UPLOADS_DIR)) return res.status(403).json({ error: 'FORBIDDEN' });
+    const filePath = path.join(FILES_DIR, req.params.filename);
+    if (!filePath.startsWith(FILES_DIR)) return res.status(403).json({ error: 'FORBIDDEN' });
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const ext = path.extname(filePath).toLowerCase();

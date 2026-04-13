@@ -64,12 +64,11 @@ function run(command, args, cwd) {
 
 async function ensureGatewayDeps() {
   const gatewayDir = path.join(RUNTIME_DIR, 'gateway');
-  const nodeModulesDir = path.join(gatewayDir, 'node_modules');
-  if (exists(nodeModulesDir)) {
-    fs.rmSync(nodeModulesDir, { recursive: true, force: true });
-  }
+  const marker = path.join(gatewayDir, 'node_modules', '.installed');
+  if (exists(marker)) return;
   console.log('Installing AgentOffice gateway dependencies...');
   await run('npm', ['install', '--omit=dev'], gatewayDir);
+  fs.writeFileSync(marker, new Date().toISOString());
 }
 
 async function ensureRuntime() {
