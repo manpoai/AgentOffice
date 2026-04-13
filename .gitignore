@@ -48,3 +48,44 @@ shell/docs/superpowers/
 dist/
 
 *.tgz
+
+# Secrets and credentials (defensive)
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+.env.*
+!.env.example
+*.token
+*-token.json
+*-secret.json
+*-credentials.json
+secrets/
+credentials/
+
+# AI assistant configs (may contain API keys)
+.cursor/
+.aider/
+.aider.input.history
+.aider.chat.history.md
+.claude/
+
+# OS-specific (defensive)
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Backup files (often contain secrets when devs are debugging)
+*.bak
+*.backup
+*.orig
+
+# Coverage and test artifacts
+coverage/
+*.lcov

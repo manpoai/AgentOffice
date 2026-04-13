@@ -1,0 +1,21 @@
+# gitleaks config — extends default rules with project-specific allowlist.
+# https://github.com/gitleaks/gitleaks
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-specific safe paths and patterns"
+paths = [
+  '''node_modules/''',
+  '''shell/\.next/''',
+  '''dist/''',
+  '''.*\.lock$''',
+  '''package-lock\.json$''',
+]
+regexes = [
+  '''example\.com''',
+  '''test-token-placeholder''',
+  '''<your-token>''',
+  '''<replace-me>''',
+]
