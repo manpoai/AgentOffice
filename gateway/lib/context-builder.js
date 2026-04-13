@@ -1,12 +1,22 @@
 /**
  * Build context_payload for comment events.
  * Provides structured context about the commented content for human and agent consumers.
+ *
+ * All user-visible labels/previews/summary lines are rendered via tServer in
+ * the language passed by the caller (defaults to 'en'). The underlying i18n
+ * key + params are NOT stored in the payload — the server renders once at
+ * write time. If multilingual re-rendering is later needed, add _key/_params
+ * fields alongside the rendered strings.
  */
+import { tServer, DEFAULT_LANGUAGE } from './i18n-server.js';
 
-export function buildContextPayload(db, { targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName, parentId }) {
+export function buildContextPayload(db, {
+  targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName, parentId,
+  lang = DEFAULT_LANGUAGE,
+}) {
   const target = buildTarget(db, targetType, targetId);
-  const anchor = buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta);
-  const summary = buildSummary(targetType, anchorType, text, actorName);
+  const anchor = buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta, lang);
+  const summary = buildSummary(targetType, anchorType, text, actorName, lang);
   const minimalContext = buildMinimalContext(db, targetType, targetId, anchorType, anchorId, parentId);
   const writeBackTarget = buildWriteBackTarget(targetId, anchorType, anchorId);
   const recentEdits = buildRecentEdits(db, targetId);
@@ -36,18 +46,19 @@ function buildTarget(db, targetType, targetId) {
   };
 }
 
-function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta) {
+function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta, lang) {
   if (!anchorType || !anchorId) return null;
+  const t = (k, p) => tServer(lang, k, p);
 
   switch (anchorType) {
     case 'row':
-      return buildRowAnchor(db, targetId, anchorId);
+      return buildRowAnchor(db, targetId, anchorId, lang);
 
     case 'text-range':
       return {
         type: 'text-range',
         id: anchorId,
-        label: '文本选区',
+        label: t('commentContext.anchors.text_range'),
         preview: anchorMeta?.quote ? String(anchorMeta.quote).substring(0, 100) : null,
         meta: {
           quote: anchorMeta?.quote || null,
@@ -59,8 +70,8 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta)
       return {
         type: 'image',
         id: anchorId,
-        label: '图片',
-        preview: anchorMeta?.alt_text || '图片',
+        label: t('commentContext.anchors.image'),
+        preview: anchorMeta?.alt_text || t('commentContext.previews.image'),
         meta: {
           alt_text: anchorMeta?.alt_text || null,
           image_url: anchorMeta?.image_url || null,
@@ -71,8 +82,8 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta)
       return {
         type: 'table',
         id: anchorId,
-        label: '表格',
-        preview: anchorMeta?.preview || '内嵌表格',
+        label: t('commentContext.anchors.table'),
+        preview: anchorMeta?.preview || t('commentContext.previews.table'),
         meta: {},
       };
 
@@ -80,8 +91,8 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta)
       return {
         type: 'diagram_embed',
         id: anchorId,
-        label: '流程图',
-        preview: anchorMeta?.preview || '嵌入流程图',
+        label: t('commentContext.anchors.diagram_embed'),
+        preview: anchorMeta?.preview || t('commentContext.previews.diagram_embed'),
         meta: {},
       };
 
@@ -89,31 +100,33 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta)
       return {
         type: 'mermaid',
         id: anchorId,
-        label: 'Mermaid 图',
-        preview: anchorMeta?.code ? String(anchorMeta.code).substring(0, 80) : 'Mermaid 图',
+        label: t('commentContext.anchors.mermaid'),
+        preview: anchorMeta?.code ? String(anchorMeta.code).substring(0, 80) : t('commentContext.previews.mermaid'),
         meta: {
           code: anchorMeta?.code || null,
         },
       };
 
-    case 'slide':
+    case 'slide': {
+      const idx = Number(anchorId) + 1;
       return {
         type: 'slide',
         id: anchorId,
-        label: `第 ${Number(anchorId) + 1} 页`,
-        preview: anchorMeta?.slide_title || `Slide ${Number(anchorId) + 1}`,
+        label: t('commentContext.anchors.slide', { index: idx }),
+        preview: anchorMeta?.slide_title || t('commentContext.previews.slide', { index: idx }),
         meta: {
           slide_index: Number(anchorId),
           slide_title: anchorMeta?.slide_title || null,
         },
       };
+    }
 
     case 'element':
       return {
         type: 'element',
         id: anchorId,
-        label: anchorMeta?.element_type || '元素',
-        preview: anchorMeta?.preview || anchorMeta?.element_type || '元素',
+        label: anchorMeta?.element_type || t('commentContext.anchors.element'),
+        preview: anchorMeta?.preview || anchorMeta?.element_type || t('commentContext.previews.element_fallback'),
         meta: {
           slide_index: anchorMeta?.slide_index != null ? anchorMeta.slide_index : null,
           element_type: anchorMeta?.element_type || null,
@@ -124,8 +137,8 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta)
       return {
         type: 'node',
         id: anchorId,
-        label: '节点',
-        preview: anchorMeta?.node_label || '流程图节点',
+        label: t('commentContext.anchors.node'),
+        preview: anchorMeta?.node_label || t('commentContext.previews.node'),
         meta: {
           node_label: anchorMeta?.node_label || null,
         },
@@ -135,8 +148,8 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta)
       return {
         type: 'edge',
         id: anchorId,
-        label: '连线',
-        preview: anchorMeta?.edge_label || '流程图连线',
+        label: t('commentContext.anchors.edge'),
+        preview: anchorMeta?.edge_label || t('commentContext.previews.edge'),
         meta: {
           source_node_id: anchorMeta?.source_node_id || null,
           target_node_id: anchorMeta?.target_node_id || null,
@@ -149,11 +162,11 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta)
   }
 }
 
-function buildRowAnchor(db, targetId, rowId) {
+function buildRowAnchor(db, targetId, rowId, lang) {
   return {
     type: 'row',
     id: rowId,
-    label: `Row #${rowId}`,
+    label: tServer(lang, 'commentContext.anchors.row', { id: rowId }),
     preview: `Row #${rowId}`,
     meta: {
       row_id: rowId,
@@ -163,15 +176,27 @@ function buildRowAnchor(db, targetId, rowId) {
   };
 }
 
-function buildSummary(targetType, anchorType, text, actorName) {
-  const typeLabel = { doc: '文档', table: '数据表', presentation: '演示文稿', diagram: '流程图' };
+function buildSummary(targetType, anchorType, text, actorName, lang) {
+  const kindRaw = tServer(lang, `commentContext.summary.kinds.${targetType}`);
+  const kind = kindRaw.startsWith('commentContext.summary.kinds.')
+    ? tServer(lang, 'commentContext.summary.kinds.content')
+    : kindRaw;
   let textSummary;
   if (!anchorType) {
-    textSummary = `针对整个${typeLabel[targetType] || '内容'}的评论`;
+    textSummary = tServer(lang, 'commentContext.summary.comment_on_whole', { kind });
   } else if (anchorType === 'row') {
-    textSummary = '针对数据表行记录的评论';
+    textSummary = tServer(lang, 'commentContext.summary.comment_on_row');
   } else {
-    textSummary = `针对${anchorType}的评论`;
+    // Look up a generic anchor label (strip type-specific placeholders).
+    // 'slide' and 'row' carry {{index}}/{{id}} placeholders in their labels,
+    // so we read dedicated 'kinds' entries for those cases instead.
+    const anchorSlug = anchorType.replace(/-/g, '_');
+    const genericKey = (anchorType === 'slide' || anchorType === 'row')
+      ? `commentContext.summary.anchorKinds.${anchorSlug}`
+      : `commentContext.anchors.${anchorSlug}`;
+    const anchorLabelRaw = tServer(lang, genericKey);
+    const anchorLabel = anchorLabelRaw === genericKey ? anchorType : anchorLabelRaw;
+    textSummary = tServer(lang, 'commentContext.summary.comment_on_anchor', { anchor: anchorLabel });
   }
 
   return {

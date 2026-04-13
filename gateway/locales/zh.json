@@ -1164,5 +1164,45 @@
       "comment_resolved": "{{actor}} 解决了你的评论",
       "comment_unresolved": "{{actor}} 重新打开了你的评论"
     }
+  },
+  "commentContext": {
+    "anchors": {
+      "text_range": "文本选区",
+      "image": "图片",
+      "table": "表格",
+      "diagram_embed": "流程图",
+      "mermaid": "Mermaid 图",
+      "slide": "第 {{index}} 页",
+      "element": "元素",
+      "node": "节点",
+      "edge": "连线",
+      "row": "Row #{{id}}"
+    },
+    "previews": {
+      "image": "图片",
+      "table": "内嵌表格",
+      "diagram_embed": "嵌入流程图",
+      "mermaid": "Mermaid 图",
+      "slide": "Slide {{index}}",
+      "element_fallback": "元素",
+      "node": "流程图节点",
+      "edge": "流程图连线"
+    },
+    "summary": {
+      "comment_on_whole": "针对整个{{kind}}的评论",
+      "comment_on_row": "针对数据表行记录的评论",
+      "comment_on_anchor": "针对{{anchor}}的评论",
+      "kinds": {
+        "doc": "文档",
+        "table": "数据表",
+        "presentation": "演示文稿",
+        "diagram": "流程图",
+        "content": "内容"
+      },
+      "anchorKinds": {
+        "slide": "幻灯片",
+        "row": "数据表行"
+      }
+    }
   }
 }

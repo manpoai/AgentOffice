@@ -1164,5 +1164,45 @@
       "comment_resolved": "{{actor}} resolved your comment",
       "comment_unresolved": "{{actor}} reopened your comment"
     }
+  },
+  "commentContext": {
+    "anchors": {
+      "text_range": "Text selection",
+      "image": "Image",
+      "table": "Table",
+      "diagram_embed": "Diagram",
+      "mermaid": "Mermaid diagram",
+      "slide": "Slide {{index}}",
+      "element": "Element",
+      "node": "Node",
+      "edge": "Edge",
+      "row": "Row #{{id}}"
+    },
+    "previews": {
+      "image": "Image",
+      "table": "Embedded table",
+      "diagram_embed": "Embedded diagram",
+      "mermaid": "Mermaid diagram",
+      "slide": "Slide {{index}}",
+      "element_fallback": "Element",
+      "node": "Diagram node",
+      "edge": "Diagram edge"
+    },
+    "summary": {
+      "comment_on_whole": "Comment on entire {{kind}}",
+      "comment_on_row": "Comment on a table row",
+      "comment_on_anchor": "Comment on {{anchor}}",
+      "kinds": {
+        "doc": "document",
+        "table": "data table",
+        "presentation": "presentation",
+        "diagram": "diagram",
+        "content": "content"
+      },
+      "anchorKinds": {
+        "slide": "slide",
+        "row": "table row"
+      }
+    }
   }
 }

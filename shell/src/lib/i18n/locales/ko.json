@@ -1164,5 +1164,45 @@
       "comment_resolved": "{{actor}}님이 회원님의 댓글을 해결했습니다",
       "comment_unresolved": "{{actor}}님이 회원님의 댓글을 다시 열었습니다"
     }
+  },
+  "commentContext": {
+    "anchors": {
+      "text_range": "텍스트 선택",
+      "image": "이미지",
+      "table": "테이블",
+      "diagram_embed": "다이어그램",
+      "mermaid": "Mermaid 다이어그램",
+      "slide": "슬라이드 {{index}}",
+      "element": "요소",
+      "node": "노드",
+      "edge": "엣지",
+      "row": "Row #{{id}}"
+    },
+    "previews": {
+      "image": "이미지",
+      "table": "임베디드 테이블",
+      "diagram_embed": "임베디드 다이어그램",
+      "mermaid": "Mermaid 다이어그램",
+      "slide": "슬라이드 {{index}}",
+      "element_fallback": "요소",
+      "node": "다이어그램 노드",
+      "edge": "다이어그램 엣지"
+    },
+    "summary": {
+      "comment_on_whole": "{{kind}} 전체에 대한 댓글",
+      "comment_on_row": "테이블 행에 대한 댓글",
+      "comment_on_anchor": "{{anchor}}에 대한 댓글",
+      "kinds": {
+        "doc": "문서",
+        "table": "데이터 테이블",
+        "presentation": "프레젠테이션",
+        "diagram": "다이어그램",
+        "content": "콘텐츠"
+      },
+      "anchorKinds": {
+        "slide": "슬라이드",
+        "row": "테이블 행"
+      }
+    }
   }
 }

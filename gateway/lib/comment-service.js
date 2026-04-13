@@ -59,8 +59,11 @@ export function createUnifiedComment(db, deps, opts) {
   const dataJsonStr = dataJson ? JSON.stringify(dataJson) : null;
   const contentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(targetId);
   const contentTitle = db.prepare('SELECT title FROM content_items WHERE id = ?').get(targetId)?.title || '';
+  const ownerLang = contentOwner?.owner_actor_id
+    ? (db.prepare('SELECT preferred_language FROM actors WHERE id = ?').get(contentOwner.owner_actor_id)?.preferred_language || 'en')
+    : 'en';
   const contextPayload = buildContextPayload(db, {
-    targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName, parentId,
+    targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName, parentId, lang: ownerLang,
   });
   db.prepare(`INSERT INTO comments (id, target_type, target_id, text, actor, actor_id, parent_id, anchor_type, anchor_id, anchor_meta, row_id, data_json, context_payload, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
@@ -120,6 +123,9 @@ export function setUnifiedCommentResolved(db, deps, commentId, resolved, actorId
   if (result.changes === 0) return null;
   if (comment) {
     const owner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(comment.target_id);
+    const ownerLang = owner?.owner_actor_id
+      ? (db.prepare('SELECT preferred_language FROM actors WHERE id = ?').get(owner.owner_actor_id)?.preferred_language || 'en')
+      : 'en';
     const contextPayload = buildContextPayload(db, {
       targetType: comment.target_type,
       targetId: comment.target_id,
@@ -129,6 +135,7 @@ export function setUnifiedCommentResolved(db, deps, commentId, resolved, actorId
       text: comment.text || '',
       actorName,
       parentId: comment.parent_id || null,
+      lang: ownerLang,
     });
     emitCommentEvent(db, {
       eventType: resolved ? 'comment.resolved' : 'comment.unresolved',

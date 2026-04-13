@@ -1164,5 +1164,45 @@
       "comment_resolved": "{{actor}} があなたのコメントを解決しました",
       "comment_unresolved": "{{actor}} があなたのコメントを再オープンしました"
     }
+  },
+  "commentContext": {
+    "anchors": {
+      "text_range": "テキスト選択",
+      "image": "画像",
+      "table": "テーブル",
+      "diagram_embed": "ダイアグラム",
+      "mermaid": "Mermaid ダイアグラム",
+      "slide": "スライド {{index}}",
+      "element": "要素",
+      "node": "ノード",
+      "edge": "エッジ",
+      "row": "Row #{{id}}"
+    },
+    "previews": {
+      "image": "画像",
+      "table": "埋め込みテーブル",
+      "diagram_embed": "埋め込みダイアグラム",
+      "mermaid": "Mermaid ダイアグラム",
+      "slide": "スライド {{index}}",
+      "element_fallback": "要素",
+      "node": "ダイアグラムノード",
+      "edge": "ダイアグラムエッジ"
+    },
+    "summary": {
+      "comment_on_whole": "{{kind}}全体へのコメント",
+      "comment_on_row": "テーブル行へのコメント",
+      "comment_on_anchor": "{{anchor}}へのコメント",
+      "kinds": {
+        "doc": "ドキュメント",
+        "table": "データテーブル",
+        "presentation": "プレゼンテーション",
+        "diagram": "ダイアグラム",
+        "content": "コンテンツ"
+      },
+      "anchorKinds": {
+        "slide": "スライド",
+        "row": "テーブル行"
+      }
+    }
   }
 }
