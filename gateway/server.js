@@ -7,6 +7,7 @@
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -53,6 +54,18 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '50mb' }));
+
+// ─── Health endpoint (no auth, used by `aose status`) ──
+const GATEWAY_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+    return pkg.version || 'unknown';
+  } catch { return 'unknown'; }
+})();
+const STARTED_AT = Date.now();
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, version: GATEWAY_VERSION, uptime_ms: Date.now() - STARTED_AT });
+});
 
 // ─── Shared dependencies for route modules ──────
 const shared = {
