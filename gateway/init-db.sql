@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_agent_time ON events(agent_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_events_agent_undelivered ON events(agent_id, delivered, occurred_at);
-CREATE INDEX IF NOT EXISTS idx_events_delivered ON events(agent_id, delivered_at);
+-- idx_events_delivered is created in runMigrations after ALTER TABLE adds delivered_at
 
 -- Thread context links: cross-system associations
 CREATE TABLE IF NOT EXISTS thread_links (
