@@ -260,6 +260,24 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
         }
       }
 
+      // Reciprocal Link field: when a Link is added on A→B, create the mirror on B→A
+      // and wire paired_field_id on both sides so link.js rebuilds both JSON caches.
+      if ((rawUidt === 'Links' || rawUidt === 'LinkToAnotherRecord') && targetTableId && targetTableId !== tableId) {
+        try {
+          const sourceTable = tableEngine.getTable(tableId);
+          const pairedTitle = sourceTable?.title ? `${sourceTable.title}` : `Linked from ${tableId}`;
+          const pairedCardinality = req.body.relationType === 'bt' ? 'many' : (req.body.relationType === 'oo' ? 'one' : 'many');
+          const paired = tableEngine.addField(targetTableId, {
+            title: pairedTitle,
+            uidt: rawUidt,
+            options: { target_table_id: tableId, cardinality: pairedCardinality, paired_field_id: f.id },
+          });
+          tableEngine.updateField(f.id, { options: { paired_field_id: paired.id } });
+        } catch (pairErr) {
+          console.error('[gateway] reciprocal link create failed:', pairErr);
+        }
+      }
+
       res.status(201).json({ column_id: f.id, title: f.title, type: f.uidt });
     } catch (e) {
       if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: 'VALIDATION_ERROR', detail: e.message });
@@ -673,7 +691,41 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
 
   // Convert tableEngine row (mixed: id keys for fields + builtin id/created_at/...)
   // into title-keyed wire row. Always includes `id`, `created_at`, `updated_at`.
-  function rowIdsToTitles(row, fields) {
+  // Cache primary-field row values per target table so a batch of N source rows
+  // doesn't hit the DB once per linked target repeatedly.
+  function makeLinkResolver() {
+    const cache = new Map(); // targetTableId -> Map(rowId -> displayValue)
+    function resolve(targetTableId, ids) {
+      if (!ids || ids.length === 0) return [];
+      let tbl = cache.get(targetTableId);
+      if (!tbl) {
+        tbl = new Map();
+        const targetFields = tableEngine.listFields(targetTableId);
+        const primary = targetFields.find(f => f.is_primary) || targetFields[0];
+        if (primary) {
+          // Load every referenced row once.
+          for (const rid of ids) {
+            if (tbl.has(rid)) continue;
+            const r = tableEngine.readRow(targetTableId, rid);
+            tbl.set(rid, r && r[primary.id] != null ? String(r[primary.id]) : '');
+          }
+        }
+        cache.set(targetTableId, tbl);
+      } else {
+        const targetFields = tableEngine.listFields(targetTableId);
+        const primary = targetFields.find(f => f.is_primary) || targetFields[0];
+        for (const rid of ids) {
+          if (tbl.has(rid)) continue;
+          const r = tableEngine.readRow(targetTableId, rid);
+          tbl.set(rid, primary && r && r[primary.id] != null ? String(r[primary.id]) : '');
+        }
+      }
+      return ids.map(rid => ({ Id: rid, id: rid, value: tbl.get(rid) || '' }));
+    }
+    return { resolve };
+  }
+
+  function rowIdsToTitles(row, fields, linkResolver = null) {
     if (!row) return null;
     const out = { id: row.id, Id: row.id };
     if (row.created_at != null) out.created_at = new Date(row.created_at).toISOString();
@@ -681,7 +733,19 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
     if (row.created_by != null) out.created_by = row.created_by;
     if (row.updated_by != null) out.updated_by = row.updated_by;
     for (const f of fields) {
-      if (f.id in row) out[f.title] = row[f.id];
+      if (!(f.id in row)) continue;
+      const val = row[f.id];
+      if ((f.uidt === 'Links' || f.uidt === 'LinkToAnotherRecord') && Array.isArray(val)) {
+        const opts = typeof f.options === 'string' ? (() => { try { return JSON.parse(f.options); } catch { return {}; } })() : (f.options || {});
+        const targetTableId = opts.target_table_id;
+        if (targetTableId && linkResolver) {
+          out[f.title] = linkResolver.resolve(targetTableId, val);
+        } else {
+          out[f.title] = val.map(rid => ({ Id: rid, id: rid, value: '' }));
+        }
+      } else {
+        out[f.title] = val;
+      }
     }
     return out;
   }
@@ -781,7 +845,8 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
     const baseSorts = buildEngineSorts(query.sort, fields);
     const { filters, sorts } = applyViewFiltersAndSorts(viewId, baseFilters, baseSorts);
     const rows = tableEngine.queryRows(tableId, { filters, sorts, limit, offset, search: query.search || null });
-    const wireRows = rows.map(r => rowIdsToTitles(r, fields));
+    const linkResolver = makeLinkResolver();
+    const wireRows = rows.map(r => rowIdsToTitles(r, fields, linkResolver));
     // Total count: rerun without limit/offset to count. For now skip exact total
     // (frontend pagination uses isFirstPage/isLastPage). totalRows = len if we
     // got fewer than limit, else estimate next-page presence.
@@ -843,7 +908,8 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
       const fields = tableEngine.listFields(tableId);
       const idRows = rows.map(r => payloadTitlesToIds(r, fields));
       const created = tableEngine.batchInsert(tableId, idRows, { actor: actorName(req) });
-      const items = created.map(r => rowIdsToTitles(tableEngine.readRow(tableId, r.id), fields));
+      const linkResolver = makeLinkResolver();
+      const items = created.map(r => rowIdsToTitles(tableEngine.readRow(tableId, r.id), fields, linkResolver));
       res.status(201).json({ items });
 
       if (isAgentRequest(req)) {
@@ -872,7 +938,8 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
         return { id, data: payloadTitlesToIds(rest, fields) };
       });
       const updated = tableEngine.batchUpdate(tableId, updates, { actor: actorName(req) });
-      const items = updated.map(r => rowIdsToTitles(tableEngine.readRow(tableId, r.id), fields));
+      const linkResolver = makeLinkResolver();
+      const items = updated.map(r => rowIdsToTitles(tableEngine.readRow(tableId, r.id), fields, linkResolver));
       res.json({ items });
 
       if (isAgentRequest(req)) {
@@ -916,7 +983,7 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
       const idData = payloadTitlesToIds(req.body, fields);
       const created = tableEngine.insertRow(tableId, idData, { actor: actorName(req) });
       const typed = tableEngine.readRow(tableId, created.id);
-      res.status(201).json(rowIdsToTitles(typed, fields));
+      res.status(201).json(rowIdsToTitles(typed, fields, makeLinkResolver()));
     } catch (e) {
       if (e.code === 'VALIDATION_ERROR') {
         if (/table not found|row not found/.test(e.message)) return res.status(404).json({ error: 'NOT_FOUND', detail: e.message });
@@ -936,7 +1003,7 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
       const idData = payloadTitlesToIds(req.body, fields);
       tableEngine.updateRow(tableId, rowId, idData, { actor: actorName(req) });
       const typed = tableEngine.readRow(tableId, rowId);
-      res.json(rowIdsToTitles(typed, fields));
+      res.json(rowIdsToTitles(typed, fields, makeLinkResolver()));
     } catch (e) {
       if (e.code === 'VALIDATION_ERROR') {
         if (/table not found|row not found/.test(e.message)) return res.status(404).json({ error: 'NOT_FOUND', detail: e.message });
