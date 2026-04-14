@@ -12,6 +12,7 @@ import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { showError } from '@/lib/utils/error';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { renderField } from '@/lib/i18n/renderField';
+import { handleNotificationClick } from '@/lib/notification-click';
 
 const CONTENT_TYPE_ICONS: Record<string, React.ReactNode> = {
   doc: <FileText className="h-4 w-4" />,
@@ -81,36 +82,11 @@ export function NotificationPanel({ open, onClose, anchorRect }: NotificationPan
 
   const handleClick = useCallback(async (notif: gw.Notification) => {
     try {
-      if (!notif.read) {
-        await gw.markNotificationRead(notif.id);
-        invalidate();
-      }
-      if (notif.type === 'agent_registered') {
-        window.dispatchEvent(new CustomEvent('open-agents-manager'));
-        onClose();
-        return;
-      }
-      if (notif.link) {
-        const linkParams = new URLSearchParams(notif.link.split('?')[1] || '');
-        const targetId = linkParams.get('id');
-        const commentId = linkParams.get('comment_id');
-
-        if (window.location.pathname === '/content' && targetId) {
-          // Already on content page — navigate in-app via custom event
-          window.dispatchEvent(new CustomEvent('notification-navigate', {
-            detail: { targetId, commentId },
-          }));
-        } else if (isMobile) {
-          router.push(notif.link);
-        } else {
-          window.open(notif.link, '_blank');
-        }
-      }
-      onClose();
+      await handleNotificationClick({ notif, router, queryClient, isMobile, onClose });
     } catch (e) {
       showError(t('errors.notificationClickFailed'), e);
     }
-  }, [router, onClose, invalidate, isMobile]);
+  }, [router, queryClient, onClose, isMobile, t]);
 
   if (!open) return null;
 

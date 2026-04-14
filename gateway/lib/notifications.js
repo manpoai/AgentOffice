@@ -69,7 +69,7 @@ export function insertNotification(db, deps, payload) {
     : (bodyRaw != null ? bodyRaw : null);
 
   const id = genId('notif');
-  const now = Math.floor(Date.now() / 1000);
+  const now = Date.now();
 
   db.prepare(`
     INSERT INTO notifications (

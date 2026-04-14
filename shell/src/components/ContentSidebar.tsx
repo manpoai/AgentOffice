@@ -18,6 +18,7 @@ import { formatRelativeTime } from '@/lib/utils/time';
 import { CREATE_CONTENT_ITEMS } from '@/actions/create-content.actions';
 import type { CreatableType } from '@/actions/entity-names';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
+import { handleNotificationClick } from '@/lib/notification-click';
 
 interface ContentSidebarProps {
   /** Whether the sidebar is collapsed (56px) or expanded (232px) */
@@ -165,6 +166,17 @@ export function ContentSidebar({
     };
     window.addEventListener('open-agents-manager', handler);
     return () => window.removeEventListener('open-agents-manager', handler);
+  }, []);
+
+  // Open agents manager when URL has ?agents=1 (from cross-page notification navigation)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('agents') === '1') {
+      setShowAgentsMenu(true);
+      params.delete('agents');
+      const qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    }
   }, []);
 
   // Close message menu when clicking outside
@@ -591,27 +603,14 @@ export function ContentSidebar({
                   {notifications.map(notif => (
                     <button
                       key={notif.id}
-                      onClick={async () => {
-                        if (!notif.read) {
-                          try {
-                            await gw.markNotificationRead(notif.id);
-                            queryClient.invalidateQueries({ queryKey: ['notifications'] });
-                            queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] });
-                          } catch {}
-                        }
-                        if (notif.link) {
-                          const linkParams = new URLSearchParams(notif.link.split('?')[1] || '');
-                          const targetId = linkParams.get('id');
-                          const currentId = new URLSearchParams(window.location.search).get('id');
-                          if (targetId && targetId === currentId) {
-                            // Same document — stay on page, just open comment panel
-                            const commentId = linkParams.get('comment_id');
-                            if (commentId) window.dispatchEvent(new CustomEvent('focus-comment', { detail: { commentId } }));
-                          } else {
-                            window.open(notif.link, '_blank');
-                          }
-                          setShowMessageMenu(false);
-                        }
+                      onClick={() => {
+                        handleNotificationClick({
+                          notif,
+                          router,
+                          queryClient,
+                          isMobile,
+                          onClose: () => setShowMessageMenu(false),
+                        }).catch(() => {});
                       }}
                       className={cn(
                         'w-full flex items-start gap-3 px-4 py-2.5 text-left hover:bg-black/[0.04] transition-colors',

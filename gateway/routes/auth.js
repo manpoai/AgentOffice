@@ -243,6 +243,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
         titleParams: { displayName: display_name },
         bodyKey: 'serverNotifications.agent_registered.body',
         bodyParams: { name },
+        link: '/content?agents=1',
       });
     }
 
@@ -546,19 +547,21 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
 
     // GET /api/agent-skills — return skills package (no auth required, public)
   app.get('/api/agent-skills', (req, res) => {
+    const aoseUrl = getPublicBaseUrl(req);
+    const substitute = (text) => text.replace(/\{AOSE_URL\}/g, aoseUrl);
     const skillsDir = path.join(GATEWAY_DIR, '..', 'mcp-server', 'skills');
     const files = {};
     if (fs.existsSync(skillsDir)) {
       for (const f of fs.readdirSync(skillsDir)) {
         if (f.endsWith('.md')) {
-          files[f] = fs.readFileSync(path.join(skillsDir, f), 'utf8');
+          files[f] = substitute(fs.readFileSync(path.join(skillsDir, f), 'utf8'));
         }
       }
     }
     let onboardingPrompt = '';
     try {
       const promptPath = path.join(GATEWAY_DIR, '..', 'mcp-server', 'onboarding-prompt.md');
-      onboardingPrompt = fs.readFileSync(promptPath, 'utf8');
+      onboardingPrompt = substitute(fs.readFileSync(promptPath, 'utf8'));
       files['onboarding-prompt.md'] = onboardingPrompt;
     } catch {}
     res.json({ skills: files, onboarding_prompt: onboardingPrompt });

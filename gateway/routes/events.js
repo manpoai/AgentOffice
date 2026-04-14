@@ -214,7 +214,7 @@ export default function eventsRoutes(app, { db, authenticateAny, authenticateAge
         return res.status(201).json({ id, created_at });
       }
       const id = genId('notif');
-      const now = Math.floor(Date.now() / 1000);
+      const now = Date.now();
       db.prepare('INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(id, req.actor.id, target_actor_id, type, title, body || null, link || null, now);
       return res.status(201).json({ id, created_at: now });
