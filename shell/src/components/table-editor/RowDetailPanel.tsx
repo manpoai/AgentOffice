@@ -92,10 +92,10 @@ export function RowDetailPanel({
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, onNavigate]);
 
-  // ─── Mobile: Full-screen detail page (rendered inline, replaces table grid) ───
+  // ─── Mobile: Full-screen detail page (fixed overlay covering the viewport) ───
   if (isMobile) {
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-card">
+      <div className="fixed inset-0 z-50 flex flex-col bg-card">
         {/* Header: < back | title | ... more — matches design spec */}
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border shrink-0 bg-card">
           <button onClick={onClose} className="p-1.5 -ml-1 text-foreground/70">

@@ -45,6 +45,7 @@ interface SnapshotPreview {
 }
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { BottomSheet } from '@/components/shared/BottomSheet';
+import { MobileCommentBar } from '@/components/shared/MobileCommentBar';
 import { ContentMenuList } from '@/components/shared/ContentMenuList';
 import { buildActionMap } from '@/actions/types';
 import { tableColumnActions } from '@/actions/table-column.actions';
@@ -4389,18 +4390,23 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
         }}
       />
 
-      {/* Mobile add-row FAB (grid view only) */}
+      {/* Mobile: bottom comment bar + add-row FAB (grid view only, not in detail/history) */}
       {isMobile && !previewSnapshot && expandedRowIdx == null && (() => {
         const vt = views.find(v => v.view_id === activeViewId)?.type || 3;
         if (vt !== 3) return null;
         return (
-          <button
-            onClick={handleAddRow}
-            className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-sidebar-primary text-sidebar-primary-foreground shadow-2xl flex items-center justify-center active:scale-95 transition-transform"
-            title={t('dataTable.addRecord')}
-          >
-            <Plus className="h-6 w-6" />
-          </button>
+          <MobileCommentBar
+            onClick={() => { onShowComments(); setShowHistory(false); }}
+            rightSlot={
+              <button
+                onClick={handleAddRow}
+                className="flex items-center justify-center w-16 h-16 rounded-full bg-card text-foreground shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] border border-border shrink-0"
+                title={t('dataTable.addRecord')}
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            }
+          />
         );
       })()}
 
