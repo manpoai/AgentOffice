@@ -3,7 +3,7 @@
  * via notifications/message (LoggingMessage). Handles reconnect, catchup,
  * and local dedup so the host sees each event exactly once.
  *
- * State file: ~/.agentoffice-mcp/state-<agent_id>.json
+ * State file: ~/.aose-mcp/state-<agent_id>.json
  *   { last_seen_timestamp: <ms> }
  *
  * Push modes (AOSE_PUSH):
@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const STATE_DIR = path.join(os.homedir(), '.agentoffice-mcp');
+const STATE_DIR = path.join(os.homedir(), '.aose-mcp');
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 60_000;
 const DEDUP_CAPACITY = 1000;

@@ -7,7 +7,7 @@ aose is designed to be self-hosted.
 Default local home:
 
 ```text
-~/.agentoffice/
+~/.aose/
 ├── config.json
 ├── data/
 │   ├── gateway.db
@@ -56,12 +56,12 @@ For long-running self-hosted instances, install globally and use background mode
 
 ## Data persistence
 
-Your local data lives under `~/.agentoffice/` unless overridden.
+Your local data lives under `~/.aose/` unless overridden.
 
 Important paths:
-- config: `~/.agentoffice/config.json`
-- database: `~/.agentoffice/data/gateway.db`
-- uploads: `~/.agentoffice/data/uploads/` (overridable via `UPLOADS_DIR`)
+- config: `~/.aose/config.json`
+- database: `~/.aose/data/gateway.db`
+- uploads: `~/.aose/data/uploads/` (overridable via `UPLOADS_DIR`)
 
 ## Backup recommendation
 

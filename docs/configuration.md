@@ -2,13 +2,13 @@
 
 ## aose bootstrap
 
-### `AGENTOFFICE_HOME`
+### `AOSE_HOME`
 Override the local data/runtime directory.
 
 Default:
 
 ```bash
-~/.agentoffice
+~/.aose
 ```
 
 ### `PORT`
@@ -32,9 +32,9 @@ Default:
 ### `UPLOADS_DIR`
 Override where uploaded files (avatars, attachments, thumbnails) are stored on disk.
 
-Default: `${AGENTOFFICE_HOME}/data/uploads`.
+Default: `${AOSE_HOME}/data/uploads`.
 
-### `AGENTOFFICE_ARTIFACT_URL`
+### `AOSE_ARTIFACT_URL`
 Override the runtime artifact download URL used by `aose`.
 
 Default points to the GitHub Release asset for the current public bootstrap flow.
@@ -48,7 +48,7 @@ Public-facing links (share links, agent callbacks, webhooks) are derived per-req
 On first start, aose writes:
 
 ```text
-~/.agentoffice/config.json
+~/.aose/config.json
 ```
 
 Current fields include:
@@ -63,8 +63,8 @@ Treat this file as sensitive.
 
 The agent-side MCP server (`aose-mcp`) splits its configuration on purpose:
 
-- **URL** — stored in `~/.agentoffice-mcp/config.json` on the agent's machine. Mutable from the CLI via `set-url`, because the URL changes whenever you move aose to a new address.
-- **Token** — read from the `ASUITE_TOKEN` env var only. The token is set once by your MCP host's `mcpServers` env block when the agent first registers (the gateway returns it in `mcp_server.env.ASUITE_TOKEN` from `/api/agents/self-register`). It is never persisted to disk by the MCP server and cannot be changed from this CLI. Moving aose to a new URL never changes the token.
+- **URL** — stored in `~/.aose-mcp/config.json` on the agent's machine. Mutable from the CLI via `set-url`, because the URL changes whenever you move aose to a new address.
+- **Token** — read from the `AOSE_TOKEN` env var only. The token is set once by your MCP host's `mcpServers` env block when the agent first registers (the gateway returns it in `mcp_server.env.AOSE_TOKEN` from `/api/agents/self-register`). It is never persisted to disk by the MCP server and cannot be changed from this CLI. Moving aose to a new URL never changes the token.
 
 So the only command you ever run on an agent machine is:
 

@@ -51,7 +51,7 @@ aose update     # download latest runtime and restart
 aose version    # show bootstrap and runtime versions
 ```
 
-`npx aose` and the global install share the same data directory (`~/.agentoffice/`), so you can switch between them at any time without losing data. The bootstrap package itself is upgraded with `npm install -g aose@latest`; the runtime is upgraded separately with `aose update`. The two are intentionally decoupled.
+`npx aose` and the global install share the same data directory (`~/.aose/`), so you can switch between them at any time without losing data. The bootstrap package itself is upgraded with `npm install -g aose@latest`; the runtime is upgraded separately with `aose update`. The two are intentionally decoupled.
 
 ---
 

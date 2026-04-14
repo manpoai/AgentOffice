@@ -51,7 +51,7 @@ aose update     # 下载最新 runtime 并重启
 aose version    # 查看 bootstrap 和 runtime 版本
 ```
 
-`npx aose` 和全局安装版共用同一个数据目录（`~/.agentoffice/`），可以随时来回切换不会丢数据。Bootstrap 本身用 `npm install -g aose@latest` 升级，runtime 用 `aose update` 单独升级，两者刻意解耦。
+`npx aose` 和全局安装版共用同一个数据目录（`~/.aose/`），可以随时来回切换不会丢数据。Bootstrap 本身用 `npm install -g aose@latest` 升级，runtime 用 `aose update` 单独升级，两者刻意解耦。
 
 ---
 

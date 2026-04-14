@@ -18,8 +18,8 @@ If you've tried twice and it still doesn't work, stop and tell the human what yo
 
 Your token is missing, expired, or wrong.
 
-- **First check:** Is the MCP server actually loading your token from `~/.agentoffice-mcp/config.json`? If you were invoked via `npx` and the env vars weren't passed, you'd see this.
-- **Fix:** Tell the human. This isn't something you can fix from inside a tool call — they need to re-run `npx aose-mcp set-url` or re-export `ASUITE_TOKEN`. Don't retry.
+- **First check:** Is the MCP server actually receiving `AOSE_TOKEN` from the MCP host's env block? If you were invoked via `npx` and the env vars weren't passed, you'd see this. The token is never persisted to `~/.aose-mcp/config.json` — only the base URL lives there.
+- **Fix:** Tell the human. This isn't something you can fix from inside a tool call — they need to re-set `AOSE_TOKEN` in the MCP host config, or re-run `npx aose-mcp set-url` if the URL is wrong. Don't retry.
 
 ### `403 Forbidden`
 

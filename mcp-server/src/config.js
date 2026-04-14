@@ -1,7 +1,7 @@
 /**
  * Local config file for aose-mcp.
  *
- * Single source of truth for the gateway URL: ~/.agentoffice-mcp/config.json
+ * Single source of truth for the gateway URL: ~/.aose-mcp/config.json
  * Schema: { base_url: string }
  *
  * IMPORTANT: the token is NOT stored here. The token is set once when the
@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const CONFIG_DIR = path.join(os.homedir(), '.agentoffice-mcp');
+export const CONFIG_DIR = path.join(os.homedir(), '.aose-mcp');
 export const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
 export function readConfig() {

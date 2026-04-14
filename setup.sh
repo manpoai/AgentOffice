@@ -1,9 +1,9 @@
 #!/bin/bash
-# aose (formerly ASuite) — One-Command Setup
+# aose — One-Command Setup
 # Usage: ./setup.sh
 #
 # Starts the gateway (Node + SQLite) and shell (Next.js) on this machine.
-# No Docker, no external database — everything lives under ~/.agentoffice.
+# No Docker, no external database — everything lives under ~/.aose.
 #
 # After v2.0 the suite ships as a pure-Node runtime; this script is a thin
 # wrapper around `node cli.js`. Use it when you want one command that also
@@ -11,8 +11,8 @@
 
 set -e
 
-ASUITE_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$ASUITE_DIR"
+AOSE_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$AOSE_DIR"
 
 echo "╔══════════════════════════════════════╗"
 echo "║          aose Setup           ║"
@@ -43,4 +43,4 @@ fi
 # ─── Hand off to cli.js ─────────────────────────
 echo ""
 echo "[setup] Starting aose runtime..."
-exec node "$ASUITE_DIR/cli.js"
+exec node "$AOSE_DIR/cli.js"

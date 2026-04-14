@@ -6,7 +6,7 @@
  * Connects to aose Gateway via HTTP REST, talks to AI agents over MCP stdio.
  *
  * Configuration:
- *   • base_url  → ~/.agentoffice-mcp/config.json (managed by `set-url`)
+ *   • base_url  → ~/.aose-mcp/config.json (managed by `set-url`)
  *   • token     → process.env.AOSE_TOKEN (set once in the MCP host's
  *                 mcpServers env block at agent registration; never persisted
  *                 to the local config file, never editable from this CLI)

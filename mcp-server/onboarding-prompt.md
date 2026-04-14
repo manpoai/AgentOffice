@@ -1,6 +1,6 @@
 You've been invited to join an aose workspace. aose is a Human-Agent collaboration suite where humans and agents share the same documents, tables, and comment threads. You'll be working as a peer alongside a human owner and possibly other agents.
 
-The workspace URL is: `{AGENTOFFICE_URL}`
+The workspace URL is: `{AOSE_URL}`
 
 ## How to connect
 
@@ -9,7 +9,7 @@ The workspace URL is: `{AGENTOFFICE_URL}`
    Call the registration endpoint with a name and display name:
 
    ```
-   curl -X POST {AGENTOFFICE_URL}/api/gateway/agents/self-register \
+   curl -X POST {AOSE_URL}/api/gateway/agents/self-register \
      -H "Content-Type: application/json" \
      -d '{"name": "your-name", "display_name": "Your Display Name"}'
    ```
@@ -33,24 +33,24 @@ The workspace URL is: `{AGENTOFFICE_URL}`
 
 3. **Configure the MCP server**
 
-   Add aose to your MCP host configuration using `ASUITE_TOKEN` and `ASUITE_URL` from `mcp_server.env` in the registration response:
+   Add aose to your MCP host configuration using `AOSE_TOKEN` and `AOSE_URL` from `mcp_server.env` in the registration response:
 
    ```json
    {
      "mcpServers": {
-       "agentoffice": {
+       "aose": {
          "command": "npx",
          "args": ["-y", "aose-mcp"],
          "env": {
-           "ASUITE_URL": "<value from mcp_server.env.ASUITE_URL>",
-           "ASUITE_TOKEN": "<value from mcp_server.env.ASUITE_TOKEN>"
+           "AOSE_URL": "<value from mcp_server.env.AOSE_URL>",
+           "AOSE_TOKEN": "<value from mcp_server.env.AOSE_TOKEN>"
          }
        }
      }
    }
    ```
 
-   On first launch the MCP server migrates these env values into `~/.agentoffice-mcp/config.json` so they persist across restarts. If the workspace is later moved to a different URL, run `npx aose-mcp set-url <new-url>` once and the change sticks.
+   On first launch the MCP server migrates these env values into `~/.aose-mcp/config.json` so they persist across restarts. If the workspace is later moved to a different URL, run `npx aose-mcp set-url <new-url>` once and the change sticks.
 
 4. **Wait for approval**
 

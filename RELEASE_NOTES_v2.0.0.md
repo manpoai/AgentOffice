@@ -1,19 +1,26 @@
 # v2.0.0 — Rebrand to aose
 
-**This is a major version with breaking changes.** Please read the migration guide before upgrading.
+**This is a major version with breaking changes.** The rebrand is complete — no compatibility shims, no grace period.
 
 ## Highlights
 
 - Renamed from `agentoffice-main` to `aose` (short for **a**gent **o**ffice **s**uit**e**)
 - MCP package renamed from `agentoffice-mcp` to `aose-mcp`
 - Editor naming unified across locales: **Docs / Database / Slides / Flowchart**
-- GitHub repository renamed to `yingcaishen/aose` (old URLs 301-redirect)
+- GitHub repository renamed to `manpoai/AgentOfficeSuite` (old URLs 301-redirect)
 
 ## Breaking Changes
 
 1. **Package renamed**: `agentoffice-main` → `aose`
 2. **Command renamed**: `agentoffice-main` → `aose`
 3. **MCP package renamed**: `agentoffice-mcp` → `aose-mcp`
+4. **Data directory renamed**: `~/.agentoffice/` → `~/.aose/`
+5. **MCP config directory renamed**: `~/.agentoffice-mcp/` → `~/.aose-mcp/`
+6. **Environment variables renamed**:
+   - `AGENTOFFICE_HOME` → `AOSE_HOME`
+   - `AGENTOFFICE_ARTIFACT_URL` → `AOSE_ARTIFACT_URL`
+   - `ASUITE_URL` → `AOSE_URL`
+   - `ASUITE_TOKEN` → `AOSE_TOKEN`
 
 ## Migration Guide
 
@@ -26,11 +33,11 @@ npm uninstall -g agentoffice-mcp
 npm install -g aose
 npm install -g aose-mcp
 
-# Start — data is preserved in ~/.agentoffice/
+# Start
 aose start -d
 ```
 
-For agents with MCP already configured, update the command only:
+For agents with MCP already configured, update both the command and the env vars:
 
 ```json
 {
@@ -38,19 +45,19 @@ For agents with MCP already configured, update the command only:
     "aose": {
       "command": "npx",
       "args": ["-y", "aose-mcp"],
-      "env": { "ASUITE_URL": "...", "ASUITE_TOKEN": "..." }
+      "env": { "AOSE_URL": "...", "AOSE_TOKEN": "..." }
     }
   }
 }
 ```
 
-## What's NOT Changing
+If you have existing data in `~/.agentoffice/` and want to keep it, rename the directory before starting v2.0.0:
 
-- **Data directory**: still `~/.agentoffice/` — no migration, no data loss
-- **MCP config directory**: still `~/.agentoffice-mcp/config.json`
-- **Environment variables**: `ASUITE_URL` / `ASUITE_TOKEN` still work — your agent registrations are preserved
-- **All your docs, databases, slides, flowcharts, and comments** — fully preserved
+```bash
+mv ~/.agentoffice ~/.aose
+mv ~/.agentoffice-mcp ~/.aose-mcp
+```
 
 ## Deprecation of Old Packages
 
-`agentoffice-main` and `agentoffice-mcp` will receive one final release that prints a rename notice on startup, then continue running normally for a 6-month grace period (until 2026-10-13). After that, they stop receiving updates but remain on npm.
+`agentoffice-main` and `agentoffice-mcp` remain on npm as the final v1.x release for historical reference, but will receive no further updates. Install `aose` / `aose-mcp` going forward.

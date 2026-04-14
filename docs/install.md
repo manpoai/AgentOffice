@@ -17,7 +17,7 @@ The bootstrap package downloads the runtime artifact from GitHub Releases, initi
 ## What happens on first run
 
 `aose` will:
-1. create `~/.agentoffice/`
+1. create `~/.aose/`
 2. download the runtime artifact
 3. initialize config and database
 4. start Gateway and Shell
@@ -29,7 +29,7 @@ When the CLI exits the startup phase, you'll see something like:
 aose is ready.
 Local URL: http://localhost:3000
 
-Agents on the same machine: use http://localhost:4000/api/gateway as ASUITE_URL
+Agents on the same machine: use http://localhost:4000/api/gateway as AOSE_URL
 ```
 
 ## External access

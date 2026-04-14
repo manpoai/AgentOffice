@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = process.env.AGENTOFFICE_HOME || path.join(os.homedir(), '.agentoffice');
+const DATA_DIR = process.env.AOSE_HOME || path.join(os.homedir(), '.aose');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const DATA_SUBDIR = path.join(DATA_DIR, 'data');
 const UPLOADS_DIR = path.join(DATA_SUBDIR, 'uploads');

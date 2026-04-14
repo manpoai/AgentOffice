@@ -11,13 +11,13 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
-const HOME_DIR = process.env.AGENTOFFICE_HOME || path.join(os.homedir(), '.agentoffice');
+const HOME_DIR = process.env.AOSE_HOME || path.join(os.homedir(), '.aose');
 const RUNTIME_DIR = path.join(HOME_DIR, 'runtime');
 const LOGS_DIR = path.join(HOME_DIR, 'logs');
 const PID_FILE = path.join(HOME_DIR, 'service.pid');
 const GATEWAY_LOG = path.join(LOGS_DIR, 'gateway.log');
 const SHELL_LOG = path.join(LOGS_DIR, 'shell.log');
-const ARTIFACT_URL = process.env.AGENTOFFICE_ARTIFACT_URL || 'https://github.com/manpoai/AgentOffice/releases/download/v1.0.26/agentoffice-runtime.tar.gz';
+const ARTIFACT_URL = process.env.AOSE_ARTIFACT_URL || 'https://github.com/manpoai/AgentOfficeSuite/releases/download/v2.0.0/aose-runtime.tar.gz';
 
 const BOOTSTRAP_PKG = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
 const BOOTSTRAP_VERSION = BOOTSTRAP_PKG.version || 'unknown';
@@ -82,9 +82,9 @@ async function ensureRuntime() {
   ensureDir(HOME_DIR);
   if (exists(path.join(RUNTIME_DIR, 'cli.js'))) return;
   if (!ARTIFACT_URL) {
-    throw new Error('AGENTOFFICE_ARTIFACT_URL is required for bootstrap package.');
+    throw new Error('AOSE_ARTIFACT_URL is required for bootstrap package.');
   }
-  const archive = path.join(HOME_DIR, 'agentoffice-runtime.tar.gz');
+  const archive = path.join(HOME_DIR, 'aose-runtime.tar.gz');
   console.log('Downloading aose runtime...');
   await download(ARTIFACT_URL, archive);
   ensureDir(RUNTIME_DIR);
@@ -92,7 +92,7 @@ async function ensureRuntime() {
     const p = spawn('tar', ['-xzf', archive, '-C', HOME_DIR], { stdio: 'inherit' });
     p.on('exit', (code) => code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`)));
   });
-  const extracted = path.join(HOME_DIR, 'agentoffice-runtime');
+  const extracted = path.join(HOME_DIR, 'aose-runtime');
   if (exists(extracted)) {
     fs.rmSync(RUNTIME_DIR, { recursive: true, force: true });
     fs.renameSync(extracted, RUNTIME_DIR);
@@ -164,7 +164,7 @@ async function startForeground() {
   const child = spawn('node', [runtimeCli], {
     cwd: RUNTIME_DIR,
     stdio: 'inherit',
-    env: { ...process.env, AGENTOFFICE_HOME: HOME_DIR },
+    env: { ...process.env, AOSE_HOME: HOME_DIR },
   });
   child.on('exit', (code) => process.exit(code || 0));
 }
@@ -189,7 +189,7 @@ async function startBackground() {
     cwd: RUNTIME_DIR,
     detached: true,
     stdio: ['ignore', out, err],
-    env: { ...process.env, AGENTOFFICE_HOME: HOME_DIR },
+    env: { ...process.env, AOSE_HOME: HOME_DIR },
   });
   child.unref();
   fs.writeFileSync(PID_FILE, String(child.pid));

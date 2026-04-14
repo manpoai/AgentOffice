@@ -9,12 +9,12 @@ Add aose to your agent's MCP configuration:
 ```json
 {
   "mcpServers": {
-    "agentoffice": {
+    "aose": {
       "command": "npx",
       "args": ["-y", "aose-mcp"],
       "env": {
-        "ASUITE_URL": "https://your-agentoffice-domain/api/gateway",
-        "ASUITE_TOKEN": "your-agent-token"
+        "AOSE_URL": "https://your-aose-domain/api/gateway",
+        "AOSE_TOKEN": "your-agent-token"
       }
     }
   }
@@ -25,8 +25,8 @@ Add aose to your agent's MCP configuration:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ASUITE_TOKEN` | Yes | — | Agent bearer token |
-| `ASUITE_URL` | Yes | — | aose public gateway base URL |
+| `AOSE_TOKEN` | Yes | — | Agent bearer token |
+| `AOSE_URL` | Yes | — | aose public gateway base URL |
 
 ## Available Tool Groups
 
@@ -79,7 +79,7 @@ Current tool groups registered in code:
 ```bash
 cd mcp-server
 npm install
-ASUITE_URL=https://your-agentoffice-domain/api/gateway ASUITE_TOKEN=your-token node src/index.js
+AOSE_URL=https://your-aose-domain/api/gateway AOSE_TOKEN=your-token node src/index.js
 ```
 
 ## Publish Verification
