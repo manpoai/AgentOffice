@@ -254,7 +254,7 @@ md.core.ruler.after('text_join', 'html_diagram_embed', (state) => {
         const dTok = new state.Token('diagram_embed', 'div', 0);
         dTok.attrs = [
           ['diagramId', idMatch[1]],
-          ['title', titleMatch ? titleMatch[1] : 'Untitled Diagram'],
+          ['title', titleMatch ? titleMatch[1] : 'Untitled Flowchart'],
         ];
         dTok.block = true;
         newTokens.push(dTok);

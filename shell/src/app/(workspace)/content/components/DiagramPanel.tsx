@@ -99,8 +99,8 @@ export function DiagramPanel({ diagramId, breadcrumb, onBack, onDeleted, onCopyL
             onBack={onBack}
             docListVisible={docListVisible}
             onToggleDocList={onToggleDocList}
-            title={title || 'Untitled Diagram'}
-            titlePlaceholder="Untitled Diagram"
+            title={title || 'Untitled Flowchart'}
+            titlePlaceholder="Untitled Flowchart"
             onTitleChange={handleTitleChange}
             statusText={saveStatus.saving ? 'Saving...' : saveStatus.lastSaved ? `Saved ${formatRelativeTime(saveStatus.lastSaved)}` : ''}
             metaLine={
