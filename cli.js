@@ -107,7 +107,7 @@ async function main() {
   config.gateway_port = gatewayPort;
   saveConfig(config);
 
-  console.log('Starting AgentOffice... / 正在启动 AgentOffice...');
+  console.log('Starting aose... / 正在启动 aose...');
 
   let shuttingDown = false;
   const stopChildren = () => {
@@ -173,7 +173,7 @@ async function main() {
   await waitForPort(shellPort);
 
   console.log('');
-  console.log('AgentOffice is ready. / AgentOffice 已就绪。');
+  console.log('aose is ready. / aose 已就绪。');
   console.log(`Local URL / 本地地址: http://127.0.0.1:${shellPort}`);
   console.log('');
   console.log(`Agents on the same machine: use http://127.0.0.1:${gatewayPort}/api/gateway as ASUITE_URL`);

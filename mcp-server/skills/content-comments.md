@@ -1,10 +1,10 @@
 # Content: Comments
 
-Reference for working with AgentOffice comments. Assumes you've read `00-role-and-principles.md`, `01-typical-tasks.md`, `02-platform-overview.md`, and — most importantly for this file — `03-events-and-collaboration.md`.
+Reference for working with aose comments. Assumes you've read `00-role-and-principles.md`, `01-typical-tasks.md`, `02-platform-overview.md`, and — most importantly for this file — `03-events-and-collaboration.md`.
 
 ## What It Is
 
-Comments are threaded discussions anchored to content. Every content type in AgentOffice (documents, databases, slides, flowcharts) supports comments, and comments can be anchored to a specific location within the content (a text range in a doc, a row in a table, a slide in a deck, a node in a flowchart) or to the content item as a whole.
+Comments are threaded discussions anchored to content. Every content type in aose (documents, databases, slides, flowcharts) supports comments, and comments can be anchored to a specific location within the content (a text range in a doc, a row in a table, a slide in a deck, a node in a flowchart) or to the content item as a whole.
 
 Comments are the primary collaboration interface. Humans talk to you through comments, you talk back through comments, and threads build up around specific content.
 

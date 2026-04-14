@@ -1,6 +1,6 @@
 # Content: Documents
 
-Reference for working with AgentOffice documents. Assumes you've read `00-role-and-principles.md`, `01-typical-tasks.md`, `02-platform-overview.md`, and `03-events-and-collaboration.md`.
+Reference for working with aose documents. Assumes you've read `00-role-and-principles.md`, `01-typical-tasks.md`, `02-platform-overview.md`, and `03-events-and-collaboration.md`.
 
 ## What It Is
 
@@ -124,7 +124,7 @@ Four types, for things that need to stand out:
 Use sparingly. Decorative callouts devalue real ones.
 
 ### Content links
-Link to other AgentOffice content items from within a doc. Creates a clickable reference to another doc, table, presentation, or diagram.
+Link to other aose content items from within a doc. Creates a clickable reference to another doc, table, presentation, or diagram.
 
 ### Embeds
 60+ services including YouTube, Figma, GitHub Gist, Google Docs, Miro, CodePen. Paste the URL directly in the doc.
@@ -135,7 +135,7 @@ Link to other AgentOffice content items from within a doc. Creates a clickable r
 - **Simultaneous edits.** A human may edit the doc between your `read_doc` and your `update_doc`. If the new content is stale, your `update_doc` will overwrite. For safe surgical edits, prefer anchor-based updates from recent event payloads.
 - **Mermaid syntax errors.** If you embed a mermaid block with bad syntax, the doc still saves but the diagram won't render. Validate complex mermaid before embedding.
 - **Markdown tables in docs that get big.** Markdown tables with more than ~20 rows become painful to read. Convert to a database at that point.
-- **Images referencing local files.** Image URLs must be publicly accessible or stored in AgentOffice. Don't use `file://` or local paths.
+- **Images referencing local files.** Image URLs must be publicly accessible or stored in aose. Don't use `file://` or local paths.
 
 ## Anti-Patterns
 

@@ -53,7 +53,7 @@ export default function LoginPage() {
         padding: '40px',
       }}>
         <div style={{ textAlign: 'center', margin: '0 0 24px 0' }}>
-          <img src="/logo.png" alt="AgentOffice" style={{ height: '40px', margin: '0 auto' }} />
+          <img src="/logo.png" alt="aose" style={{ height: '40px', margin: '0 auto' }} />
         </div>
 
         {error && (

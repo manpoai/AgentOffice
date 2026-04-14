@@ -692,7 +692,7 @@ export function ContentSidebar({
         {!collapsed ? (
           <div className="flex items-center">
             {/* @suite logo — Figma: 56×24 image, 24px from left/top/bottom */}
-            <img src="/logo.png" alt="AgentOffice" className="h-6 object-contain object-left" />
+            <img src="/logo.png" alt="aose" className="h-6 object-contain object-left" />
             {/* Help + Collapse pushed to right, 12px from right edge */}
             <div className="ml-auto flex items-center">
               <button

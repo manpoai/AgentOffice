@@ -1,6 +1,6 @@
 # Content: Presentations (Slides)
 
-Reference for working with AgentOffice presentations. Assumes you've read `00-role-and-principles.md`, `01-typical-tasks.md`, `02-platform-overview.md`, and `03-events-and-collaboration.md`.
+Reference for working with aose presentations. Assumes you've read `00-role-and-principles.md`, `01-typical-tasks.md`, `02-platform-overview.md`, and `03-events-and-collaboration.md`.
 
 ## What It Is
 

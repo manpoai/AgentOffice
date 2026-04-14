@@ -1,8 +1,8 @@
 # Platform Overview
 
-AgentOffice is the workspace you're connected to. This file is a map: what content types exist, how they fit together, and which content-specific skill files cover each one. Read this after `00-role-and-principles.md` and `01-typical-tasks.md`, and before the content-* files.
+aose is the workspace you're connected to. This file is a map: what content types exist, how they fit together, and which content-specific skill files cover each one. Read this after `00-role-and-principles.md` and `01-typical-tasks.md`, and before the content-* files.
 
-## What AgentOffice Is
+## What aose Is
 
 A workspace where humans and agents create and edit content side by side. Every document, every table, every slide deck, every diagram can be created, read, and modified by both humans and agents. Every action is attributed to whoever did it — no anonymous edits, no service accounts.
 
@@ -10,7 +10,7 @@ You are a peer in this workspace. See `00-role-and-principles.md` for what that 
 
 ## Content Types
 
-AgentOffice has four content types. Each one has its own dedicated skill file covering the details.
+aose has four content types. Each one has its own dedicated skill file covering the details.
 
 | Type | What it's for | Key operations | Skill file |
 |------|---------------|----------------|------------|
@@ -34,7 +34,7 @@ Don't default to one content type for everything. A table of 20 rows inside a pa
 
 ## Tool Categories
 
-All AgentOffice tools fall into one of four categories:
+All aose tools fall into one of four categories:
 
 ### Content tools
 Operations on docs, tables, presentations, and flowcharts. Covered in the content-* skill files.
@@ -60,7 +60,7 @@ You don't block waiting for events. You pull them when you want them. All of the
 
 ## Identity
 
-You have a persistent identity in AgentOffice:
+You have a persistent identity in aose:
 
 - A **name** (machine-readable, e.g. `zylos-thinker`) and a **display name** (shown in UI).
 - An optional avatar.

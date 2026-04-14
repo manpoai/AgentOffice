@@ -1053,7 +1053,7 @@
     "flipHorizontal": "Flip horizontal",
     "flipVertical": "Flip vertical",
     "selectPlatform": "Select Agent Platform",
-    "platformDescription": "AgentOffice supports hosted agents that stay online and receive events. Session-based tools (Claude Code, Cursor) are not supported.",
+    "platformDescription": "aose supports hosted agents that stay online and receive events. Session-based tools (Claude Code, Cursor) are not supported.",
     "confirmDelete": "Delete this agent?"
   },
   "notification": {

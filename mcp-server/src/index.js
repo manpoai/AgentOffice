@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * AgentOffice MCP Server
+ * aose MCP Server
  *
- * Exposes AgentOffice workspace operations (IM, Docs, Tasks, Data) as MCP tools.
- * Connects to AgentOffice Gateway via HTTP REST, talks to AI agents over MCP stdio.
+ * Exposes aose workspace operations (IM, Docs, Tasks, Data) as MCP tools.
+ * Connects to aose Gateway via HTTP REST, talks to AI agents over MCP stdio.
  *
  * Configuration:
  *   • base_url  → ~/.agentoffice-mcp/config.json (managed by `set-url`)
@@ -14,16 +14,16 @@
  * The token is intentionally not stored on disk. The agent receives it once
  * from /api/agents/self-register and the MCP host writes it into the env
  * block. Only the URL is mutable from the CLI, because the URL is the only
- * thing that changes when the user moves AgentOffice to a new address.
+ * thing that changes when the user moves aose to a new address.
  *
  * Environment variable ASUITE_URL is honored as a one-time migration source —
  * when present without a config file, it is written to the file on first run.
  *
  * Subcommands:
- *   agentoffice-mcp                — start the MCP stdio server (default)
- *   agentoffice-mcp set-url <url>  — write base_url to config and exit
- *   agentoffice-mcp show-config    — print effective config (token masked)
- *   agentoffice-mcp --help         — show usage
+ *   aose-mcp                — start the MCP stdio server (default)
+ *   aose-mcp set-url <url>  — write base_url to config and exit
+ *   aose-mcp show-config    — print effective config (token masked)
+ *   aose-mcp --help         — show usage
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -46,24 +46,24 @@ function maskToken(t) {
 }
 
 function printHelp() {
-  console.log(`agentoffice-mcp — AgentOffice MCP server
+  console.log(`aose-mcp — aose MCP server
 
 Usage:
-  agentoffice-mcp                  Start the MCP stdio server (default)
-  agentoffice-mcp set-url <url>    Set base_url in ${CONFIG_PATH}
-  agentoffice-mcp show-config      Print effective config (token masked)
-  agentoffice-mcp --help, -h       Show this help
+  aose-mcp                  Start the MCP stdio server (default)
+  aose-mcp set-url <url>    Set base_url in ${CONFIG_PATH}
+  aose-mcp show-config      Print effective config (token masked)
+  aose-mcp --help, -h       Show this help
 
-The base_url is the AgentOffice gateway address. For agents running on the
-same machine as AgentOffice, this is typically:
+The base_url is the aose gateway address. For agents running on the
+same machine as aose, this is typically:
   http://localhost:4000/api/gateway
 
-For agents on a different machine, use the URL you exposed AgentOffice on
+For agents on a different machine, use the URL you exposed aose on
 (your tunnel hostname, custom domain, etc.).
 
 The agent's token is set by your MCP host as the ASUITE_TOKEN env var when
 the agent first registers. It is not stored in this config file and cannot
-be changed from this CLI — moving AgentOffice to a new URL never changes
+be changed from this CLI — moving aose to a new URL never changes
 the token, only the URL.
 `);
 }

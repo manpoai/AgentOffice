@@ -1,5 +1,5 @@
 /**
- * Local config file for agentoffice-mcp.
+ * Local config file for aose-mcp.
  *
  * Single source of truth for the gateway URL: ~/.agentoffice-mcp/config.json
  * Schema: { base_url: string }
@@ -64,10 +64,10 @@ export function loadEffectiveConfig() {
 
   if (!baseUrl || !token) {
     const missing = [];
-    if (!baseUrl) missing.push('ASUITE_URL (or run `agentoffice-mcp set-url <url>`)');
+    if (!baseUrl) missing.push('ASUITE_URL (or run `aose-mcp set-url <url>`)');
     if (!token) missing.push('ASUITE_TOKEN env var (set in your MCP host\'s mcpServers env block)');
     const err = new Error(
-      'AgentOffice MCP is not configured. Missing:\n' +
+      'aose MCP is not configured. Missing:\n' +
       missing.map((m) => `  • ${m}`).join('\n') + '\n' +
       `Config file location: ${CONFIG_PATH}`
     );

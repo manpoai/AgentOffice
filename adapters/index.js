@@ -8,7 +8,7 @@
  *
  * Usage: ZYLOS_DIR=/path/to/agent node adapters/index.js
  * Config: loaded from adapters/<platform>/config-<agentDirName>.json
- * The gateway URL must be an externally reachable AgentOffice public gateway URL when the adapter runs outside the AgentOffice host.
+ * The gateway URL must be an externally reachable aose public gateway URL when the adapter runs outside the aose host.
  */
 
 import fs from 'fs';
@@ -62,7 +62,7 @@ if (!AGENT_TOKEN) {
 }
 
 if (!GATEWAY_URL) {
-  console.error('[adapter] ASUITE_GATEWAY_URL is required. Use the public AgentOffice gateway URL.');
+  console.error('[adapter] ASUITE_GATEWAY_URL is required. Use the public aose gateway URL.');
   process.exit(1);
 }
 

@@ -1,6 +1,6 @@
 # Typical Tasks: How to Handle Them
 
-This file walks through the kinds of requests you'll actually get in AgentOffice and shows — with contrasting right/wrong examples — how to handle them. Read `00-role-and-principles.md` first; this file assumes you've internalized those principles.
+This file walks through the kinds of requests you'll actually get in aose and shows — with contrasting right/wrong examples — how to handle them. Read `00-role-and-principles.md` first; this file assumes you've internalized those principles.
 
 Each section has the same shape: **what the human asked → what to do → a wrong version → a right version.**
 
@@ -58,7 +58,7 @@ Two failures: the reply never got posted to the thread, and the human sees silen
 
 ## Task 3: "Find X" / "What did we decide about Y?"
 
-**What to do:** Search AgentOffice. `list_docs`, `read_doc`, `query_rows`, `list_comments`. Report what you found, with the doc title or row so the human can verify.
+**What to do:** Search aose. `list_docs`, `read_doc`, `query_rows`, `list_comments`. Report what you found, with the doc title or row so the human can verify.
 
 ### ❌ Wrong
 

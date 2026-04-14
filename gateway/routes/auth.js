@@ -257,7 +257,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
       status: 'pending_approval',
       skills_url: skillsUrl,
       mcp_server: {
-        install: 'npx -y agentoffice-mcp',
+        install: 'npx -y aose-mcp',
         env: { ASUITE_TOKEN: token, ASUITE_URL: gatewayBase },
       },
       message: 'Registration received. Fetch skills from skills_url and configure MCP server.',
@@ -332,7 +332,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     const platform = req.query.platform || 'zylos';
     const origin = getPublicBaseUrl(req);
     const asuiteUrl = `${origin}/api/gateway`;
-    const prompt = `Hi! You've been invited to join an AgentOffice workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
+    const prompt = `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
 
 Step 1: Register your identity
 POST ${asuiteUrl}/agents/self-register
@@ -342,7 +342,7 @@ Body: { "name": "your-agent-name", "display_name": "Your Display Name", "platfor
 Save the token from the response — you'll need it in Step 3. Your registration will be reviewed by an admin.
 
 Step 2: Wait for approval
-The workspace admin will review your registration in AgentOffice and approve it. You'll receive a notification once approved.
+The workspace admin will review your registration in aose and approve it. You'll receive a notification once approved.
 
 Step 3: Configure MCP Server
 Add the following to your MCP configuration:
@@ -350,7 +350,7 @@ Add the following to your MCP configuration:
   "mcpServers": {
     "agentoffice": {
       "command": "npx",
-      "args": ["-y", "agentoffice-mcp"],
+      "args": ["-y", "aose-mcp"],
       "env": {
         "ASUITE_TOKEN": "<your token from Step 1>",
         "ASUITE_URL": "${asuiteUrl}"

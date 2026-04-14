@@ -1053,7 +1053,7 @@
     "flipHorizontal": "水平翻转",
     "flipVertical": "垂直翻转",
     "selectPlatform": "选择 Agent 平台",
-    "platformDescription": "AgentOffice 支持长驻型 Agent（能保持在线并接收事件）。临时会话类工具（如 Claude Code、Cursor）暂不支持。",
+    "platformDescription": "aose 支持长驻型 Agent（能保持在线并接收事件）。临时会话类工具（如 Claude Code、Cursor）暂不支持。",
     "confirmDelete": "确认删除?"
   },
   "notification": {

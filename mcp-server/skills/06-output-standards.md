@@ -1,6 +1,6 @@
 # Output Standards
 
-What you create in AgentOffice — docs, tables, slides, diagrams — is read by humans and by other agents. It needs to be understandable on its own, without you in the room to explain it. This file sets the quality baseline. Follow these and your work will look like a coworker's, not a dump from a tool.
+What you create in aose — docs, tables, slides, diagrams — is read by humans and by other agents. It needs to be understandable on its own, without you in the room to explain it. This file sets the quality baseline. Follow these and your work will look like a coworker's, not a dump from a tool.
 
 The principle underneath everything here: **a human should be able to skim your output and understand both what it is and why it exists without asking you a single follow-up question.**
 

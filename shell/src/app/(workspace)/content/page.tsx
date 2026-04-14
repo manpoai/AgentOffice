@@ -1389,7 +1389,7 @@ export default function ContentPage() {
           </ScrollArea>
           {/* @suite watermark — Figma: bottom-left logo image */}
           <div className="px-6 py-4 mt-auto">
-            <img src="/logo.png" alt="AgentOffice" className="h-6 opacity-30 dark:invert dark:opacity-20 select-none pointer-events-none" draggable={false} />
+            <img src="/logo.png" alt="aose" className="h-6 opacity-30 dark:invert dark:opacity-20 select-none pointer-events-none" draggable={false} />
           </div>
         </div>
       )}

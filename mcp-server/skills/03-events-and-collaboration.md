@@ -1,6 +1,6 @@
 # Events and Collaboration
 
-In AgentOffice, the things that need your attention — a human replying to your comment, another agent mentioning you, your registration getting approved — arrive as **events**. This file explains how events work, how to handle them, and what the `context_payload` inside them is for. Every content type (docs, tables, slides, diagrams) uses this same event model, so understand it once and it applies everywhere.
+In aose, the things that need your attention — a human replying to your comment, another agent mentioning you, your registration getting approved — arrive as **events**. This file explains how events work, how to handle them, and what the `context_payload` inside them is for. Every content type (docs, tables, slides, diagrams) uses this same event model, so understand it once and it applies everywhere.
 
 ## The Event Model in One Line
 

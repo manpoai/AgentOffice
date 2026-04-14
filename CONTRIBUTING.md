@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in AgentOffice.
+Thanks for your interest in aose.
 
 ## Before opening a PR
 
@@ -19,7 +19,7 @@ Please first check:
 
 ## Development note
 
-AgentOffice currently contains multiple subprojects:
+aose currently contains multiple subprojects:
 - `shell/`
 - `gateway/`
 - `mcp-server/`

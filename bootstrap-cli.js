@@ -29,7 +29,7 @@ function assertSupportedNode() {
   const major = Number(process.versions.node.split('.')[0] || 0);
   if (!Number.isFinite(major) || major < 20 || major >= 25) {
     console.error(`Unsupported Node.js version: ${process.version}`);
-    console.error('AgentOffice currently supports Node.js 20, 22, or 24 LTS.');
+    console.error('aose currently supports Node.js 20, 22, or 24 LTS.');
     process.exit(1);
   }
 }
@@ -73,7 +73,7 @@ async function ensureGatewayDeps() {
   const gatewayDir = path.join(RUNTIME_DIR, 'gateway');
   const marker = path.join(gatewayDir, 'node_modules', '.installed');
   if (exists(marker)) return;
-  console.log('Installing AgentOffice gateway dependencies...');
+  console.log('Installing aose gateway dependencies...');
   await run('npm', ['install', '--omit=dev'], gatewayDir);
   fs.writeFileSync(marker, new Date().toISOString());
 }
@@ -85,7 +85,7 @@ async function ensureRuntime() {
     throw new Error('AGENTOFFICE_ARTIFACT_URL is required for bootstrap package.');
   }
   const archive = path.join(HOME_DIR, 'agentoffice-runtime.tar.gz');
-  console.log('Downloading AgentOffice runtime...');
+  console.log('Downloading aose runtime...');
   await download(ARTIFACT_URL, archive);
   ensureDir(RUNTIME_DIR);
   await new Promise((resolve, reject) => {
@@ -173,7 +173,7 @@ async function startBackground() {
   assertSupportedNode();
   const existing = readPidFile();
   if (existing && isAlive(existing)) {
-    console.error(`AgentOffice is already running (pid ${existing}). Use \`stop\` first or \`restart\`.`);
+    console.error(`aose is already running (pid ${existing}). Use \`stop\` first or \`restart\`.`);
     process.exit(1);
   }
   if (existing) clearStalePid();
@@ -193,15 +193,15 @@ async function startBackground() {
   });
   child.unref();
   fs.writeFileSync(PID_FILE, String(child.pid));
-  console.log(`AgentOffice started in background (pid ${child.pid}).`);
+  console.log(`aose started in background (pid ${child.pid}).`);
   console.log(`Logs: ${GATEWAY_LOG}`);
-  console.log(`Run \`agentoffice-main status\` to check.`);
+  console.log(`Run \`aose status\` to check.`);
 }
 
 async function stopService() {
   const pid = readPidFile();
   if (!pid) {
-    console.log('AgentOffice is not running (no pid file).');
+    console.log('aose is not running (no pid file).');
     return;
   }
   if (!isAlive(pid)) {
@@ -209,7 +209,7 @@ async function stopService() {
     fs.unlinkSync(PID_FILE);
     return;
   }
-  console.log(`Stopping AgentOffice (pid ${pid})...`);
+  console.log(`Stopping aose (pid ${pid})...`);
   try { process.kill(pid, 'SIGTERM'); } catch {}
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -222,14 +222,14 @@ async function stopService() {
     await new Promise((r) => setTimeout(r, 500));
   }
   if (exists(PID_FILE)) fs.unlinkSync(PID_FILE);
-  console.log('AgentOffice stopped.');
+  console.log('aose stopped.');
 }
 
 async function restartService() {
   const pid = readPidFile();
   if (!pid) {
-    console.error('AgentOffice is not running in background mode. `restart` only supports background mode.');
-    console.error('Use `agentoffice-main start -d` to start in background.');
+    console.error('aose is not running in background mode. `restart` only supports background mode.');
+    console.error('Use `aose start -d` to start in background.');
     process.exit(1);
   }
   await stopService();
@@ -239,7 +239,7 @@ async function restartService() {
 async function statusService() {
   const pid = readPidFile();
   const alive = isAlive(pid);
-  console.log('AgentOffice Service');
+  console.log('aose Service');
   console.log(`  Status:    ${alive ? 'running' : 'stopped'}`);
   if (alive) console.log(`  PID:       ${pid}`);
   console.log(`  Bootstrap: ${BOOTSTRAP_VERSION}`);
@@ -277,12 +277,12 @@ function versionCommand() {
   const rtVer = readRuntimeVersion();
   console.log(`Runtime:   ${rtVer || '(not installed)'}`);
   if (rtVer && rtVer !== BOOTSTRAP_VERSION) {
-    console.log(`Note: bootstrap and runtime versions differ. Run \`agentoffice-main update\` to sync.`);
+    console.log(`Note: bootstrap and runtime versions differ. Run \`aose update\` to sync.`);
   }
 }
 
 async function updateCommand() {
-  console.log('AgentOffice update');
+  console.log('aose update');
   console.log(`  Current runtime: ${readRuntimeVersion() || '(none)'}`);
   console.log(`  Source:          ${ARTIFACT_URL}`);
   if (!process.argv.includes('--yes') && !process.argv.includes('-y')) {
@@ -338,26 +338,26 @@ async function updateCommand() {
     if (wasRunning) {
       try { await startBackground(); } catch {}
     }
-    console.error('RESTORED FROM BACKUP. Please report this at https://github.com/manpoai/AgentOfficeSuite/issues');
+    console.error('RESTORED FROM BACKUP. Please report this at https://github.com/yingcaishen/aose/issues');
     process.exit(1);
   }
 }
 
 function helpCommand() {
-  console.log(`AgentOffice ${BOOTSTRAP_VERSION}
+  console.log(`aose ${BOOTSTRAP_VERSION}
 
 Usage:
-  agentoffice-main                  Start in foreground (same as \`start\`)
-  agentoffice-main start            Start in foreground
-  agentoffice-main start -d         Start in background (writes ${PID_FILE})
-  agentoffice-main stop             Stop the background service
-  agentoffice-main restart          Restart the background service
-  agentoffice-main status           Show service status, version, health
-  agentoffice-main logs             Show last 200 lines of gateway log
-  agentoffice-main logs -f          Tail gateway log (Ctrl+C to exit)
-  agentoffice-main version          Show bootstrap and runtime versions
-  agentoffice-main update [-y]      Download latest runtime and restart
-  agentoffice-main help             Show this help
+  aose                  Start in foreground (same as \`start\`)
+  aose start            Start in foreground
+  aose start -d         Start in background (writes ${PID_FILE})
+  aose stop             Stop the background service
+  aose restart          Restart the background service
+  aose status           Show service status, version, health
+  aose logs             Show last 200 lines of gateway log
+  aose logs -f          Tail gateway log (Ctrl+C to exit)
+  aose version          Show bootstrap and runtime versions
+  aose update [-y]      Download latest runtime and restart
+  aose help             Show this help
 
 Data directory: ${HOME_DIR}
 `);

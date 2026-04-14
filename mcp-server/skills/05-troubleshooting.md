@@ -19,7 +19,7 @@ If you've tried twice and it still doesn't work, stop and tell the human what yo
 Your token is missing, expired, or wrong.
 
 - **First check:** Is the MCP server actually loading your token from `~/.agentoffice-mcp/config.json`? If you were invoked via `npx` and the env vars weren't passed, you'd see this.
-- **Fix:** Tell the human. This isn't something you can fix from inside a tool call — they need to re-run `npx agentoffice-mcp set-url` or re-export `ASUITE_TOKEN`. Don't retry.
+- **Fix:** Tell the human. This isn't something you can fix from inside a tool call — they need to re-run `npx aose-mcp set-url` or re-export `ASUITE_TOKEN`. Don't retry.
 
 ### `403 Forbidden`
 
@@ -44,7 +44,7 @@ The ID you're using doesn't point to anything.
 
 Symptom: error like "value for column X must be a Number" or "invalid email format for column Y".
 
-- **Cause:** You sent the wrong type. AgentOffice database columns are strongly typed. Sending `"123"` to a `Number` column or an invalid email to an `Email` column fails.
+- **Cause:** You sent the wrong type. aose database columns are strongly typed. Sending `"123"` to a `Number` column or an invalid email to an `Email` column fails.
 - **Fix:** Call `describe_table` on this table (once) to see the column types. Coerce your values correctly. `describe_table` results are worth remembering for the rest of the session so you don't need to call it again.
 
 ### `query_rows` returns an empty array unexpectedly
@@ -109,7 +109,7 @@ Symptom: the update didn't apply, or you get a "anchor not found" error.
 
 These aren't things you can fix from inside a tool call — they're environmental:
 
-- **"MCP server not responding"** — The MCP host process died or can't reach the gateway. Tell the human, suggest they check `npx agentoffice-mcp` is running, or restart the MCP host.
+- **"MCP server not responding"** — The MCP host process died or can't reach the gateway. Tell the human, suggest they check `npx aose-mcp` is running, or restart the MCP host.
 - **Intermittent tool timeouts** — The gateway might be slow. One retry is fine. If the second attempt also times out, stop retrying and tell the human.
 
 ## When You Really Don't Know What's Wrong

@@ -1,6 +1,6 @@
 # Agent Lifecycle
 
-This file is about the boring but critical stuff: how to start up cleanly, how to come back after a restart, how to not lose track of work when you get interrupted. Agents in AgentOffice are long-lived peers — they get restarted, they get disconnected, they pick up tasks mid-stream. Handle transitions gracefully and you'll look like a reliable coworker. Handle them badly and you'll look like a service that keeps dropping things.
+This file is about the boring but critical stuff: how to start up cleanly, how to come back after a restart, how to not lose track of work when you get interrupted. Agents in aose are long-lived peers — they get restarted, they get disconnected, they pick up tasks mid-stream. Handle transitions gracefully and you'll look like a reliable coworker. Handle them badly and you'll look like a service that keeps dropping things.
 
 ## First Connection Ever (Fresh Registration)
 
@@ -58,7 +58,7 @@ Your `agent_id` and token are stable across restarts. You are the **same agent**
 
 ## What Not to Do on Lifecycle Events
 
-- **Don't re-introduce yourself on every connection.** "Hi, I'm [name], an AI agent working in AgentOffice..." is noise. The human knows who you are. Just start working.
+- **Don't re-introduce yourself on every connection.** "Hi, I'm [name], an AI agent working in aose..." is noise. The human knows who you are. Just start working.
 - **Don't run a status self-check every turn.** `whoami` once per session is enough, often once ever.
 - **Don't dump the full catchup log at the human.** Summarize, then work.
 - **Don't treat a restart as a reason to redo old work.** If a task was finished before the restart, it's still finished.

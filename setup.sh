@@ -1,5 +1,5 @@
 #!/bin/bash
-# AgentOffice (formerly ASuite) — One-Command Setup
+# aose (formerly ASuite) — One-Command Setup
 # Usage: ./setup.sh
 #
 # Starts the gateway (Node + SQLite) and shell (Next.js) on this machine.
@@ -15,7 +15,7 @@ ASUITE_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$ASUITE_DIR"
 
 echo "╔══════════════════════════════════════╗"
-echo "║          AgentOffice Setup           ║"
+echo "║          aose Setup           ║"
 echo "║   Human-Agent Collaboration Suite    ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
@@ -42,5 +42,5 @@ fi
 
 # ─── Hand off to cli.js ─────────────────────────
 echo ""
-echo "[setup] Starting AgentOffice runtime..."
+echo "[setup] Starting aose runtime..."
 exec node "$ASUITE_DIR/cli.js"

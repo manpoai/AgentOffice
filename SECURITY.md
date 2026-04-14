@@ -1,6 +1,6 @@
 # Security Policy
 
-If you believe you found a security issue in AgentOffice, please do not open a public issue with exploit details.
+If you believe you found a security issue in aose, please do not open a public issue with exploit details.
 
 ## Please include
 
