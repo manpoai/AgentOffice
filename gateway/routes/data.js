@@ -500,7 +500,7 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
     const view_type = (typeof type === 'string' && VIEW_TYPES_VALID.has(type)) ? type : 'grid';
     const options = {};
     if (view_type === 'kanban' && req.body.fk_grp_col_id) options.fk_grp_col_id = req.body.fk_grp_col_id;
-    if (view_type === 'gallery' && req.body.fk_cover_image_col_id) options.fk_cover_image_col_id = req.body.fk_cover_image_col_id;
+    if ((view_type === 'kanban' || view_type === 'gallery') && req.body.fk_cover_image_col_id) options.fk_cover_image_col_id = req.body.fk_cover_image_col_id;
     try {
       const v = tableEngine.view.create({
         table_id: req.params.table_id,
@@ -523,6 +523,7 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
       if (!v) return res.status(404).json({ error: 'NOT_FOUND' });
       const opts = { ...(v.options || {}) };
       if (req.body.fk_grp_col_id !== undefined) opts.fk_grp_col_id = req.body.fk_grp_col_id || null;
+      if (req.body.fk_cover_image_col_id !== undefined) opts.fk_cover_image_col_id = req.body.fk_cover_image_col_id || null;
       tableEngine.view.update(req.params.view_id, { options: opts });
       res.json({ updated: true });
     } catch (e) {

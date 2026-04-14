@@ -2446,9 +2446,15 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                             className="w-full bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none"
                           >
                             <option value="">{t('dataTable.none')}</option>
-                            {displayCols.filter(c => c.type === 'Attachment').map(c => (
-                              <option key={c.column_id} value={c.column_id}>{c.title}</option>
-                            ))}
+                            {(() => {
+                              const atts = displayCols.filter(c => c.type === 'Attachment');
+                              const titleCount = new Map<string, number>();
+                              atts.forEach(c => titleCount.set(c.title, (titleCount.get(c.title) || 0) + 1));
+                              return atts.map(c => {
+                                const label = (titleCount.get(c.title) || 0) > 1 ? `${c.title} · ${c.column_id.slice(-6)}` : c.title;
+                                return <option key={c.column_id} value={c.column_id}>{label}</option>;
+                              });
+                            })()}
                           </select>
                         </div>
                         <div>
@@ -2507,9 +2513,15 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                             className="w-full bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none"
                           >
                             <option value="">{t('dataTable.none')}</option>
-                            {displayCols.filter(c => c.type === 'Attachment').map(c => (
-                              <option key={c.column_id} value={c.column_id}>{c.title}</option>
-                            ))}
+                            {(() => {
+                              const atts = displayCols.filter(c => c.type === 'Attachment');
+                              const titleCount = new Map<string, number>();
+                              atts.forEach(c => titleCount.set(c.title, (titleCount.get(c.title) || 0) + 1));
+                              return atts.map(c => {
+                                const label = (titleCount.get(c.title) || 0) > 1 ? `${c.title} · ${c.column_id.slice(-6)}` : c.title;
+                                return <option key={c.column_id} value={c.column_id}>{label}</option>;
+                              });
+                            })()}
                           </select>
                         </div>
                         <div>
@@ -3235,8 +3247,26 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                               return;
                             }
                             if ((col.type === 'Date' || col.type === 'DateTime') && !isReadonly) {
-                              const dateStr = val ? String(val) : '';
-                              setDatePicker({ rowId, col: col.title, colType: col.type, value: dateStr });
+                              let dateStr = '';
+                              if (val != null && val !== '') {
+                                let d: Date | null = null;
+                                if (typeof val === 'number') d = new Date(val);
+                                else {
+                                  const s = String(val);
+                                  if (/^\d{10,}$/.test(s)) d = new Date(Number(s));
+                                  else {
+                                    const parsed = Date.parse(s);
+                                    if (!Number.isNaN(parsed)) d = new Date(parsed);
+                                  }
+                                }
+                                if (d && !Number.isNaN(d.getTime())) {
+                                  const pad = (n: number) => String(n).padStart(2, '0');
+                                  dateStr = col.type === 'DateTime'
+                                    ? `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+                                    : `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+                                }
+                              }
+                              setDatePicker({ rowId, col: col.column_id, colType: col.type, value: dateStr });
                               return;
                             }
                             if (isEditing || isReadonly) return;
@@ -3612,7 +3642,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                             );
                           })()}
                           {/* Date picker dropdown */}
-                          {datePicker?.rowId === rowId && datePicker?.col === col.title && (
+                          {datePicker?.rowId === rowId && datePicker?.col === col.column_id && (
                             <DatePickerDropdown
                               value={datePicker.value}
                               showTime={datePicker.colType === 'DateTime'}
@@ -3622,9 +3652,9 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                                 queryClient.setQueriesData({ queryKey: ['nc-rows', tableId] }, (old: unknown) => {
                                   const data = old as { list: Record<string, unknown>[]; pageInfo?: unknown } | undefined;
                                   if (!data) return old;
-                                  return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col.title]: dateStr || null } : r) };
+                                  return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col.column_id]: dateStr || null, [col.title]: dateStr || null } : r) };
                                 });
-                                try { await br.updateRow(tableId, rowId, { [col.title]: dateStr || null }); refresh(); }
+                                try { await br.updateRow(tableId, rowId, { [col.column_id]: dateStr || null }); refresh(); }
                                 catch (e) { console.error('Date update failed:', e); refresh(); }
                               }}
                               onClose={() => setDatePicker(null)}
@@ -4591,7 +4621,7 @@ function DatePickerDropdown({ value, showTime, onChange, onClose }: {
     if (showTime) {
       const hours = String(hh || 0).padStart(2, '0');
       const mins = String(mm || 0).padStart(2, '0');
-      return `${y}-${mo}-${da} ${hours}:${mins}`;
+      return `${y}-${mo}-${da}T${hours}:${mins}:00`;
     }
     return `${y}-${mo}-${da}`;
   };
@@ -4682,14 +4712,18 @@ function DatePickerDropdown({ value, showTime, onChange, onClose }: {
             onChange={e => {
               const newTime = e.target.value;
               setTimeStr(newTime);
-              // If a date is already selected, immediately save with new time
-              if (currentParsed) {
-                const [hh, mm] = newTime.split(':').map(Number);
-                const y = currentParsed.year;
-                const mo = String(currentParsed.month + 1).padStart(2, '0');
-                const da = String(currentParsed.day).padStart(2, '0');
-                onChange(`${y}-${mo}-${da} ${String(hh || 0).padStart(2, '0')}:${String(mm || 0).padStart(2, '0')}`);
+              // Save with new time, using selected day (or today if none selected yet)
+              const [hh, mm] = newTime.split(':').map(Number);
+              let y = selectedYear, mo = selectedMonth, da = selectedDay;
+              if (da === null) {
+                const n = new Date();
+                y = n.getFullYear(); mo = n.getMonth(); da = n.getDate();
+                setSelectedYear(y); setSelectedMonth(mo); setSelectedDay(da);
+                setViewYear(y); setViewMonth(mo);
               }
+              const moStr = String(mo + 1).padStart(2, '0');
+              const daStr = String(da).padStart(2, '0');
+              onChange(`${y}-${moStr}-${daStr}T${String(hh || 0).padStart(2, '0')}:${String(mm || 0).padStart(2, '0')}:00`);
             }}
             className="bg-muted rounded px-2 py-1 text-xs text-foreground outline-none"
           />
@@ -5356,14 +5390,16 @@ function KanbanView({ rows, columns, activeView, isLoading, onUpdateRow, onAddRo
                 return (
                   <KanbanCard key={rowId ?? i} id={rowId} isDragging={draggedRowId === rowId}>
                     {coverCol && (() => {
-                      const coverVal = row[coverCol.title];
-                      if (!coverVal) return <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />;
+                      const coverVal = row[coverCol.column_id] ?? row[coverCol.title];
+                      const placeholder = <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />;
+                      if (!coverVal) return placeholder;
                       try {
                         const arr = Array.isArray(coverVal) ? coverVal : JSON.parse(String(coverVal));
-                        const img = arr.find((a: any) => a.mimetype?.startsWith('image/'));
-                        if (!img) return <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />;
+                        if (!Array.isArray(arr) || arr.length === 0) return placeholder;
+                        const img = arr.find((a: any) => (a?.mimetype || '').startsWith('image/')) || arr[0];
+                        if (!img) return placeholder;
                         return <img src={ncAttachmentUrl(img)} className="w-full h-24 object-cover rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} alt="" />;
-                      } catch { return <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />; }
+                      } catch { return placeholder; }
                     })()}
                     <div className="text-xs font-medium text-foreground truncate cursor-pointer" onClick={() => onExpandRow?.(rowId)}>
                       {titleCol ? String(row[titleCol.title] ?? '') : `#${rowId}`}
@@ -5443,14 +5479,16 @@ function GalleryView({ rows, columns, activeView, isLoading, onAddRow, hiddenCol
               onClick={() => onExpandRow?.(rowId)}
             >
               {coverCol && (() => {
-                const coverVal = row[coverCol.title];
-                if (!coverVal) return <div className="w-full h-32 bg-muted/60" />;
+                const coverVal = row[coverCol.column_id] ?? row[coverCol.title];
+                const placeholder = <div className="w-full h-32 bg-muted/60" />;
+                if (!coverVal) return placeholder;
                 try {
                   const arr = Array.isArray(coverVal) ? coverVal : JSON.parse(String(coverVal));
-                  const img = arr.find((a: any) => a.mimetype?.startsWith('image/'));
-                  if (!img) return <div className="w-full h-32 bg-muted/60" />;
+                  if (!Array.isArray(arr) || arr.length === 0) return placeholder;
+                  const img = arr.find((a: any) => (a?.mimetype || '').startsWith('image/')) || arr[0];
+                  if (!img) return placeholder;
                   return <img src={ncAttachmentUrl(img)} className="w-full h-32 object-cover" alt="" />;
-                } catch { return <div className="w-full h-32 bg-muted/60" />; }
+                } catch { return placeholder; }
               })()}
               <div className="p-4 space-y-2">
               <div className="text-sm font-semibold text-foreground truncate">
