@@ -448,7 +448,7 @@ function buildMenuItems(): BlockMenuItem[] {
         } else if (name === 'iframe' || name === 'embed' || name === 'diagram_embed') {
           text = t('editor.diagram') || 'Diagram';
           anchorType = 'diagram_embed';
-          anchorMeta = { preview: '嵌入流程图' };
+          anchorMeta = {};
         } else {
           text = node.textContent || '';
         }

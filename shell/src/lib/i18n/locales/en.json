@@ -215,6 +215,7 @@
     "cancel": "Cancel"
   },
   "editor": {
+    "outline": "Outline",
     "error": "Editor error",
     "insertDiagramEmbedFailed": "Failed to insert diagram embed",
     "emptyMathBlock": "Empty math block",

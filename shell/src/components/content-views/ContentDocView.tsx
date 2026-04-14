@@ -630,7 +630,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
             <button
               onClick={() => setShowMobileOutline(true)}
               className="p-1.5 text-foreground"
-              title="目录"
+              title={t('editor.outline')}
             >
               <ListTree className="h-6 w-6" />
             </button>
@@ -962,7 +962,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
         <BottomSheet
           open={showMobileOutline}
           onClose={() => setShowMobileOutline(false)}
-          title="目录"
+          title={t('editor.outline')}
           initialHeight="half"
         >
           <DocOutlineList
