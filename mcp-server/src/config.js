@@ -21,6 +21,7 @@ import path from 'node:path';
 
 export const CONFIG_DIR = path.join(os.homedir(), '.aose-mcp');
 export const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
+export const SKILLS_DIR = path.join(CONFIG_DIR, 'skills');
 
 export function readConfig() {
   try {

@@ -36,8 +36,9 @@ import { registerAgentTools } from './tools/agents.js';
 import { registerEventTools } from './tools/events.js';
 import { registerCommentTools } from './tools/comments.js';
 import { registerContentTools } from './tools/content.js';
-import { CONFIG_PATH, loadEffectiveConfig, readConfig, writeConfig } from './config.js';
+import { CONFIG_PATH, SKILLS_DIR, loadEffectiveConfig, readConfig, writeConfig } from './config.js';
 import { EventBridge } from './event-bridge.js';
+import { fetchAndCacheSkills } from './skills-fetch.js';
 
 function maskToken(t) {
   if (!t || typeof t !== 'string') return '(none)';
@@ -108,6 +109,16 @@ async function startServer() {
   }
   console.error(`[mcp] url source: ${cfg.source}`);
   console.error(`[mcp] base_url: ${cfg.base_url}`);
+
+  // Pull skills into ~/.aose-mcp/skills/ so they live in a stable location
+  // across every MCP host. Non-fatal: if the gateway is unreachable at boot
+  // the agent still starts, it just won't have fresh skills cached.
+  try {
+    const { files } = await fetchAndCacheSkills(cfg.base_url);
+    console.error(`[mcp] skills cached to ${SKILLS_DIR} (${files.length} files)`);
+  } catch (e) {
+    console.error(`[mcp] skills fetch failed (non-fatal): ${e.message}`);
+  }
 
   const server = new McpServer(
     { name: 'aose', version: '0.1.0' },

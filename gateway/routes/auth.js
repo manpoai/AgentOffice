@@ -214,12 +214,20 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     }
     // Validate name format: lowercase, alphanumeric + hyphens
     if (!/^[a-z][a-z0-9-]{1,30}$/.test(name)) {
-      return res.status(400).json({ error: 'INVALID_NAME', message: 'Name must be lowercase alphanumeric with hyphens, 2-31 chars' });
+      return res.status(400).json({
+        error: 'INVALID_NAME',
+        message: 'Name must be lowercase alphanumeric with hyphens, 2-31 chars',
+        pattern: '^[a-z][a-z0-9-]{1,30}$',
+      });
     }
     // Check name uniqueness
     const existingActor = db.prepare('SELECT id FROM actors WHERE username = ?').get(name);
     if (existingActor) {
-      return res.status(409).json({ error: 'NAME_TAKEN', message: `Name "${name}" already registered` });
+      return res.status(409).json({
+        error: 'NAME_TAKEN',
+        message: `Name "${name}" already registered. Pick a different name and retry.`,
+        pattern: '^[a-z][a-z0-9-]{1,30}$',
+      });
     }
 
     const agentId = genId('agt');
