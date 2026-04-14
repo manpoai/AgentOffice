@@ -89,7 +89,7 @@ export default function RevisionPreview({ data, prevData, highlightChanges }: Re
         editable: () => false,
         nodeViews: createNodeViews(),
         attributes: {
-          class: 'outline-editor-content',
+          class: 'doc-editor-content',
         },
       });
 
@@ -106,8 +106,8 @@ export default function RevisionPreview({ data, prevData, highlightChanges }: Re
   }, [data, prevData, highlightChanges]);
 
   return (
-    <div className="outline-editor">
-      <div ref={mountRef} className="outline-editor-mount" />
+    <div className="doc-editor">
+      <div ref={mountRef} className="doc-editor-mount" />
     </div>
   );
 }
@@ -198,9 +198,9 @@ function extractTextWithPositions(doc: any): { text: string; posMap: PosMapEntry
 }
 
 /**
- * Mapping from Outline's node type names to our schema's node type names.
- * Outline uses short names (tr, td, th, br, hr) while prosemirror-tables
- * and our schema use longer names (table_row, table_cell, etc.).
+ * Mapping from legacy short-form node type names (tr, td, th, br, hr) to
+ * our schema's longer names (table_row, table_cell, etc.). Used when loading
+ * older revision snapshots whose JSON still uses the short form.
  */
 const NODE_TYPE_MAP: Record<string, string> = {
   tr: 'table_row',
@@ -211,20 +211,20 @@ const NODE_TYPE_MAP: Record<string, string> = {
   code_fence: 'code_block',
 };
 
-/** Mapping from Outline's mark type names to our schema's mark type names. */
+/** Mapping from legacy mark type names to our schema's mark type names. */
 const MARK_TYPE_MAP: Record<string, string> = {
   code_inline: 'code',
 };
 
 /**
- * Recursively sanitize ProseMirror JSON: map Outline node/mark type names
+ * Recursively sanitize ProseMirror JSON: map legacy node/mark type names
  * to our schema's names, strip truly unknown types, and fix attributes.
  */
 function sanitizeDocJson(data: Record<string, unknown>, schema: any): Record<string, unknown> {
   function sanitizeNode(node: any): any {
     if (!node || typeof node !== 'object') return node;
 
-    // Map Outline node type name to our schema name
+    // Map legacy node type name to our schema name
     let type = node.type as string;
     if (NODE_TYPE_MAP[type]) {
       type = NODE_TYPE_MAP[type];

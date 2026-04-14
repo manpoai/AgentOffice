@@ -87,8 +87,8 @@ export class DiagramEmbedView implements NodeView {
       e.preventDefault();
       e.stopPropagation();
       if (node.attrs.diagramId) {
-        // Listener is on .outline-editor-mount (editorRef), not .outline-editor wrapper
-        const mountEl = this.dom.closest('.outline-editor-mount');
+        // Listener is on .doc-editor-mount (editorRef), not .doc-editor wrapper
+        const mountEl = this.dom.closest('.doc-editor-mount');
         if (mountEl) {
           mountEl.dispatchEvent(new CustomEvent('open-diagram-editor', {
             detail: { diagramId: node.attrs.diagramId },

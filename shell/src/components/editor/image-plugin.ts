@@ -1,6 +1,6 @@
 /**
  * ProseMirror plugin for image drag-drop and paste handling.
- * Uploads images to Outline via attachments.create API.
+ * Uploads images via the document attachments API.
  */
 import { Plugin } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';

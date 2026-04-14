@@ -1,6 +1,5 @@
 /**
  * ProseMirror schema for the document editor.
- * Based on Outline's editor schema — compatible with Outline's markdown format.
  */
 import { Schema } from 'prosemirror-model';
 import { tableNodes } from 'prosemirror-tables';

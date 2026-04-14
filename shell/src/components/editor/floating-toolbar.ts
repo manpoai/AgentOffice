@@ -88,7 +88,7 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
     key: floatingToolbarKey,
     view(editorView) {
       // Expose hover tracking for the React toolbar to call
-      const el = editorView.dom.closest('.outline-editor');
+      const el = editorView.dom.closest('.doc-editor');
       if (el) {
         (el as any).__toolbarHover = (hovering: boolean) => {
           isHovering = hovering;

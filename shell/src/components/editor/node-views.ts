@@ -166,7 +166,7 @@ class ImageNodeView implements NodeView {
       document.addEventListener('mouseup', onUp);
     });
 
-    // Toolbar (Outline-style: layout + dimensions + actions)
+    // Toolbar: layout + dimensions + actions
     this.toolbar = this.buildToolbar();
 
     const toolbarContainer = document.createElement('div');
@@ -241,7 +241,7 @@ class ImageNodeView implements NodeView {
     const btnStyle = 'padding:6px 8px;border:none;background:transparent;cursor:pointer;border-radius:4px;font-size:13px;color:hsl(var(--foreground, 0 0% 9%));line-height:1;';
     const btnActiveStyle = 'padding:6px 8px;border:none;background:hsl(var(--accent, 0 0% 96%));cursor:pointer;border-radius:4px;font-size:13px;color:hsl(var(--foreground, 0 0% 9%));line-height:1;';
 
-    // Layout/alignment buttons (matching Outline's 5-button layout)
+    // Layout/alignment buttons (5-button layout)
     const layouts = [
       { svg: this.svgIcon('alignLeft'), align: 'left', title: t('editor.imageToolbar.alignLeft') },
       { svg: this.svgIcon('alignCenter'), align: 'center', title: t('editor.imageToolbar.center') },

@@ -136,7 +136,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
     // Delay to let click event finish processing before moving focus/scroll
     setTimeout(() => {
       try {
-        const getPmView = () => (document.querySelector('.outline-editor-mount') as any)?.__pmView;
+        const getPmView = () => (document.querySelector('.doc-editor-mount') as any)?.__pmView;
         if (anchor.type === 'text-range') {
           const quote = (anchor.meta?.quote as string) || '';
           if (!quote) return;
@@ -236,7 +236,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
           meta: detail.anchorMeta,
         } : null);
         onShowComments();
-        const editorArea = document.querySelector('.outline-editor');
+        const editorArea = document.querySelector('.doc-editor');
         if (editorArea) {
           const editorRect = editorArea.getBoundingClientRect();
           const sel = window.getSelection();
@@ -285,7 +285,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
       setFocusedCommentId(id);
       setActiveFocusCommentId(id);
 
-      const editorArea = document.querySelector('.outline-editor');
+      const editorArea = document.querySelector('.doc-editor');
       if (editorArea) {
         const editorRect = editorArea.getBoundingClientRect();
         const markRect = commentEl.getBoundingClientRect();
@@ -579,7 +579,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
   const mobileReadOnly = isMobile && !mobileEditMode;
 
   const getEditorView = useCallback(() => {
-    const mount = document.querySelector('.outline-editor-mount') as any;
+    const mount = document.querySelector('.doc-editor-mount') as any;
     return mount?.__pmView || null;
   }, []);
 
@@ -766,7 +766,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       const wrapper = (e.target as HTMLElement).closest('.doc-title-wrap');
-                      const mount = wrapper?.parentElement?.querySelector('.outline-editor-mount') as any;
+                      const mount = wrapper?.parentElement?.querySelector('.doc-editor-mount') as any;
                       const view = mount?.__pmView;
                       if (view) {
                         view.focus();
@@ -802,7 +802,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
             <div className="sticky top-0 z-30 flex justify-end pr-4">
               <SearchBar
                 getView={() => {
-                  const mount = document.querySelector('.outline-editor-mount') as any;
+                  const mount = document.querySelector('.doc-editor-mount') as any;
                   return mount?.__pmView || null;
                 }}
                 showReplace={searchWithReplace}

@@ -1,6 +1,6 @@
 /**
  * Markdown parser and serializer for ProseMirror.
- * Compatible with Outline's markdown format.
+ * CommonMark-based with extensions for highlight, notice blocks, checkboxes and math.
  *
  * Plugins added for:
  * - ==highlight== marks
@@ -88,12 +88,12 @@ function checkboxPlugin(md: MarkdownItType) {
 
 /**
  * Math block plugin: converts ```$$ ... $$``` fenced blocks into math_block tokens.
- * Outline uses `$$\n...\n$$` syntax.
+ * Uses `$$\n...\n$$` syntax.
  */
 function mathBlockPlugin(md: MarkdownItType) {
   // Pre-process: convert all $$ math block variants to ```math fenced blocks
   // before markdown-it parses. This handles:
-  //   $$\ncontent\n$$        (Outline standard)
+  //   $$\ncontent\n$$        (standard form)
   //   $$\ncontent$$          (no trailing newline before $$)
   //   $$content$$            (single-line)
   const origParse = md.parse.bind(md);

@@ -1,7 +1,7 @@
 /**
  * Block handle plugin for ProseMirror.
  *
- * Design (matches Outline):
+ * Design:
  * - Hover over a block → handle appears on the left
  * - Handle has TWO parts:
  *   - Left part (⊞ grid icon): click → block type menu + operations
