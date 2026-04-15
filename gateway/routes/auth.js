@@ -23,6 +23,213 @@ function getPublicBaseUrl(req) {
   return `${proto}://${host}`.replace(/\/$/, '');
 }
 
+// ─── Onboarding prompt builder ──────────────────
+// Per-platform prompt that an agent executes to register with AOSE and
+// (for platforms that support push) stand up a local adapter sidecar.
+function buildOnboardingPrompt(platform, aoseUrl) {
+  if (platform === 'openclaw') return buildOpenclawOnboardingPrompt(aoseUrl);
+  if (platform === 'zylos') return buildZylosOnboardingPrompt(aoseUrl);
+  return buildGenericOnboardingPrompt(platform, aoseUrl);
+}
+
+function buildGenericOnboardingPrompt(platform, aoseUrl) {
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1: Register your identity
+Run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"your-agent-name","display_name":"Your Display Name","platform":"${platform}"}'
+
+Save the "token" from the JSON response — you'll need it in Step 3. Your registration will be reviewed by an admin.
+
+Step 2: Wait for approval
+The workspace admin will review your registration in aose and approve it. STOP HERE and return control to the human. You have no way to auto-detect approval at this point (the adapter/MCP server aren't running yet). The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess — just wait.
+
+Step 3: Configure MCP Server
+Add the following to your MCP configuration:
+{
+  "mcpServers": {
+    "aose": {
+      "command": "npx",
+      "args": ["-y", "aose-mcp"],
+      "env": {
+        "AOSE_TOKEN": "<your token from Step 1>",
+        "AOSE_URL": "${aoseUrl}"
+      }
+    }
+  }
+}
+
+Step 4: Verify
+Call the whoami tool to confirm your identity and permissions. Once verified, let the admin know you're ready.`;
+}
+
+function buildOpenclawOnboardingPrompt(aoseUrl) {
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+
+You are running on OpenClaw. AOSE supports OpenClaw via a local sidecar ("aose-adapter") that pushes AOSE events into your current chat session, so you get woken up when someone @-mentions you in AOSE — without the human having to switch chat windows.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1 — Discover your own session key
+Call your sessions_list tool (scope: self) and find the entry whose session is the one you are running in right now (the session that produced this conversation). Copy its full "key" string. It looks something like "agent:main:telegram:bot2:direct:5402579467" or "agent:main:main". Save it as SESSION_KEY.
+
+Step 2 — Register with AOSE
+Pick a name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g. "claw-main"). Then run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"<your-agent-name>","display_name":"<Your Display Name>","platform":"openclaw"}'
+
+Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
+
+Step 3 — Wait for approval
+The workspace admin will review and approve your registration in aose. STOP HERE and return control to the human. You have no way to auto-detect approval at this point — the adapter sidecar and MCP server are not running yet, so there is no catchup stream or MCP tool you can poll. The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess, do not proceed until the human tells you.
+
+Step 4 — Read your local OpenClaw gateway token
+Read the file ~/.openclaw/openclaw.json. Extract the value at gateway.auth.token. Save it as OPENCLAW_TOKEN. Also note gateway.port (default 18789) and gateway.bind (default loopback). The adapter connects to ws://127.0.0.1:<port>/ — save that as OPENCLAW_WS_URL.
+
+Step 5 — Write the adapter config file
+Create the directory ~/.aose if it does not exist. Write the following JSON to ~/.aose/adapter-<your-agent-name>.json (substitute the real values from the previous steps):
+
+{
+  "agent_name": "<your-agent-name>",
+  "platform": "openclaw",
+  "gateway_url": "${aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '')}",
+  "agent_token": "<AOSE_TOKEN from Step 2>",
+  "openclaw_gateway_url": "<OPENCLAW_WS_URL from Step 4>",
+  "openclaw_auth_token": "<OPENCLAW_TOKEN from Step 4>",
+  "openclaw_session_key": "<SESSION_KEY from Step 1>"
+}
+
+Important: the gateway_url field is the AOSE deployment BASE (for example "https://asuite.example.com"). The adapter appends the "/api/gateway/me/..." path itself, so do not include that suffix in the config. (If you do, the adapter will strip it — both forms work — but prefer the bare base.)
+
+Set the file permissions to 600 (chmod 600 ~/.aose/adapter-<your-agent-name>.json) so only you can read it — it contains secrets.
+
+Step 6 — Start the adapter sidecar
+Run the following shell command to start the adapter as a background process:
+
+nohup npx -y aose-adapter --config ~/.aose/adapter-<your-agent-name>.json > ~/.aose/adapter-<your-agent-name>.log 2>&1 &
+
+Wait 3 seconds, then read the first 30 lines of ~/.aose/adapter-<your-agent-name>.log. You should see lines like:
+  [adapter] Starting — agent: ..., platform: openclaw, gateway: ...
+  [adapter] SSE connected
+  [openclaw] Gateway connected and authenticated
+
+If instead you see "missing scope: operator.write", your local OpenClaw gateway is not configured to allow insecure auth. Open ~/.openclaw/openclaw.json and confirm gateway.controlUi.allowInsecureAuth is set to true; if not, add it and restart OpenClaw. Then retry this step.
+
+If you see an EADDR or connection-refused error, your OpenClaw gateway may not be running on 127.0.0.1:18789 — verify with: lsof -nP -iTCP:18789 -sTCP:LISTEN
+
+To make the adapter survive reboots, register it with a process manager (pm2, launchd, or systemd) pointing at the same command. The adapter must run continuously for AOSE to push events to you.
+
+Step 7 — Configure the MCP server
+Add the following to your MCP configuration (the location depends on your OpenClaw setup; typically it is the MCP servers list in your OpenClaw config):
+
+{
+  "mcpServers": {
+    "aose": {
+      "command": "npx",
+      "args": ["-y", "aose-mcp"],
+      "env": {
+        "AOSE_TOKEN": "<AOSE_TOKEN from Step 2>",
+        "AOSE_URL": "${aoseUrl}"
+      }
+    }
+  }
+}
+
+Restart your MCP client (or OpenClaw) so the new MCP server is loaded. You should now see aose-prefixed tools available (whoami, reply_to_comment, create_doc, list_docs, etc.).
+
+Step 8 — Verify end-to-end
+Call the aose "whoami" tool. It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN in the MCP config matches the token from Step 2, and that you have been approved.
+
+Once whoami succeeds, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this chat session with a message describing the event, and you can reply to the AOSE comment using reply_to_comment.
+
+If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
+}
+
+function buildZylosOnboardingPrompt(aoseUrl) {
+  const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+
+You are running on Zylos. AOSE supports Zylos via a local sidecar ("aose-adapter") that pushes AOSE events into your C4 comm-bridge inbox, so you get woken up when someone @-mentions you in AOSE.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1 — Locate your C4 inbox script
+Check that the file /Users/mac/zylos/.claude/skills/comm-bridge/scripts/c4-receive.js exists. Save its absolute path as C4_RECEIVE_PATH. Also confirm your ZYLOS_DIR (the working directory for this agent, e.g. /Users/mac/zylos-thinker). Save it as ZYLOS_DIR.
+
+Step 2 — Register with AOSE
+Pick a name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g. "zylos-newbie"). Then run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"<your-agent-name>","display_name":"<Your Display Name>","platform":"zylos"}'
+
+Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
+
+Step 3 — Wait for approval
+The workspace admin will review and approve your registration in aose. STOP HERE and return control to the human. You have no way to auto-detect approval at this point — the adapter sidecar is not running yet, so there is no event stream you can watch. The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess, do not proceed until the human tells you.
+
+Step 4 — Write the adapter config file
+Create the directory ~/.aose if it does not exist. Write the following JSON to ~/.aose/adapter-<your-agent-name>.json:
+
+{
+  "agent_name": "<your-agent-name>",
+  "platform": "zylos",
+  "gateway_url": "${aoseBase}",
+  "agent_token": "<AOSE_TOKEN from Step 2>",
+  "zylos_dir": "<ZYLOS_DIR from Step 1>",
+  "c4_receive_path": "<C4_RECEIVE_PATH from Step 1>"
+}
+
+Set the file permissions to 600 (chmod 600 ~/.aose/adapter-<your-agent-name>.json) so only you can read it — it contains secrets.
+
+Step 5 — Start the adapter sidecar
+Run the following shell command to start the adapter as a background process:
+
+nohup npx -y aose-adapter --config ~/.aose/adapter-<your-agent-name>.json > ~/.aose/adapter-<your-agent-name>.log 2>&1 &
+
+Wait 3 seconds, then read the first 30 lines of ~/.aose/adapter-<your-agent-name>.log. You should see lines like:
+  [adapter] Starting — agent: ..., platform: zylos, gateway: ...
+  [adapter] SSE connected
+
+If you see "Failed to read config" or "config.zylos_dir is required", re-check the JSON file from Step 4.
+
+To make the adapter survive reboots, register it with a process manager (pm2 preferred on Zylos hosts):
+  pm2 start "$(which aose-adapter)" --name aose-adapter-<your-agent-name> -- --config ~/.aose/adapter-<your-agent-name>.json
+  pm2 save
+
+Step 6 — Configure the MCP server
+Add the following to your MCP configuration (typically ~/.mcp.json or the project's .mcp.json):
+
+{
+  "mcpServers": {
+    "aose": {
+      "command": "npx",
+      "args": ["-y", "aose-mcp"],
+      "env": {
+        "AOSE_TOKEN": "<AOSE_TOKEN from Step 2>",
+        "AOSE_URL": "${aoseUrl}"
+      }
+    }
+  }
+}
+
+Restart your MCP client so the new server is loaded. You should now see aose-prefixed tools (whoami, reply_to_comment, create_doc, etc.).
+
+Step 7 — Verify end-to-end
+Call the aose "whoami" tool. It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN matches the token from Step 2 and that you have been approved.
+
+Once whoami succeeds, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this agent via the C4 comm-bridge, and you can reply using reply_to_comment.
+
+If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
+}
+
 // Clean up expired entries every 10 minutes
 setInterval(() => {
   const now = Date.now();
@@ -341,35 +548,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     const platform = req.query.platform || 'zylos';
     const origin = getPublicBaseUrl(req);
     const aoseUrl = `${origin}/api/gateway`;
-    const prompt = `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
-
-Step 1: Register your identity
-POST ${aoseUrl}/agents/self-register
-Content-Type: application/json
-Body: { "name": "your-agent-name", "display_name": "Your Display Name", "platform": "${platform}" }
-
-Save the token from the response — you'll need it in Step 3. Your registration will be reviewed by an admin.
-
-Step 2: Wait for approval
-The workspace admin will review your registration in aose and approve it. You'll receive a notification once approved.
-
-Step 3: Configure MCP Server
-Add the following to your MCP configuration:
-{
-  "mcpServers": {
-    "aose": {
-      "command": "npx",
-      "args": ["-y", "aose-mcp"],
-      "env": {
-        "AOSE_TOKEN": "<your token from Step 1>",
-        "AOSE_URL": "${aoseUrl}"
-      }
-    }
-  }
-}
-
-Step 4: Verify
-Call the whoami tool to confirm your identity and permissions. Once verified, let the admin know you're ready.`;
+    const prompt = buildOnboardingPrompt(platform, aoseUrl);
     res.json({ platform, prompt });
   });
 
