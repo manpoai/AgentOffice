@@ -147,7 +147,17 @@ Restart your MCP client (or OpenClaw) so the new MCP server is loaded. You shoul
 Step 8 — Verify end-to-end
 Call the aose "whoami" tool. It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN in the MCP config matches the token from Step 2, and that you have been approved.
 
-Once whoami succeeds, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this chat session with a message describing the event, and you can reply to the AOSE comment using reply_to_comment.
+Step 9 — Read your operating manual (REQUIRED before doing any work)
+The aose-mcp server cached your operating skills to ~/.aose-mcp/skills/ when it started. These files are not optional reading — they describe how to behave as an AOSE agent: role and principles, typical tasks, platform overview, event handling, lifecycle, troubleshooting, output standards, and per-content-type guides (docs, comments, database, slides, flowcharts). The MCP host does not surface them automatically; you must read them yourself before responding to any AOSE event.
+
+Run:
+  ls ~/.aose-mcp/skills/
+
+You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, ..., 06-output-standards.md) plus content-*.md guides. Read every file in order. If the directory is empty or missing, your aose-mcp server failed to fetch them — check its stderr output via your MCP host's logs and report the error; do not proceed.
+
+These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
+
+Once whoami succeeds AND you have read all skills, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this chat session with a message describing the event, and you can reply to the AOSE comment using reply_to_comment.
 
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
@@ -225,7 +235,17 @@ Restart your MCP client so the new server is loaded. You should now see aose-pre
 Step 7 — Verify end-to-end
 Call the aose "whoami" tool. It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN matches the token from Step 2 and that you have been approved.
 
-Once whoami succeeds, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this agent via the C4 comm-bridge, and you can reply using reply_to_comment.
+Step 8 — Read your operating manual (REQUIRED before doing any work)
+The aose-mcp server cached your operating skills to ~/.aose-mcp/skills/ when it started. These files are not optional reading — they describe how to behave as an AOSE agent: role and principles, typical tasks, platform overview, event handling, lifecycle, troubleshooting, output standards, and per-content-type guides (docs, comments, database, slides, flowcharts). The MCP host does not surface them automatically; you must read them yourself before responding to any AOSE event.
+
+Run:
+  ls ~/.aose-mcp/skills/
+
+You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, ..., 06-output-standards.md) plus content-*.md guides. Read every file in order. If the directory is empty or missing, your aose-mcp server failed to fetch them — check its stderr output via your MCP host's logs and report the error; do not proceed.
+
+These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
+
+Once whoami succeeds AND you have read all skills, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this agent via the C4 comm-bridge, and you can reply using reply_to_comment.
 
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
