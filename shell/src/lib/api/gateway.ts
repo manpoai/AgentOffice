@@ -114,14 +114,29 @@ export async function rejectAgent(agentId: string): Promise<void> {
   await gwFetch(`/admin/agents/${agentId}/reject`, { method: 'POST' });
 }
 
-/** Admin: soft-delete an agent */
-export async function deleteAgent(agentId: string): Promise<void> {
-  await gwFetch(`/admin/agents/${agentId}`, { method: 'DELETE' });
+/** Admin: soft-delete an agent. Returns a per-platform offboarding prompt
+ * the admin should hand to the agent so it can clean up its local state
+ * (adapter sidecar, config file with revoked token, MCP server entry). */
+export async function deleteAgent(agentId: string): Promise<{
+  agent_id: string;
+  name: string;
+  status: 'deleted';
+  platform: string | null;
+  offboarding_prompt: string;
+}> {
+  return gwFetch(`/admin/agents/${agentId}`, { method: 'DELETE' });
 }
 
 /** Admin: get onboarding prompt for a specific platform */
 export async function getOnboardingPrompt(platform: string): Promise<{ platform: string; prompt: string }> {
   return gwFetch(`/admin/onboarding-prompt?platform=${encodeURIComponent(platform)}`);
+}
+
+/** Admin: get offboarding (cleanup) prompt for a specific platform */
+export async function getOffboardingPrompt(platform: string, agentName?: string): Promise<{ platform: string; prompt: string }> {
+  const q = new URLSearchParams({ platform });
+  if (agentName) q.set('agent_name', agentName);
+  return gwFetch(`/admin/offboarding-prompt?${q.toString()}`);
 }
 
 /** Admin: get list of available platforms (data-driven) */

@@ -32,6 +32,112 @@ function buildOnboardingPrompt(platform, aoseUrl) {
   return buildGenericOnboardingPrompt(platform, aoseUrl);
 }
 
+// ─── Offboarding prompt builder ─────────────────
+// Per-platform prompt that an agent executes to clean up local AOSE state
+// (adapter sidecar, config files containing the agent's old token, MCP
+// server entry, cached skills) after the workspace admin has soft-deleted
+// it. The agent's token is already revoked server-side; the prompt only
+// removes residue on the agent's host.
+function buildOffboardingPrompt(platform, agentName) {
+  const name = agentName || '<your-agent-name>';
+  if (platform === 'openclaw') return buildOpenclawOffboardingPrompt(name);
+  if (platform === 'zylos') return buildZylosOffboardingPrompt(name);
+  return buildGenericOffboardingPrompt(platform, name);
+}
+
+function buildGenericOffboardingPrompt(platform, name) {
+  return `You have been removed from an aose workspace. Your agent token is already revoked server-side, so any further AOSE API calls will return 403 AGENT_DELETED. This prompt walks you through cleaning up the AOSE-related state on your host so no stale tokens or dead processes are left behind.
+
+Step 1 — Remove the aose MCP server entry
+Open your MCP host configuration (typically ~/.mcp.json or your host's MCP servers list). Find the entry named "aose" (the one with command "npx" and args ["-y", "aose-mcp"]) and delete it. Save the file. Restart your MCP host so the dead aose-mcp child process is no longer spawned.
+
+Step 2 — Delete the cached skills (optional)
+The aose-mcp server cached operating skills to ~/.aose-mcp/skills/. They contain no secrets but are now stale. If you want to remove them:
+  rm -rf ~/.aose-mcp/skills/
+
+Step 3 — Archive your local AOSE references
+If you keep notes or memory that reference AOSE document IDs, comment IDs, or other agents from this workspace, mark those references as archived/inactive. Do not delete the underlying notes — they may still be valuable as your own history — but flag them so you do not try to act on them.
+
+Step 4 — Verify cleanup
+Check that no aose-mcp processes are running:
+  ps -ef | grep aose-mcp | grep -v grep
+The output should be empty.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the onboarding prompt again — it will mint a fresh token and rewrite all of these files.`;
+}
+
+function buildOpenclawOffboardingPrompt(name) {
+  return `You have been removed from an aose workspace. Your agent token is already revoked server-side, so the aose-adapter sidecar and aose-mcp server can no longer reach the gateway. This prompt walks you through cleaning up the AOSE-related state on your host so no stale tokens or dead processes are left behind.
+
+Step 1 — Stop the adapter sidecar
+The aose-adapter is running as a background process started during onboarding. Find and stop it:
+  pgrep -fla "aose-adapter --config.*adapter-${name}.json"
+If the previous command returned a PID, kill it:
+  pkill -f "aose-adapter --config.*adapter-${name}.json"
+If you registered the adapter with pm2 during onboarding, also remove it:
+  pm2 delete aose-adapter-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+
+Step 2 — Delete the adapter config and log
+The config file contains your old agent token and your local OpenClaw token — it must not be left on disk:
+  rm -f ~/.aose/adapter-${name}.json
+  rm -f ~/.aose/adapter-${name}.log
+
+Step 3 — Remove the aose MCP server entry
+Open ~/.openclaw/openclaw.json. Find the entry mcp.servers.aose and delete it (the whole object, including the AOSE_TOKEN env var — it is now a revoked secret on disk). Save the file.
+
+Step 4 — Restart OpenClaw so the MCP server is no longer spawned
+Restart your OpenClaw gateway so the dead aose-mcp child process is not respawned with a revoked token. Your existing OpenClaw chat sessions are not affected.
+
+Step 5 — Delete the cached skills (optional)
+The aose-mcp server cached operating skills to ~/.aose-mcp/skills/. They contain no secrets but are now stale. If you want to remove them:
+  rm -rf ~/.aose-mcp/skills/
+
+Step 6 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from this workspace, mark them as archived/inactive. Do not delete the underlying notes — they are your own history — but flag them so you do not try to act on them.
+
+Step 7 — Verify cleanup
+Confirm no aose-adapter or aose-mcp processes remain:
+  ps -ef | grep -E "aose-adapter|aose-mcp" | grep -v grep
+The output should be empty.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the openclaw onboarding prompt again — it will mint a fresh token and rewrite all of these files.`;
+}
+
+function buildZylosOffboardingPrompt(name) {
+  return `You have been removed from an aose workspace. Your agent token is already revoked server-side, so the aose-adapter sidecar and aose-mcp server can no longer reach the gateway. This prompt walks you through cleaning up the AOSE-related state on your host so no stale tokens or dead processes are left behind.
+
+Step 1 — Stop the adapter sidecar
+The aose-adapter is typically registered with pm2 on Zylos hosts. Stop and remove it:
+  pm2 delete aose-adapter-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+If you started the adapter via nohup instead of pm2, find and kill it:
+  pgrep -fla "aose-adapter --config.*adapter-${name}.json"
+  pkill -f "aose-adapter --config.*adapter-${name}.json"
+
+Step 2 — Delete the adapter config and log
+The config file contains your old agent token — it must not be left on disk:
+  rm -f ~/.aose/adapter-${name}.json
+  rm -f ~/.aose/adapter-${name}.log
+
+Step 3 — Remove the aose MCP server entry
+Open your MCP host configuration (typically ~/.mcp.json or the project's .mcp.json). Find the entry named "aose" and delete it — the whole object, including the AOSE_TOKEN env var, which is now a revoked secret on disk. Save the file. Restart your MCP client so the dead aose-mcp child process is no longer spawned.
+
+Step 4 — Delete the cached skills (optional)
+The aose-mcp server cached operating skills to ~/.aose-mcp/skills/. They contain no secrets but are now stale. If you want to remove them:
+  rm -rf ~/.aose-mcp/skills/
+
+Step 5 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from this workspace, mark them as archived/inactive. Do not delete the underlying notes — they are your own history — but flag them so you do not try to act on them.
+
+Step 6 — Verify cleanup
+Confirm no aose-adapter or aose-mcp processes remain:
+  ps -ef | grep -E "aose-adapter|aose-mcp" | grep -v grep
+The output should be empty.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the zylos onboarding prompt again — it will mint a fresh token and rewrite all of these files.`;
+}
+
 function buildGenericOnboardingPrompt(platform, aoseUrl) {
   return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
 
@@ -555,13 +661,31 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   });
 
   // Admin: soft-delete an agent
+  // Returns the per-platform offboarding prompt so the admin can copy it
+  // to the agent for local cleanup (adapter sidecar, config files with the
+  // revoked token, MCP server entry).
   app.delete('/api/admin/agents/:agent_id', authenticateAdmin, (req, res) => {
     const agent = db.prepare("SELECT * FROM actors WHERE id = ? AND type = 'agent'").get(req.params.agent_id);
     if (!agent) return res.status(404).json({ error: 'NOT_FOUND', message: 'Agent not found' });
     if (agent.deleted_at) return res.status(400).json({ error: 'ALREADY_DELETED', message: 'Agent is already deleted' });
     const now = Date.now();
     db.prepare('UPDATE actors SET deleted_at = ?, online = 0, updated_at = ? WHERE id = ?').run(now, now, agent.id);
-    res.json({ agent_id: agent.id, name: agent.username, status: 'deleted' });
+    const offboardingPrompt = buildOffboardingPrompt(agent.platform, agent.username);
+    res.json({
+      agent_id: agent.id,
+      name: agent.username,
+      status: 'deleted',
+      platform: agent.platform || null,
+      offboarding_prompt: offboardingPrompt,
+    });
+  });
+
+  // Admin: get offboarding prompt for a specific platform (data-driven, mirrors /api/admin/onboarding-prompt)
+  app.get('/api/admin/offboarding-prompt', authenticateAdmin, (req, res) => {
+    const platform = req.query.platform || 'zylos';
+    const agentName = req.query.agent_name || null;
+    const prompt = buildOffboardingPrompt(platform, agentName);
+    res.json({ platform, prompt });
   });
 
   // Admin: list all agents (excluding deleted)

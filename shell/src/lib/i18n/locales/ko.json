@@ -1015,6 +1015,8 @@
     "agentMembers": "에이전트 멤버",
     "addAgent": "에이전트 추가",
     "sendToAgent": "에이전트에게 전송",
+    "sendCleanupToAgent": "정리 단계를 에이전트에게 전송",
+    "deleted": "삭제됨",
     "copyPrompt": "복사",
     "resetToken": "토큰 재설정",
     "resetTokenConfirm": "현재 토큰이 무효화됩니다. 계속하시겠습니까?",

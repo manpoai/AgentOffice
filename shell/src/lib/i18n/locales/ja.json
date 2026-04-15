@@ -1015,6 +1015,8 @@
     "agentMembers": "エージェントメンバー",
     "addAgent": "エージェントを追加",
     "sendToAgent": "エージェントに送信",
+    "sendCleanupToAgent": "クリーンアップ手順をエージェントに送信",
+    "deleted": "削除済み",
     "copyPrompt": "コピー",
     "resetToken": "トークンをリセット",
     "resetTokenConfirm": "現在のトークンが無効になります。続行しますか？",
