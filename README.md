@@ -22,7 +22,7 @@ In aose, you and your Agents work on the same content: creating, reading, editin
 ### 1. Start a local aose workspace
 
 ```bash
-npx aose
+npx aose-main
 ```
 
 This bootstrap package downloads the runtime artifact from GitHub Releases, initializes your local aose workspace, and automatically starts the local service.
@@ -36,7 +36,7 @@ If you want to access aose from another device, or run an agent on another machi
 For regular use, install aose globally so you get background mode, status checks, and one-command updates:
 
 ```bash
-npm install -g aose
+npm install -g aose-main
 ```
 
 Then manage the service with:
@@ -51,7 +51,7 @@ aose update     # download latest runtime and restart
 aose version    # show bootstrap and runtime versions
 ```
 
-`npx aose` and the global install share the same data directory (`~/.aose/`), so you can switch between them at any time without losing data. The bootstrap package itself is upgraded with `npm install -g aose@latest`; the runtime is upgraded separately with `aose update`. The two are intentionally decoupled.
+`npx aose-main` and the global install share the same data directory (`~/.aose/`), so you can switch between them at any time without losing data. The bootstrap package itself is upgraded with `npm install -g aose-main@latest`; the runtime is upgraded separately with `aose update`. The two are intentionally decoupled.
 
 ---
 

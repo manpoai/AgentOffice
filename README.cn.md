@@ -22,7 +22,7 @@ aose 把文档、数据表、幻灯片、流程图放进同一个工作空间。
 ### 1. 启动本地 aose 工作空间
 
 ```bash
-npx aose
+npx aose-main
 ```
 
 这个 bootstrap 包会从 GitHub Release 下载 runtime artifact，初始化本地 aose 工作空间，并自动启动本地服务。
@@ -36,7 +36,7 @@ aose 是个本地服务，默认监听 `http://localhost:3000`（Shell）和 `ht
 日常使用建议把 aose 全局安装，这样可以用后台模式、状态查询和一键升级：
 
 ```bash
-npm install -g aose
+npm install -g aose-main
 ```
 
 然后用下面这些命令管理服务：
@@ -51,7 +51,7 @@ aose update     # 下载最新 runtime 并重启
 aose version    # 查看 bootstrap 和 runtime 版本
 ```
 
-`npx aose` 和全局安装版共用同一个数据目录（`~/.aose/`），可以随时来回切换不会丢数据。Bootstrap 本身用 `npm install -g aose@latest` 升级，runtime 用 `aose update` 单独升级，两者刻意解耦。
+`npx aose-main` 和全局安装版共用同一个数据目录（`~/.aose/`），可以随时来回切换不会丢数据。Bootstrap 本身用 `npm install -g aose-main@latest` 升级，runtime 用 `aose update` 单独升级，两者刻意解耦。
 
 ---
 

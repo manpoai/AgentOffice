@@ -61,10 +61,10 @@ If either port is occupied, aose will select the next available port.
 ## Startup command
 
 ```bash
-npx aose
+npx aose-main
 ```
 
-For long-running self-hosted instances, install globally and use background mode (see the README's "Daily use" section).
+For long-running self-hosted instances, install globally (`npm install -g aose-main`) and use background mode (see the README's "Daily use" section).
 
 ## Data persistence
 

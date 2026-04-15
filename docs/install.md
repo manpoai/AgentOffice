@@ -3,7 +3,7 @@
 ## Start a local aose workspace
 
 ```bash
-npx aose
+npx aose-main
 ```
 
 The bootstrap package downloads the runtime artifact from GitHub Releases, initializes a local aose workspace, and starts the local services automatically.
