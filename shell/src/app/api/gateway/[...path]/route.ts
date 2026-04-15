@@ -75,9 +75,15 @@ async function proxy(req: NextRequest, pathParts: string[], hasBody?: boolean) {
   const isSSE = joinedPath === 'notifications/stream' || joinedPath === 'me/events/stream';
 
   if (isSSE) {
+    // SSE endpoints authenticate via ?token= query param (EventSource can't set
+    // headers). If the client didn't send their own Authorization header, drop
+    // the shell's fallback GW_TOKEN — otherwise gateway authenticates every
+    // public SSE as whoever owns GW_TOKEN, starving real agents of their events.
+    const sseHeaders: Record<string, string> = { ...headers, Accept: 'text/event-stream' };
+    if (!clientAuth) delete sseHeaders.Authorization;
     const resp = await fetch(url.toString(), {
       method: req.method,
-      headers: { ...headers, Accept: 'text/event-stream' },
+      headers: sseHeaders,
       // @ts-expect-error Node fetch supports duplex but types don't expose it
       duplex: 'half',
       signal: req.signal,

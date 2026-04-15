@@ -41,6 +41,8 @@ export default function eventsRoutes(app, { db, authenticateAny, authenticateAge
     const agentId = req.agent.id;
     if (!sseClients.has(agentId)) sseClients.set(agentId, new Set());
     sseClients.get(agentId).add(res);
+    const remote = `${req.socket.remoteAddress}:${req.socket.remotePort}`;
+    console.log(`[sse] connect agent=${agentId} remote=${remote} clients=${sseClients.get(agentId).size}`);
 
     // Replay undelivered events so reconnecting clients don't need a separate catchup round-trip.
     // Bounded to latest 100 to keep reconnect cheap; older backlog is still available via /api/me/catchup.
@@ -67,6 +69,7 @@ export default function eventsRoutes(app, { db, authenticateAny, authenticateAge
     req.on('close', () => {
       clearInterval(heartbeat);
       sseClients.get(agentId)?.delete(res);
+      console.log(`[sse] disconnect agent=${agentId} remote=${remote} clients=${sseClients.get(agentId)?.size ?? 0}`);
     });
   });
 
