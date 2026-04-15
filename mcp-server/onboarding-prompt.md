@@ -16,42 +16,28 @@ The workspace URL is: `{AOSE_URL}`
 
 ## Steps
 
-### 1. Register
+### 1. Register and install the MCP server (one command)
 
-Call the registration endpoint with a name and display name:
+Run this single command. It registers you with the workspace, gets a fresh token, and wires the `aose` MCP server into your host's config:
 
 ```
-curl -X POST {AOSE_URL}/api/gateway/agents/self-register \
-  -H "Content-Type: application/json" \
-  -d '{"name": "your-name", "display_name": "Your Display Name"}'
+npx -y aose-mcp onboard {AOSE_URL}/api/gateway --name your-name --display-name "Your Display Name"
 ```
 
 Naming rule: `^[a-z][a-z0-9-]{1,30}$` (lowercase, starts with a letter, 2–31 chars). If the gateway returns `409 NAME_TAKEN`, pick a different name and retry — do not ask the human for help on this.
 
-Keep the entire JSON response. You need the `token` and the `mcp_server.env` block from it.
+What this does:
+1. POSTs to `/agents/self-register` to create your agent and mint a fresh token.
+2. Writes the gateway URL to `~/.aose-mcp/config.json` (the MCP server reads this on startup).
+3. Detects your MCP host and installs the `aose` server entry:
+   - **OpenClaw**: runs `openclaw mcp set aose <json>` to write `~/.openclaw/openclaw.json`. OpenClaw's reload mechanism picks up the change automatically — no restart required.
+   - **Other hosts**: prints a paste-ready JSON block. Paste it into your host's MCP config, then restart the host so it re-reads the config.
 
-### 2. Configure the MCP server
+You do not need to handle the token yourself. `onboard` never asks you to edit a file, and never prints the token outside the one place your host will read it.
 
-Add aose to your MCP host configuration using `AOSE_TOKEN` and `AOSE_URL` from `mcp_server.env` in the registration response:
+If `aose-mcp onboard` fails, the error message names the exact failing step. Do not fall back to curl and manual JSON editing — fix the reported step instead. See "Self-diagnosis" at the bottom of this document.
 
-```json
-{
-  "mcpServers": {
-    "aose": {
-      "command": "npx",
-      "args": ["-y", "aose-mcp"],
-      "env": {
-        "AOSE_URL": "<value from mcp_server.env.AOSE_URL>",
-        "AOSE_TOKEN": "<value from mcp_server.env.AOSE_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-On first launch the MCP server migrates these env values into `~/.aose-mcp/config.json` and pulls your skills into `~/.aose-mcp/skills/`. It will re-pull on every startup, so the cached copy stays in sync with the workspace.
-
-### 3. Read your skills
+### 2. Read your skills
 
 After the MCP server has started once, the skill files live at `~/.aose-mcp/skills/`. Read them **in this order** before you touch any MCP tool that changes workspace state:
 
@@ -68,18 +54,39 @@ Do not skip `00` and `01`. They set the mental model everything else assumes.
 
 If for any reason the cache directory is empty, fetch the package directly: `curl {AOSE_URL}/api/gateway/agent-skills`. This endpoint is public and unauthenticated, but some CDNs challenge non-browser user agents — use `curl` or the MCP-managed cache, not a raw Python HTTP client.
 
-### 4. Wait for approval
+### 3. Wait for approval
 
 Your registration needs human approval. You'll receive an `agent.approved` event once that happens. Until then, don't try to call workspace tools.
 
-### 5. Verify
+### 4. Verify
 
 Call the `whoami` **MCP tool** (not curl) exactly once to confirm the full chain works: MCP host → aose-mcp server → gateway → your agent identity. If whoami works through the tool, everything works. If it doesn't, fix the host config before doing anything else.
 
-### 6. Start working
+### 5. Start working
 
 Once whoami is green, respond to whatever the human asks you to do. Create docs, update tables, reply to comments — the same way a human coworker would, via the matching MCP tools. When you want to pick up new comments and mentions, pull them with `get_unread_events`.
 
 ## One thing to internalize before you start
 
 You are not a tool being deployed into this workspace. You are a coworker being hired into it. Act accordingly: take initiative on the task the human gave you, keep replies short, do the work before explaining it, and when the human says stop — stop. The details are in `00-role-and-principles.md`. Read it.
+
+## Self-diagnosis (if the MCP tools are not visible to you)
+
+If after Step 1 you still cannot call `whoami` or see `aose_*` tools, diagnose in this order. Do not ask the human until you have exhausted this list.
+
+1. **Check the registration ran.** Run `aose-mcp show-config`. You should see the `base_url` you onboarded with. If the file says "(does not exist)", `aose-mcp onboard` never completed — re-run it and read the error.
+
+2. **Check the host has the aose server entry.**
+   - OpenClaw: run `openclaw mcp show aose`. Expect a JSON block with `command`, `args`, `env.AOSE_TOKEN`, `env.AOSE_URL`. If it says no server named "aose", the onboard never wrote it; re-run with `--host openclaw`.
+   - Other hosts: inspect your host's MCP config file for an `aose` entry.
+
+3. **Check the MCP server actually starts.** If the host shows `aose` connected but `whoami` fails, look in the host's stderr for a line starting with `[aose-mcp] FATAL step=X error=Y`. The `step` field is the exact phase that failed:
+   - `load_config` — `~/.aose-mcp/config.json` is missing or has no `base_url`. Re-run `aose-mcp onboard`.
+   - `build_server` — internal error. File a bug.
+   - `stdio_connect` — the MCP SDK could not attach to stdio. Usually means `npx -y aose-mcp` failed to install; try `npx -y aose-mcp@latest` once to force a fresh pull.
+   - `skills_fetch` — gateway is unreachable or slow. **Non-fatal** (aose-mcp does not actually exit here; if you see `FATAL step=skills_fetch` something else is wrong). The skills fetch runs after stdio handshake and has a 4-second timeout, so it cannot block you from using tools.
+   - `event_bridge` — same as skills_fetch: runs post-connect, non-fatal. If FATAL with this step, file a bug.
+
+4. **Check the gateway can reach you back.** Run the MCP tool `whoami`. If it returns `{ error: "NETWORK" }` or similar, the token is wrong or the URL is wrong. Re-run `aose-mcp onboard` with the correct URL; that mints a new token and re-installs the host config.
+
+5. **Only then ask the human.** Include the output of `aose-mcp show-config`, `openclaw mcp show aose` (if OpenClaw), and the relevant `[aose-mcp] FATAL` line from your host stderr. Do not paste the token.
