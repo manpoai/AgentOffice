@@ -62,6 +62,9 @@ Step 4 — Verify cleanup
 Check that no aose-mcp processes are running:
   ps -ef | grep aose-mcp | grep -v grep
 The output should be empty.
+If you also have a ~/.aose/ directory from past adapter-based onboardings, list it and review for residue:
+  ls -la ~/.aose/ 2>/dev/null
+Confirm any remaining adapter-*.json files are obsolete with the workspace owner before removing them — they may belong to other AOSE workspaces.
 
 Cleanup is complete. If you are re-invited to the workspace later, run the onboarding prompt again — it will mint a fresh token and rewrite all of these files.`;
 }
@@ -70,18 +73,23 @@ function buildOpenclawOffboardingPrompt(name) {
   return `You have been removed from an aose workspace. Your agent token is already revoked server-side, so the aose-adapter sidecar and aose-mcp server can no longer reach the gateway. This prompt walks you through cleaning up the AOSE-related state on your host so no stale tokens or dead processes are left behind.
 
 Step 1 — Stop the adapter sidecar
-The aose-adapter is running as a background process started during onboarding. Find and stop it:
+The aose-adapter is running as a background process started during onboarding. First try the precise match for your config:
   pgrep -fla "aose-adapter --config.*adapter-${name}.json"
-If the previous command returned a PID, kill it:
-  pkill -f "aose-adapter --config.*adapter-${name}.json"
+  pkill -f "aose-adapter --config.*adapter-${name}.json" 2>/dev/null || true
+Then sweep any aose-adapter process that may have been started without a visible --config arg (older onboarding versions, manual launches):
+  pgrep -fla "aose-adapter"
+  pkill -f "aose-adapter" 2>/dev/null || true
 If you registered the adapter with pm2 during onboarding, also remove it:
   pm2 delete aose-adapter-${name} 2>/dev/null || true
   pm2 save 2>/dev/null || true
 
-Step 2 — Delete the adapter config and log
+Step 2 — Delete the adapter config, log, and workspace-bound state
 The config file contains your old agent token and your local OpenClaw token — it must not be left on disk:
   rm -f ~/.aose/adapter-${name}.json
   rm -f ~/.aose/adapter-${name}.log
+Also remove the workspace-bound files generated during onboarding:
+  rm -rf ~/.aose/adapter-state
+  rm -f ~/.aose/mcp-aose-snippet.json
 
 Step 3 — Remove the aose MCP server entry
 Open ~/.openclaw/openclaw.json. Find the entry mcp.servers.aose and delete it (the whole object, including the AOSE_TOKEN env var — it is now a revoked secret on disk). Save the file.
@@ -100,6 +108,9 @@ Step 7 — Verify cleanup
 Confirm no aose-adapter or aose-mcp processes remain:
   ps -ef | grep -E "aose-adapter|aose-mcp" | grep -v grep
 The output should be empty.
+Then list ~/.aose/ to check for any residue from other workspaces or older registrations:
+  ls -la ~/.aose/ 2>/dev/null
+If you see additional adapter-*.json files for agents you no longer use, confirm they are obsolete with the workspace owner before removing them — they may belong to other AOSE workspaces.
 
 Cleanup is complete. If you are re-invited to the workspace later, run the openclaw onboarding prompt again — it will mint a fresh token and rewrite all of these files.`;
 }
@@ -111,14 +122,19 @@ Step 1 — Stop the adapter sidecar
 The aose-adapter is typically registered with pm2 on Zylos hosts. Stop and remove it:
   pm2 delete aose-adapter-${name} 2>/dev/null || true
   pm2 save 2>/dev/null || true
-If you started the adapter via nohup instead of pm2, find and kill it:
+Then sweep any aose-adapter process — first the precise match, then a broad fallback for adapters started without a visible --config arg:
   pgrep -fla "aose-adapter --config.*adapter-${name}.json"
-  pkill -f "aose-adapter --config.*adapter-${name}.json"
+  pkill -f "aose-adapter --config.*adapter-${name}.json" 2>/dev/null || true
+  pgrep -fla "aose-adapter"
+  pkill -f "aose-adapter" 2>/dev/null || true
 
-Step 2 — Delete the adapter config and log
+Step 2 — Delete the adapter config, log, and workspace-bound state
 The config file contains your old agent token — it must not be left on disk:
   rm -f ~/.aose/adapter-${name}.json
   rm -f ~/.aose/adapter-${name}.log
+Also remove the workspace-bound files generated during onboarding:
+  rm -rf ~/.aose/adapter-state
+  rm -f ~/.aose/mcp-aose-snippet.json
 
 Step 3 — Remove the aose MCP server entry
 Open your MCP host configuration (typically ~/.mcp.json or the project's .mcp.json). Find the entry named "aose" and delete it — the whole object, including the AOSE_TOKEN env var, which is now a revoked secret on disk. Save the file. Restart your MCP client so the dead aose-mcp child process is no longer spawned.
@@ -134,6 +150,9 @@ Step 6 — Verify cleanup
 Confirm no aose-adapter or aose-mcp processes remain:
   ps -ef | grep -E "aose-adapter|aose-mcp" | grep -v grep
 The output should be empty.
+Then list ~/.aose/ to check for any residue from other workspaces or older registrations:
+  ls -la ~/.aose/ 2>/dev/null
+If you see additional adapter-*.json files for agents you no longer use, confirm they are obsolete with the workspace owner before removing them — they may belong to other AOSE workspaces.
 
 Cleanup is complete. If you are re-invited to the workspace later, run the zylos onboarding prompt again — it will mint a fresh token and rewrite all of these files.`;
 }
