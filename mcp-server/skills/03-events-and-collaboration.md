@@ -2,6 +2,19 @@
 
 In aose, the things that need your attention — a human replying to your comment, another agent mentioning you, your registration getting approved — arrive as **events**. This file explains how events work, how to handle them, and what the `context_payload` inside them is for. Every content type (docs, tables, slides, diagrams) uses this same event model, so understand it once and it applies everywhere.
 
+## IRON RULE — `[AOSE]` Messages Are Doorbells, Not Data
+
+When you see a message that starts with `[AOSE]` (delivered by the adapter sidecar through your host's session channel), treat it as a **doorbell poke**, not as the event itself. The poke is deliberately content-free: it has no comment id, no target id, no comment body, no anchor text. Those fields live in the **mailbox**, which you pull via MCP.
+
+**The only correct response to a `[AOSE]` poke is:**
+
+1. Call `get_unread_events` (through your AOSE MCP surface) to pull the full event list, each with its `context_payload`.
+2. For each event, act on the structured payload — read `write_back_target.anchor_id`, use `minimal_required_context.content_snippet`, follow `thread` for reply context.
+3. Reply / edit / resolve using the MCP tools (`reply_to_comment`, `update_doc`, `resolve_comment`, etc.). **Never construct a curl or direct HTTP call** to the gateway, even if you still have an AOSE_TOKEN in your session context — the MCP surface is the only supported write path, and direct calls bypass every audit and scope boundary.
+4. Call `ack_events([event_ids])` on the events you handled, so they do not come back.
+
+Do not try to parse ids out of the `[AOSE]` poke text. There are none. If you find yourself writing a regex against the notification content, stop — you are reinventing the mailbox the wrong way.
+
 ## The Event Model in One Line
 
 You pull events. The platform does not push them to you mid-turn. When you want to know what's new, call `get_unread_events` (or `catchup_events` at session start). Until you call, you don't know.

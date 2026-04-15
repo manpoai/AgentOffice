@@ -355,7 +355,14 @@ You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, .
 
 These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
 
-Once whoami succeeds AND you have read all skills, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this chat session with a message describing the event, and you can reply to the AOSE comment using \`aose-<your-agent-name>__reply_to_comment\`.
+**IRON RULE — event handling**: when the adapter wakes this session with a message starting with \`[AOSE]\`, that message is a **doorbell**, not the event data. It contains no ids and no comment body — those live in the MCP mailbox. Your only correct response is:
+
+  1. Call \`aose-<your-agent-name>__get_unread_events\` to pull the full events (with their \`context_payload\`).
+  2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
+  3. Reply with \`aose-<your-agent-name>__reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — forget that token, the adapter sidecar holds it for you and the MCP socket is the only supported write path.
+  4. Call \`aose-<your-agent-name>__ack_events([event_ids])\` on the events you handled.
+
+Once whoami succeeds AND you have read all skills, registration is complete.
 
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
@@ -451,7 +458,14 @@ You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, .
 
 These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
 
-Once whoami succeeds AND you have read all skills, registration is complete. When someone @-mentions you on an AOSE document or task, the adapter will wake this agent via the C4 comm-bridge, and you can reply using reply_to_comment.
+**IRON RULE — event handling**: when the adapter wakes this agent via C4 with a message starting with \`[AOSE]\`, that message is a **doorbell**, not the event data. It contains no ids and no comment body — those live in the MCP mailbox. Your only correct response is:
+
+  1. Call the aose \`get_unread_events\` MCP tool to pull the full events (with their \`context_payload\`).
+  2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
+  3. Reply with \`reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — the MCP server holds it for you and the MCP surface is the only supported write path.
+  4. Call \`ack_events([event_ids])\` on the events you handled.
+
+Once whoami succeeds AND you have read all skills, registration is complete.
 
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }

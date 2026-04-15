@@ -30,7 +30,7 @@ export function init(config) {
   connectGateway();
 }
 
-export async function deliver(config, endpoint, content) {
+export async function deliver(config, content) {
   if (!connected) {
     throw new Error('OpenClaw Gateway not connected');
   }

@@ -16,12 +16,11 @@ export function init(config) {
   if (!config.c4_receive_path) throw new Error('[zylos] config.c4_receive_path is required');
 }
 
-export function deliver(config, endpoint, content) {
+export function deliver(config, content) {
   return new Promise((resolve, reject) => {
     execFile('node', [
       config.c4_receive_path,
       '--channel', 'aose',
-      '--endpoint', endpoint,
       '--content', content,
     ], {
       env: { ...process.env, ZYLOS_DIR: config.zylos_dir },

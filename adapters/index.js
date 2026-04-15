@@ -180,9 +180,9 @@ async function handleEvent(event) {
     return;
   }
 
-  console.log(`[adapter] Delivering event ${event.event} → ${result.endpoint.substring(0, 60)}`);
+  console.log(`[adapter] Delivering doorbell for ${event.event}`);
   try {
-    await platformPlugin.deliver(config, result.endpoint, result.content);
+    await platformPlugin.deliver(config, result.content);
   } catch (e) {
     console.error(`[adapter] Delivery failed: ${e.message}`);
   }
