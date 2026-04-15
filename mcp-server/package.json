@@ -1,6 +1,6 @@
 {
   "name": "aose-mcp",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "MCP Server for aose (Agent Office Suite) — connect AI agents to your workspace",
   "type": "module",
   "bin": {
@@ -10,8 +10,7 @@
   "files": [
     "src/",
     "skills/",
-    "README.md",
-    "onboarding-prompt.md"
+    "README.md"
   ],
   "keywords": [
     "mcp",

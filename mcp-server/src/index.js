@@ -39,7 +39,6 @@ import { registerContentTools } from './tools/content.js';
 import { CONFIG_PATH, SKILLS_DIR, loadEffectiveConfig, readConfig, writeConfig } from './config.js';
 import { EventBridge } from './event-bridge.js';
 import { fetchAndCacheSkills } from './skills-fetch.js';
-import { handleOnboard } from './onboard.js';
 
 function maskToken(t) {
   if (!t || typeof t !== 'string') return '(none)';
@@ -52,12 +51,14 @@ function printHelp() {
 
 Usage:
   aose-mcp                  Start the MCP stdio server (default)
-  aose-mcp onboard <url>    One-shot: register agent + install into MCP host
   aose-mcp set-url <url>    Set base_url in ${CONFIG_PATH}
   aose-mcp show-config      Print effective config (token masked)
   aose-mcp --help, -h       Show this help
 
-Run 'aose-mcp onboard --help' for full onboard flags.
+To onboard a new agent, follow the prompt returned by
+POST ${'${base_url}'}/agents/self-register — the gateway generates a
+platform-specific onboarding prompt that walks the agent through
+adapter sidecar setup and MCP host wiring in one flow.
 
 The base_url is the aose gateway address. For agents running on the
 same machine as aose, this is typically:
@@ -245,14 +246,6 @@ switch (sub) {
       const phase = err?.step || 'unknown';
       const msg = err?.message || String(err);
       console.error(`[aose-mcp] FATAL step=${phase} error=${msg}`);
-      process.exit(1);
-    }
-    break;
-  case 'onboard':
-    try {
-      await handleOnboard(process.argv.slice(3));
-    } catch (err) {
-      console.error(`[aose-mcp] onboard error: ${err?.message || err}`);
       process.exit(1);
     }
     break;
