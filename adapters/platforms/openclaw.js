@@ -16,7 +16,7 @@ const pendingRequests = new Map(); // id → { resolve, reject, timer }
 
 let clawConfig = {};
 
-export function init(config, adapterDir) {
+export function init(config) {
   const { openclaw_gateway_url, openclaw_auth_token, openclaw_session_key } = config;
   if (!openclaw_gateway_url || !openclaw_auth_token || !openclaw_session_key) {
     console.error('[openclaw] Missing required config: openclaw_gateway_url, openclaw_auth_token, openclaw_session_key');
@@ -30,7 +30,7 @@ export function init(config, adapterDir) {
   connectGateway();
 }
 
-export async function deliver(config, adapterDir, endpoint, content) {
+export async function deliver(config, endpoint, content) {
   if (!connected) {
     throw new Error('OpenClaw Gateway not connected');
   }
@@ -107,7 +107,7 @@ async function doConnect(token) {
     await sendRequest('connect', {
       minProtocol: 3,
       maxProtocol: 3,
-      client: { id: 'cli', version: '1.0.0', platform: 'macos', mode: 'node' },
+      client: { id: 'openclaw-tui', version: '1.0.0', platform: 'macos', mode: 'ui', displayName: 'aose-adapter' },
       role: 'operator',
       scopes: ['operator.read', 'operator.write'],
       caps: [],
