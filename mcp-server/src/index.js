@@ -100,6 +100,10 @@ function handleShowConfig() {
 }
 
 async function startServer() {
+  // `step` marks which phase we're in so the top-level FATAL line can
+  // point at the exact failure point. Kept on a ref so catch handlers can
+  // tag any thrown error with `err.step = stepRef.current`.
+  const stepRef = { current: 'load_config' };
   let cfg;
   try {
     cfg = loadEffectiveConfig();
@@ -110,16 +114,16 @@ async function startServer() {
   console.error(`[mcp] url source: ${cfg.source}`);
   console.error(`[mcp] base_url: ${cfg.base_url}`);
 
-  // Pull skills into ~/.aose-mcp/skills/ so they live in a stable location
-  // across every MCP host. Non-fatal: if the gateway is unreachable at boot
-  // the agent still starts, it just won't have fresh skills cached.
   try {
-    const { files } = await fetchAndCacheSkills(cfg.base_url);
-    console.error(`[mcp] skills cached to ${SKILLS_DIR} (${files.length} files)`);
-  } catch (e) {
-    console.error(`[mcp] skills fetch failed (non-fatal): ${e.message}`);
+    await runServer(stepRef, cfg);
+  } catch (err) {
+    if (err && typeof err === 'object' && !err.step) err.step = stepRef.current;
+    throw err;
   }
+}
 
+async function runServer(stepRef, cfg) {
+  stepRef.current = 'build_server';
   const server = new McpServer(
     { name: 'aose', version: '0.1.0' },
     { capabilities: { logging: {} } },
@@ -161,10 +165,32 @@ async function startServer() {
   registerCommentTools(server, gw);
   registerContentTools(server, gw);
 
+  stepRef.current = 'stdio_connect';
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
+  // ─── Post-connect background setup ────────────────────────────────────
+  // Everything below this line runs AFTER the MCP host has received a
+  // successful stdio handshake. The host treats the server as "up" the
+  // moment server.connect resolves; any slow network work done before that
+  // point can and will trip host-side connect timeouts (seen in the wild:
+  // a gateway that was slow to respond to /agent-skills silently broke
+  // MCP initialization in bundle-mcp with `-32000 Connection closed`).
+  // Keep this contract: nothing that touches the network belongs above.
+
+  // Pull skills into ~/.aose-mcp/skills/. Non-fatal: if the gateway is
+  // unreachable or slow, the agent still starts — it just won't have fresh
+  // skills cached this run. fetchAndCacheSkills has its own 4s timeout.
+  stepRef.current = 'skills_fetch';
+  try {
+    const { files } = await fetchAndCacheSkills(cfg.base_url);
+    console.error(`[mcp] skills cached to ${SKILLS_DIR} (${files.length} files)`);
+  } catch (e) {
+    console.error(`[mcp] skills fetch failed (non-fatal): ${e.message}`);
+  }
+
   // ─── Event bridge: push gateway events to host via MCP notifications ──
+  stepRef.current = 'event_bridge';
   const pushMode = (process.env.AOSE_PUSH || 'sse').toLowerCase();
   let bridge = null;
   if (pushMode !== 'off') {
@@ -205,7 +231,18 @@ async function startServer() {
 const sub = process.argv[2];
 switch (sub) {
   case undefined:
-    await startServer();
+    try {
+      await startServer();
+    } catch (err) {
+      // Surface a single structured FATAL line so bundle-mcp / other MCP
+      // hosts forwarding stderr can tell at a glance which phase died.
+      // startServer tags its own `step` on thrown errors when it can; fall
+      // back to 'unknown' otherwise.
+      const phase = err?.step || 'unknown';
+      const msg = err?.message || String(err);
+      console.error(`[aose-mcp] FATAL step=${phase} error=${msg}`);
+      process.exit(1);
+    }
     break;
   case 'set-url':
     handleSetUrl(process.argv[3]);

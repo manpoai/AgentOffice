@@ -11,9 +11,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SKILLS_DIR } from './config.js';
 
-export async function fetchAndCacheSkills(baseUrl) {
+const DEFAULT_TIMEOUT_MS = 4000;
+
+export async function fetchAndCacheSkills(baseUrl, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const url = `${baseUrl.replace(/\/$/, '')}/agent-skills`;
-  const res = await fetch(url);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`GET ${url} → timeout after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     throw new Error(`GET ${url} → ${res.status}`);
   }
