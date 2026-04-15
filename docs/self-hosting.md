@@ -1,13 +1,13 @@
 # Self-hosting
 
-AgentOffice is designed to be self-hosted.
+aose is designed to be self-hosted.
 
 ## Runtime layout
 
 Default local home:
 
 ```text
-~/.agentoffice/
+~/.aose/
 ├── config.json
 ├── data/
 │   ├── gateway.db
@@ -17,7 +17,7 @@ Default local home:
 
 ## Services
 
-A local AgentOffice runtime starts two processes:
+A local aose runtime starts two processes:
 
 - Shell
 - Gateway
@@ -26,24 +26,29 @@ The bootstrap CLI starts both and prints the final ports.
 
 ## External access
 
-For cross-device and agent collaboration, AgentOffice must expose a public URL. The bootstrap CLI configures this interactively on first run.
+The recommended setup is single-machine: aose and your agents both run on the same host, and agents reach aose via `http://localhost:4000` with no extra configuration.
 
-### How it works
+If you need an external URL — for example, to run an agent on another machine — pick any way to forward your URL to the local Shell port (Cloudflare Tunnel, ngrok, frp, tailscale-funnel, Caddy, nginx, …). aose reads `X-Forwarded-Proto` / `X-Forwarded-Host` from the incoming request and uses them when constructing share links and agent callbacks, so the workspace will display the right hostname automatically.
 
-After local services start, the CLI prompts you to choose a public URL method:
+### Chained reverse proxies
 
-1. **Automatic public URL** — uses [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) to create a temporary `*.trycloudflare.com` address. The CLI detects or installs `cloudflared`, starts the tunnel, extracts the public URL, runs a health check, and writes it to config. No account or DNS setup required.
-2. **Custom domain** — you provide your own HTTPS URL (e.g. behind a reverse proxy). The CLI validates the format and runs a health check against it.
+If you stack two reverse proxies in front of aose (e.g. `Cloudflare Tunnel → Caddy → Shell`, `ALB → nginx → Shell`, `Cloudflare → Traefik → Shell`), the inner proxy will by default **overwrite** `X-Forwarded-Proto` / `X-Forwarded-Host` with its own view of the local TCP connection (usually `http` + `localhost`). aose then generates prompts, share links and agent callbacks with `http://localhost:...` instead of your real `https://...` domain — agents written with those URLs cannot reconnect, and SSE/webhook callbacks break.
 
-If the public URL was already configured in a previous run, the CLI skips the prompt and starts immediately.
+Configure your inner proxy to trust the outer one:
 
-### Fallback
+- **Caddy** — add a global `servers { trusted_proxies static private_ranges 127.0.0.1/32 ::1/128 }` block (or the specific CIDRs of your outer proxy).
+- **nginx** — `set_real_ip_from <outer-proxy-cidr>;` and `real_ip_header X-Forwarded-Proto;` (plus `proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;` on the `location` that reverse-proxies to Shell).
+- **Traefik** — set `entryPoints.<name>.forwardedHeaders.trustedIPs` to the outer proxy's address range.
 
-If the CLI tunnel setup fails (e.g. `cloudflared` cannot be installed, network issue), AgentOffice starts in `not_ready` mode. You can then open the local Shell URL in a browser to configure remote access through a fallback UI page. This page is intentionally a last resort — the CLI handles configuration in the normal case.
+Single-proxy setups (`cloudflared → Shell` direct, `nginx → Shell` alone, a single Docker ingress) do **not** need any of this — the sole proxy writes `X-Forwarded-Proto` itself and Shell reads it directly.
 
-### Address consistency
+To switch an agent over to the new URL, run on the agent's machine:
 
-All externally visible links (copy link, share, agent onboarding, webhook callbacks) use the configured public URL. Internal services still communicate over localhost.
+```bash
+npx aose-mcp set-url https://your-domain.com/api/gateway
+```
+
+Internal services still communicate over localhost regardless of how the gateway is exposed.
 
 ## Default ports
 
@@ -51,22 +56,24 @@ Requested defaults:
 - Shell: `3000`
 - Gateway: `4000`
 
-If either port is occupied, AgentOffice will select the next available port.
+If either port is occupied, aose will select the next available port.
 
 ## Startup command
 
 ```bash
-npx agentoffice-main
+npx aose
 ```
+
+For long-running self-hosted instances, install globally and use background mode (see the README's "Daily use" section).
 
 ## Data persistence
 
-Your local data lives under `~/.agentoffice/` unless overridden.
+Your local data lives under `~/.aose/` unless overridden.
 
 Important paths:
-- config: `~/.agentoffice/config.json`
-- database: `~/.agentoffice/data/gateway.db`
-- uploads: `~/.agentoffice/data/uploads/`
+- config: `~/.aose/config.json`
+- database: `~/.aose/data/gateway.db`
+- uploads: `~/.aose/data/uploads/` (overridable via `UPLOADS_DIR`)
 
 ## Backup recommendation
 

@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import * as br from '@/lib/api/baserow';
+import * as br from '@/lib/api/tables';
 import { SELECT_COLORS, READONLY_TYPES, isSelectType } from './types';
 import { showError } from '@/lib/utils/error';
 import { getT } from '@/lib/i18n';
@@ -78,7 +78,7 @@ export function useTableColumns({
   // ── Freeze columns ──
   const [frozenColCount, setFrozenColCountRaw] = useState(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(`asuite-table-frozen-${tableId}`);
+      const saved = localStorage.getItem(`aose-table-frozen-${tableId}`);
       return saved ? parseInt(saved, 10) : 1;
     }
     return 1;
@@ -86,7 +86,7 @@ export function useTableColumns({
   const setFrozenColCount = useCallback((v: number | ((prev: number) => number)) => {
     setFrozenColCountRaw(prev => {
       const next = typeof v === 'function' ? v(prev) : v;
-      localStorage.setItem(`asuite-table-frozen-${tableId}`, String(next));
+      localStorage.setItem(`aose-table-frozen-${tableId}`, String(next));
       return next;
     });
   }, [tableId]);
@@ -287,7 +287,7 @@ export function useTableColumns({
       refreshMeta();
       refresh();
     } catch (e) {
-      showError('Add column failed', e);
+      showError(getT()('errors.addColumnFailed'), e);
     }
   }, [newColTitle, newColType, newColOptionsList, newColFormula, newColRelTable, newColRelMulti,
       newColRelCol, newColLookupCol, newColRollupCol, newColRollupFn, decimalPrecision,
@@ -304,7 +304,7 @@ export function useTableColumns({
       refreshMeta();
       refresh();
     } catch (e) {
-      showError('Rename column failed', e);
+      showError(getT()('errors.renameColumnFailed'), e);
     }
   }, [colTitleValue, tableId, refreshMeta, refresh]);
 
@@ -316,7 +316,7 @@ export function useTableColumns({
       refreshMeta();
       refresh();
     } catch (e) {
-      showError('Change column type failed', e);
+      showError(getT()('errors.changeColumnTypeFailed'), e);
     }
   }, [tableId, refreshMeta, refresh]);
 
@@ -331,7 +331,7 @@ export function useTableColumns({
       refreshMeta();
       refresh();
     } catch (e) {
-      showError('Delete column failed', e);
+      showError(getT()('errors.deleteColumnFailed'), e);
     }
   }, [displayCols, tableId, t, refreshMeta, refresh]);
 
@@ -366,7 +366,7 @@ export function useTableColumns({
       refreshMeta();
       refresh();
     } catch (e) {
-      showError('Duplicate column failed', e);
+      showError(getT()('errors.duplicateColumnFailed'), e);
     }
   }, [tableId, activeViewId, viewColumns, displayCols, refreshMeta, refresh, refreshViewColumns]);
 
@@ -409,15 +409,10 @@ export function useTableColumns({
     setNewColType(col.type);
     setNewColOptions(col.options?.map(o => o.title).join(', ') || '');
     setNewColOptionsList(col.options?.map(o => o.title) || []);
-    setNewColFormula(col.formula || '');
     setNewColRelTable(col.relatedTableId || '');
     setNewColRelType(col.relationType || 'mm');
     setNewColRelMulti(col.relationType !== 'bt');
     setNewColRelBidirectional(true);
-    setNewColRelCol(col.fk_relation_column_id || '');
-    setNewColLookupCol(col.fk_lookup_column_id || '');
-    setNewColRollupCol(col.fk_rollup_column_id || '');
-    setNewColRollupFn(col.rollup_function || 'sum');
     if (col.meta) {
       const m = col.meta as Record<string, unknown>;
       setNumFormat({

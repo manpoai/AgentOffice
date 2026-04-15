@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 const instrumentSerif = Instrument_Serif({ subsets: ['latin'], weight: '400', variable: '--font-instrument-serif' });
 
 export const metadata: Metadata = {
-  title: 'AgentOffice',
+  title: 'AOSE- Agent Office Suite',
   description: 'Human-Agent Workspace',
   icons: {
     icon: '/favicon.svg',
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'AgentOffice',
+    title: 'AOSE- Agent Office Suite',
   },
   themeColor: '#ffffff',
 };

@@ -1,7 +1,7 @@
 /**
  * Block handle plugin for ProseMirror.
  *
- * Design (matches Outline):
+ * Design:
  * - Hover over a block → handle appears on the left
  * - Handle has TWO parts:
  *   - Left part (⊞ grid icon): click → block type menu + operations
@@ -448,7 +448,7 @@ function buildMenuItems(): BlockMenuItem[] {
         } else if (name === 'iframe' || name === 'embed' || name === 'diagram_embed') {
           text = t('editor.diagram') || 'Diagram';
           anchorType = 'diagram_embed';
-          anchorMeta = { preview: '嵌入流程图' };
+          anchorMeta = {};
         } else {
           text = node.textContent || '';
         }

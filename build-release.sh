@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DIST_DIR="$ROOT_DIR/dist/agentoffice-runtime"
+DIST_DIR="$ROOT_DIR/dist/aose-runtime"
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
@@ -30,6 +30,6 @@ cat > "$DIST_DIR/package.json" <<PKGJSON
 {"type":"module"}
 PKGJSON
 
-tar -czf "$ROOT_DIR/dist/agentoffice-runtime.tar.gz" -C "$ROOT_DIR/dist" agentoffice-runtime
+tar -czf "$ROOT_DIR/dist/aose-runtime.tar.gz" -C "$ROOT_DIR/dist" aose-runtime
 
-echo "Built runtime artifact: $ROOT_DIR/dist/agentoffice-runtime.tar.gz"
+echo "Built runtime artifact: $ROOT_DIR/dist/aose-runtime.tar.gz"

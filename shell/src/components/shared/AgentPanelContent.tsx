@@ -43,6 +43,7 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [nameValue, setNameValue] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [offboardingResult, setOffboardingResult] = useState<{ name: string; platform: string | null; prompt: string } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [uploadingAgentId, setUploadingAgentId] = useState<string | null>(null);
 
@@ -157,6 +158,25 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
       </div>
 
       {/* Step 1: platform selection — inline expand */}
+      {offboardingResult && (
+        <div className="mb-3 p-3 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-foreground">{offboardingResult.name} {t('actions.deleted')} — {t('actions.sendCleanupToAgent')}</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => navigator.clipboard.writeText(offboardingResult.prompt)} className="flex items-center gap-1 px-2 py-0.5 text-xs text-sidebar-primary hover:bg-sidebar-primary/10 rounded transition-colors">
+                <Copy className="h-3 w-3" />{t('actions.copyPrompt')}
+              </button>
+              <button onClick={() => setOffboardingResult(null)} className="p-0.5 text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          <pre className={cn('text-[11px] text-muted-foreground bg-black/[0.03] dark:bg-white/[0.05] rounded p-2 overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed', styles.promptMaxH)}>
+            {offboardingResult.prompt}
+          </pre>
+        </div>
+      )}
+
       {showOnboardingPrompt && !selectedPlatform && (
         <div className="mb-3 p-3 bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.06] dark:border-border rounded-lg">
           <p className="text-xs font-medium text-foreground mb-1">{t('actions.selectPlatform')}</p>
@@ -271,7 +291,14 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
                 {deleteConfirmId === agentId ? (
                   <div className="flex items-center gap-1 ml-1">
                     <span className="text-[10px] text-foreground/60">{t('actions.confirmDelete')}</span>
-                    <button onClick={async () => { try { await gw.deleteAgent(agentId); queryClient.invalidateQueries({ queryKey: ['admin-agents'] }); } catch {} setDeleteConfirmId(null); }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">{t('actions.delete')}</button>
+                    <button onClick={async () => {
+                      try {
+                        const r = await gw.deleteAgent(agentId);
+                        setOffboardingResult({ name: r.name, platform: r.platform, prompt: r.offboarding_prompt });
+                        queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                      } catch {}
+                      setDeleteConfirmId(null);
+                    }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">{t('actions.delete')}</button>
                     <button onClick={() => setDeleteConfirmId(null)} className="px-1.5 py-0.5 text-[10px] font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors shrink-0">{t('common.cancel')}</button>
                   </div>
                 ) : (

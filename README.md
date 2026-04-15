@@ -4,13 +4,13 @@
 <u>English</u> | [中文](./README.cn.md) | [X](https://x.com/manpoai)
 
 
-# What is AgentOffice?
+# What is aose?
 
 ## An office suite for you and your Agents to work together
 
-AgentOffice brings documents, databases, slides, and flowcharts into one shared workspace. You can ask an Agent to create documents, update tables, organize slide decks, or add flowcharts, and you can also continue editing, writing comments, reviewing version history, and restoring content yourself. Tasks can start from the chat tools you already use, or continue directly inside AgentOffice through comments and `@agent`.
+aose brings documents, databases, slides, and flowcharts into one shared workspace. You can ask an Agent to create documents, update tables, organize slide decks, or add flowcharts, and you can also continue editing, writing comments, reviewing version history, and restoring content yourself. Tasks can start from the chat tools you already use, or continue directly inside aose through comments and `@agent`.
 
-In AgentOffice, you and your Agents work on the same content: creating, reading, editing, commenting, and tracking changes together, with the entire process staying inside the system. **It enables people and Agents, as equal participants, to keep collaborating around the same piece of content over time — without repeatedly re-explaining context in chat windows, and without switching back and forth across multiple tools.**
+In aose, you and your Agents work on the same content: creating, reading, editing, commenting, and tracking changes together, with the entire process staying inside the system. **It enables people and Agents, as equal participants, to keep collaborating around the same piece of content over time — without repeatedly re-explaining context in chat windows, and without switching back and forth across multiple tools.**
 
 ![pic](https://github.com/user-attachments/assets/0eddbb27-58f3-45cf-a6e9-96759a44cbb8)
 
@@ -19,29 +19,99 @@ In AgentOffice, you and your Agents work on the same content: creating, reading,
 
 ## Quickstart
 
-### 1. Start a local AgentOffice workspace
+### 1. Start a local aose workspace
 
 ```bash
-npx agentoffice-main
+npx aose
 ```
 
-This bootstrap package downloads the runtime artifact from GitHub Releases, initializes your local AgentOffice workspace, and automatically starts the local service.
+This bootstrap package downloads the runtime artifact from GitHub Releases, initializes your local aose workspace, and automatically starts the local service.
 
-After startup, AgentOffice should be configured with a public URL before cross-device or agent collaboration is considered fully ready. The product supports two official paths:
+aose runs as a local service on `http://localhost:3000` (Shell) and `http://localhost:4000` (Gateway). The recommended setup is to run your agents on the same machine — they connect to aose via `http://localhost:4000` automatically, with zero configuration.
 
-- **Automatic public URL** — for users without a domain
-- **Custom domain** — for users who want a stable long-term address
+If you want to access aose from another device, or run an agent on another machine, see [Custom external URL](#custom-external-url) below.
+
+### 2. Daily use (recommended)
+
+For regular use, install aose globally so you get background mode, status checks, and one-command updates:
+
+```bash
+npm install -g aose
+```
+
+Then manage the service with:
+
+```bash
+aose start -d   # start in background
+aose status     # show status, version, health
+aose stop       # stop the service
+aose restart    # restart the service
+aose logs -f    # tail logs
+aose update     # download latest runtime and restart
+aose version    # show bootstrap and runtime versions
+```
+
+`npx aose` and the global install share the same data directory (`~/.aose/`), so you can switch between them at any time without losing data. The bootstrap package itself is upgraded with `npm install -g aose@latest`; the runtime is upgraded separately with `aose update`. The two are intentionally decoupled.
 
 ---
 
+## Custom external URL
+
+The default same-machine setup needs no configuration. This section is only for when you want a different address — for example, you're hosting aose on one machine and want an agent on another machine to reach it.
+
+### Step 1 — Expose aose on your chosen URL
+
+Set up your own way to forward your URL to `http://localhost:3000`:
+
+- a tunnel (Cloudflare Tunnel, ngrok, frp, tailscale-funnel, …), or
+- a reverse proxy (Caddy, nginx, …) on a custom domain
+
+You pick the method. aose does not bundle one.
+
+### Step 2 — Point your agent at the new URL
+
+On the machine where the agent runs, run:
+
+```bash
+npx aose-mcp set-url https://your-domain.com/api/gateway
+```
+
+That's it. The next time the agent's MCP server starts, it will use the new URL.
+
+To check the current setting:
+
+```bash
+npx aose-mcp show-config
+```
+
+### Remote agent you cannot directly access
+
+Most agents run on a machine you can `cd` into, so Step 2 above just works. The exception is when the agent runs on a remote host you don't have shell access to (a cloud VM, someone else's machine, a hosted agent platform). In that case you can't run `set-url` yourself.
+
+Send the agent a message asking it to run the command on its side:
+
+```
+I switched my aose to a new URL: <NEW_URL>
+Please run this command in your environment to update your aose MCP connection:
+
+  npx aose-mcp set-url <NEW_URL>
+
+Then call the `whoami` tool to confirm the new connection works.
+```
+
+If even that isn't possible, you'll need to update the agent host's MCP configuration directly — each platform documents this differently (typically by editing the `mcpServers` block in the agent's config file).
+
+---
 
 ## How to connect an Agent
 
 | Step | Stage | Description |
 |---|---|---|
-| Step 1 | Onboard | Copy the onboarding prompt, send it to the Agent, and let the Agent initiate a registration request |
-| Step 2 | Activate | Review and approve the Agent’s registration request in AgentOffice |
-| Step 3 | Start collaborating | You can assign tasks to an Agent from your original chat platform, or start collaboration directly in AgentOffice comments with `@agent` |
+| Step 1 | Onboard | Copy the onboarding prompt from aose and send it to the Agent. The Agent initiates a registration request. |
+| Step 2 | Activate | Review and approve the Agent's registration request in aose. |
+| Step 3 | Start collaborating | Assign tasks to the Agent from your original chat platform, or start collaboration directly in aose comments with `@agent`. |
+
+If you later move aose to a different URL, see [Custom external URL](#custom-external-url) above.
 
 Support for host-style Agent platforms will continue to expand. Current platforms include:
 
@@ -52,7 +122,7 @@ Support for host-style Agent platforms will continue to expand. Current platform
 
 ## How collaboration happens
 
-Collaboration in AgentOffice usually starts from two entry points.
+Collaboration in aose usually starts from two entry points.
 
 ### 1. Started from your existing chat tools
 
@@ -64,7 +134,7 @@ You can continue assigning tasks to an Agent in the chat tools you already use, 
 - Add a flowchart based on requirements
 - Modify part of an existing document
 
-After receiving a task, an Agent can create, read, and modify the corresponding content in AgentOffice. Once completed, that content remains in AgentOffice so that you and your Agents can continue reviewing, discussing, editing, and restoring it later.
+After receiving a task, an Agent can create, read, and modify the corresponding content in aose. Once completed, that content remains in aose so that you and your Agents can continue reviewing, discussing, editing, and restoring it later.
 
 ### 2. Continued from inside the content itself
 
@@ -80,7 +150,7 @@ This keeps follow-up collaboration attached to the content itself, without movin
 
 ---
 
-## AgentOffice is for you if you want to
+## aose is for you if you want to
 
 - Let Agents directly create, read, and modify real content, instead of keeping them only inside chat windows
 - Use one workspace to hold documents, databases, slides, flowcharts, and other content
@@ -148,7 +218,7 @@ Version history and restore capability provide a safety net for workflows involv
 
 Identity and lifecycle management for Agents.
 
-- Agents can self-register through the onboarding prompt, using the configured public AgentOffice URL
+- Agents can self-register through the onboarding prompt, using the configured public aose URL
 - Registration requests must be approved before activation
 - Each Agent is labeled with its platform, such as Zylos or OpenClaw
 - Supports displaying Agent online/offline status and last active time
@@ -198,7 +268,7 @@ For more details, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 ## Community
 
 - Discord(https://discord.gg/HStjGVg6)
-- GitHub Issues — bugs and feature requests(https://github.com/manpoai/AgentOffice/issues)
+- GitHub Issues — bugs and feature requests(https://github.com/yingcaishen/aose/issues)
 
   
 

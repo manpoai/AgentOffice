@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 const GW_URL = process.env.GATEWAY_URL;
 const GW_TOKEN = process.env.GATEWAY_AGENT_TOKEN || process.env.GATEWAY_ADMIN_TOKEN || '';
 
 /**
- * Proxy all /api/gateway/* requests to ASuite Gateway /api/*
+ * Proxy all /api/gateway/* requests to AOSE Gateway /api/*
  */
 export async function GET(req: NextRequest, { params }: { params: { path: string[] } }) {
   return proxy(req, params.path);
@@ -42,8 +45,8 @@ async function proxy(req: NextRequest, pathParts: string[], hasBody?: boolean) {
   const clientAuth = req.headers.get('authorization');
   const headers: Record<string, string> = {
     'Authorization': clientAuth || `Bearer ${GW_TOKEN}`,
-    'X-Forwarded-Host': req.headers.get('host') || '',
-    'X-Forwarded-Proto': req.nextUrl.protocol.replace(':', '') || 'https',
+    'X-Forwarded-Host': req.headers.get('x-forwarded-host') || req.headers.get('host') || '',
+    'X-Forwarded-Proto': req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(':', '') || 'https',
   };
 
   const ct = req.headers.get('content-type') || '';
@@ -63,6 +66,63 @@ async function proxy(req: NextRequest, pathParts: string[], hasBody?: boolean) {
         if (ct) headers['Content-Type'] = ct;
       }
     }
+  }
+
+  // SSE endpoints need streaming passthrough: buffering to arrayBuffer() kills
+  // the long-lived event stream. Detect by path suffix and route through the
+  // upstream response body directly.
+  const joinedPath = pathParts.join('/');
+  const isSSE = joinedPath === 'notifications/stream' || joinedPath === 'me/events/stream';
+
+  if (isSSE) {
+    // SSE endpoints authenticate via ?token= query param (EventSource can't set
+    // headers). If the client didn't send their own Authorization header, drop
+    // the shell's fallback GW_TOKEN — otherwise gateway authenticates every
+    // public SSE as whoever owns GW_TOKEN, starving real agents of their events.
+    const sseHeaders: Record<string, string> = { ...headers, Accept: 'text/event-stream' };
+    if (!clientAuth) delete sseHeaders.Authorization;
+    const resp = await fetch(url.toString(), {
+      method: req.method,
+      headers: sseHeaders,
+      // @ts-expect-error Node fetch supports duplex but types don't expose it
+      duplex: 'half',
+      signal: req.signal,
+    });
+    if (!resp.ok || !resp.body) {
+      return new NextResponse(null, { status: resp.status });
+    }
+    const upstream = resp.body.getReader();
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Flush headers to client immediately — without an initial chunk,
+        // Next.js buffers the response until upstream sends something.
+        controller.enqueue(new TextEncoder().encode(': connected\n\n'));
+        try {
+          while (true) {
+            const { done, value } = await upstream.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+        } catch {
+          // client disconnect or upstream error
+        } finally {
+          controller.close();
+          try { upstream.releaseLock(); } catch {}
+        }
+      },
+      cancel() {
+        try { upstream.cancel(); } catch {}
+      },
+    });
+    return new NextResponse(stream, {
+      status: resp.status,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+    });
   }
 
   const resp = await fetch(url.toString(), {

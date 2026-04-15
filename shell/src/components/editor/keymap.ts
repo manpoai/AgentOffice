@@ -303,7 +303,7 @@ function deleteEmptyBlock(state: EditorState, dispatch?: (tr: Transaction) => vo
 
 /**
  * Protect inline atoms (images) from accidental deletion via Backspace.
- * Based on Outline's DeleteNearAtom extension (GitHub Issue #10681).
+ * Handles backspace near inline atom nodes so the atom deletes as a unit.
  *
  * Handles two cases:
  * 1. Inline case: cursor is right after a single-char text node, and the node
@@ -437,7 +437,7 @@ function protectAtomOnBackspace(state: EditorState, dispatch?: (tr: Transaction)
 function protectAtomOnDelete(state: EditorState, dispatch?: (tr: Transaction) => void): boolean {
   const { selection } = state;
 
-  // Case 1: Inline atom protection (Outline's approach)
+  // Case 1: Inline atom protection
   if (selection instanceof TextSelection) {
     const { $cursor } = selection;
     if ($cursor && $cursor.textOffset === 0) {

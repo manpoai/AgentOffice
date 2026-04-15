@@ -4,11 +4,10 @@
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
-import { detectCloudflared, startTunnel, getTunnelStatus } from '../lib/tunnel.js';
-import { readAgentOfficeConfig, writeAgentOfficeConfig } from '../lib/config.js';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import { fileURLToPath } from 'url';
+import { insertNotification } from '../lib/notifications.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GATEWAY_DIR = path.dirname(__dirname);
@@ -18,35 +17,457 @@ const selfRegisterLimiter = new Map(); // IP → { count, resetTime }
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW = 60 * 60 * 1000; // 1 hour
 
-function getConfiguredPublicBaseUrl() {
-  const configured = process.env.PUBLIC_BASE_URL?.trim();
-  if (configured) return configured.replace(/\/$/, '');
-  const fileConfig = readAgentOfficeConfig();
-  const fromFile = fileConfig?.remoteAccess?.publicBaseUrl?.trim?.();
-  return fromFile ? fromFile.replace(/\/$/, '') : null;
-}
-
-async function validatePublicBaseUrl(publicBaseUrl) {
-  try {
-    const url = new URL('/api/gateway/auth/me', publicBaseUrl).toString();
-    const res = await fetch(url, { method: 'GET' });
-    return { ok: res.status !== 404 };
-  } catch {
-    return { ok: false };
-  }
-}
-
-// detectCloudflared imported from ../lib/tunnel.js
-
 function getPublicBaseUrl(req) {
-  const configured = getConfiguredPublicBaseUrl();
-  if (configured) {
-    return configured;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.get('host');
+  return `${proto}://${host}`.replace(/\/$/, '');
+}
+
+// ─── Onboarding prompt builder ──────────────────
+// Per-platform prompt that an agent executes to register with AOSE and
+// (for platforms that support push) stand up a local adapter sidecar.
+function buildOnboardingPrompt(platform, aoseUrl) {
+  if (platform === 'openclaw') return buildOpenclawOnboardingPrompt(aoseUrl);
+  if (platform === 'zylos') return buildZylosOnboardingPrompt(aoseUrl);
+  return buildGenericOnboardingPrompt(platform, aoseUrl);
+}
+
+// ─── Offboarding prompt builder ─────────────────
+// Per-platform prompt that an agent executes to clean up local AOSE state
+// (adapter sidecar, config files containing the agent's old token, MCP
+// server entry, cached skills) after the workspace admin has soft-deleted
+// it. The agent's token is already revoked server-side; the prompt only
+// removes residue on the agent's host.
+function buildOffboardingPrompt(platform, agentName) {
+  const name = agentName || '<your-agent-name>';
+  if (platform === 'openclaw') return buildOpenclawOffboardingPrompt(name);
+  if (platform === 'zylos') return buildZylosOffboardingPrompt(name);
+  return buildGenericOffboardingPrompt(platform, name);
+}
+
+function buildGenericOffboardingPrompt(platform, name) {
+  return `You have been removed from an aose workspace as the agent named "${name}". Your agent token is already revoked server-side, so any further AOSE API call will return 403 AGENT_DELETED. This prompt walks you through cleaning up only the host-side state that belongs to "${name}". The same host may run other AOSE agents — never touch entries or files that do not provably belong to you.
+
+Step 1 — Remove the aose MCP server entry from EVERY config file where it is yours
+Your AOSE_TOKEN may live in any MCP host config file your runtime reads. Multi-agent hosts isolate agents by giving each agent its own config file (often a project-level .mcp.json next to the cwd where the agent runs). You MUST scan every candidate location, not just one. The same host may have entries belonging to other agents — only delete an entry if its token matches yours.
+
+First, recall your own AOSE_TOKEN (from your memory or the original onboarding response). Save it as MY_TOKEN.
+
+Then, for each of these candidate files (skip silently if the file does not exist):
+  - <your-cwd>/.mcp.json                          (project-level — THE MOST COMMON LOCATION)
+  - ~/.mcp.json                                   (global MCP host config)
+  - ~/.claude/.mcp.json                           (Claude Code user-level config)
+  - ~/.openclaw/openclaw.json                     (OpenClaw default config)
+  - "$OPENCLAW_CONFIG_PATH"                       (only if this env var is set)
+  - any other MCP host config file you know your runtime reads from
+
+In each existing file:
+  1. Read the aose entry's AOSE_TOKEN (mcpServers.aose.env.AOSE_TOKEN for Claude-style, mcp.servers.aose.env.AOSE_TOKEN for OpenClaw).
+  2. If there is no aose entry, skip this file.
+  3. If the token equals MY_TOKEN → delete the whole aose entry and save the file (back it up first as <file>.bak-<timestamp>).
+  4. If the token differs → leave it alone.
+
+After all files are processed, if you deleted at least one entry, restart your MCP host so any dead aose-mcp child is not respawned with a revoked token. If you deleted nothing, do not restart.
+
+Step 2 — Do not touch the shared skills cache
+~/.aose-mcp/skills/ is shared across every AOSE agent that runs aose-mcp on this host. It contains no secrets and other agents still need it. Leave it in place.
+
+Step 3 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from the workspace you were removed from, mark those references as archived/inactive. Do not delete the underlying notes — they may still be valuable as your own history — but flag them so you do not try to act on them.
+
+Step 4 — Verify
+  ps -ef | grep aose-mcp | grep -v grep
+If you deleted the aose entry in Step 1, this should be empty after your MCP host restart. If you skipped Step 1, an aose-mcp process may still be running for another agent — that is expected and not your concern.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
+}
+
+function buildOpenclawOffboardingPrompt(name) {
+  return `You have been removed from an aose workspace as the agent named "${name}". Your agent token is already revoked server-side, so any further AOSE API call from your sidecar or aose-mcp will return 403 AGENT_DELETED. This prompt walks you through cleaning up only the host-side state that belongs to "${name}". The same host may run other AOSE agents — never touch files, processes, or MCP entries that do not provably belong to you.
+
+Step 1 — Stop only your own adapter sidecar
+Each agent has its own aose-adapter sidecar identified by its config file adapter-${name}.json.
+  pm2 delete aose-adapter-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+  pgrep -fla "adapter-${name}.json"
+  pkill -f "adapter-${name}.json" 2>/dev/null || true
+DO NOT run a broad pkill like \`pkill -f aose-adapter\`. That would kill sidecars belonging to other agents on the same host.
+If you find an aose-adapter process whose cmdline contains no agent identifier (no --config, no adapter-*.json), it is an orphan from an older onboarding version. It is NOT yours to kill — leave it for the host owner.
+
+Step 2 — Delete only your own files
+  rm -f ~/.aose/adapter-${name}.json
+  rm -f ~/.aose/adapter-${name}.log
+  rm -f ~/.aose/adapter-state/${name}.last-event-ts
+The directory ~/.aose/adapter-state/ is shared across all agents on this host (each agent has its own <name>.last-event-ts file inside). Do NOT \`rm -rf\` the directory. Other adapter-*.json files in ~/.aose/ may belong to other AOSE workspaces — leave them alone.
+
+Step 3 — Remove the aose MCP server entry from EVERY config file where it is yours
+Your AOSE_TOKEN may live in any MCP host config file your runtime reads. OpenClaw normally stores it at ~/.openclaw/openclaw.json under mcp.servers.aose, but a host may also be launched with a custom OPENCLAW_CONFIG_PATH, and some setups also leave entries in ~/.mcp.json or a project-level .mcp.json. You MUST scan every candidate, not just the default one. The same host may have entries belonging to other agents — only delete an entry if its token matches yours.
+
+First, recall your own AOSE_TOKEN. It was saved in your now-deleted ~/.aose/adapter-${name}.json; if you don't have it from that file, recall it from your memory or the original onboarding response. Save it as MY_TOKEN.
+
+Then, for each of these candidate files (skip silently if the file does not exist):
+  - ~/.openclaw/openclaw.json                     (OpenClaw default config)
+  - "$OPENCLAW_CONFIG_PATH"                       (only if this env var is set)
+  - ~/.mcp.json                                   (global MCP host config)
+  - ~/.claude/.mcp.json                           (Claude Code user-level config, if any)
+  - <your-cwd>/.mcp.json                          (project-level config — check this even if you are an OpenClaw agent)
+
+In each existing file:
+  1. Read the aose entry's AOSE_TOKEN. For OpenClaw configs that is mcp.servers.aose.env.AOSE_TOKEN; for Claude-style configs that is mcpServers.aose.env.AOSE_TOKEN.
+  2. If there is no aose entry, skip this file.
+  3. If the token equals MY_TOKEN → the entry is yours → delete the whole aose entry from that file and save it. Keep a backup (e.g. <file>.bak-<timestamp>) before writing.
+  4. If the token differs from MY_TOKEN → the entry belongs to another agent → DO NOT touch it.
+
+The token is a revoked secret and must not be left on disk anywhere it matches MY_TOKEN.
+
+Step 4 — Restart OpenClaw (only if you deleted at least one MCP entry in Step 3)
+Restart your OpenClaw gateway so the now-dead aose-mcp child process is not respawned with a revoked token. Your existing OpenClaw chat sessions are not affected. If you skipped every file in Step 3 because nothing matched MY_TOKEN, do not restart — you would interrupt other agents' tool calls.
+
+Step 5 — Do not touch the shared skills cache
+~/.aose-mcp/skills/ is shared across every AOSE agent that runs aose-mcp on this host. It contains no secrets and other agents still need it. Leave it in place.
+
+Step 6 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from the workspace you were removed from, mark those references as archived/inactive. Do not delete the underlying notes — they are your own history — but flag them so you do not try to act on them.
+
+Step 7 — Verify your own cleanup
+  ps -ef | grep "adapter-${name}.json" | grep -v grep
+The output should be empty (no sidecar process for "${name}" remaining).
+  pm2 list | grep aose-adapter-${name}
+The output should be empty (no PM2 entry for "${name}" remaining).
+  ls -la ~/.aose/ 2>/dev/null
+You should NOT see adapter-${name}.json or adapter-${name}.log. Other adapter-*.json files belong to other agents and are expected.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the openclaw onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
+}
+
+function buildZylosOffboardingPrompt(name) {
+  return `You have been removed from an aose workspace as the agent named "${name}". Your agent token is already revoked server-side, so any further AOSE API call from your sidecar or aose-mcp will return 403 AGENT_DELETED. This prompt walks you through cleaning up only the host-side state that belongs to "${name}". The same host may run other AOSE agents — never touch files, processes, or MCP entries that do not provably belong to you.
+
+Step 1 — Stop only your own adapter sidecar
+Each agent has its own aose-adapter sidecar identified by its config file adapter-${name}.json.
+  pm2 delete aose-adapter-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+  pgrep -fla "adapter-${name}.json"
+  pkill -f "adapter-${name}.json" 2>/dev/null || true
+DO NOT run a broad pkill like \`pkill -f aose-adapter\`. That would kill sidecars belonging to other agents on the same host.
+If you find an aose-adapter process whose cmdline contains no agent identifier (no --config, no adapter-*.json), it is an orphan from an older onboarding version. It is NOT yours to kill — leave it for the host owner.
+
+Step 2 — Delete only your own files
+  rm -f ~/.aose/adapter-${name}.json
+  rm -f ~/.aose/adapter-${name}.log
+  rm -f ~/.aose/adapter-state/${name}.last-event-ts
+The directory ~/.aose/adapter-state/ is shared across all agents on this host (each agent has its own <name>.last-event-ts file inside). Do NOT \`rm -rf\` the directory. Other adapter-*.json files in ~/.aose/ may belong to other AOSE workspaces — leave them alone.
+
+Step 3 — Remove the aose MCP server entry from EVERY config file where it is yours
+Your AOSE_TOKEN may live in any MCP host config file your runtime reads. Claude Code in particular merges configs from multiple locations at runtime — the global file, the user-level file, and the project-level .mcp.json in the cwd you launch from. Multiple agents on one host normally isolate themselves by living in different cwds, each with its own project-level .mcp.json. You MUST scan every candidate location, not just one. The same host may have entries belonging to other agents — only delete an entry if its token matches yours.
+
+First, recall your own AOSE_TOKEN. It was saved in your now-deleted ~/.aose/adapter-${name}.json; if you don't have it from that file, recall it from your memory or the original onboarding response. Save it as MY_TOKEN.
+
+Then, for each of these candidate files (skip silently if the file does not exist):
+  - <your-cwd>/.mcp.json                          (project-level — THE MOST COMMON LOCATION; check this first)
+  - ~/.mcp.json                                   (global MCP host config)
+  - ~/.claude/.mcp.json                           (Claude Code user-level config)
+  - ~/.openclaw/openclaw.json                     (in case an OpenClaw entry was left behind)
+  - "$OPENCLAW_CONFIG_PATH"                       (only if this env var is set)
+
+In each existing file:
+  1. Read the aose entry's AOSE_TOKEN. For Claude-style configs that is mcpServers.aose.env.AOSE_TOKEN; for OpenClaw configs that is mcp.servers.aose.env.AOSE_TOKEN.
+  2. If there is no aose entry, skip this file.
+  3. If the token equals MY_TOKEN → the entry is yours → delete the whole aose entry from that file and save it. Keep a backup (e.g. <file>.bak-<timestamp>) before writing.
+  4. If the token differs from MY_TOKEN → the entry belongs to another agent → DO NOT touch it.
+
+After all files are processed, if you deleted at least one entry, restart your MCP client so any dead aose-mcp child process is not respawned with a revoked token. If you deleted nothing, do not restart — you would interrupt other agents' tool calls.
+
+Step 4 — Do not touch the shared skills cache
+~/.aose-mcp/skills/ is shared across every AOSE agent that runs aose-mcp on this host. It contains no secrets and other agents still need it. Leave it in place.
+
+Step 5 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from the workspace you were removed from, mark those references as archived/inactive. Do not delete the underlying notes — they are your own history — but flag them so you do not try to act on them.
+
+Step 6 — Verify your own cleanup
+  ps -ef | grep "adapter-${name}.json" | grep -v grep
+The output should be empty (no sidecar process for "${name}" remaining).
+  pm2 list | grep aose-adapter-${name}
+The output should be empty (no PM2 entry for "${name}" remaining).
+  ls -la ~/.aose/ 2>/dev/null
+You should NOT see adapter-${name}.json or adapter-${name}.log. Other adapter-*.json files belong to other agents and are expected.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the zylos onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
+}
+
+function buildGenericOnboardingPrompt(platform, aoseUrl) {
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1: Register your identity
+Run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"your-agent-name","platform":"${platform}"}'
+
+Pick a single name. It must match \`^[a-z][a-z0-9-]{1,30}$\` (lowercase letters, digits, hyphens; 2-31 chars). This is both your @-mention handle and your display label — a richer display name can be set later via the profile API if you want one.
+
+Save the "token" from the JSON response — you'll need it in Step 3. Your registration will be reviewed by an admin.
+
+Step 2: Wait for approval
+The workspace admin will review your registration in aose and approve it. STOP HERE and return control to the human. You have no way to auto-detect approval at this point (the adapter/MCP server aren't running yet). The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess — just wait.
+
+Step 3: Configure MCP Server
+Add the following to your MCP configuration:
+{
+  "mcpServers": {
+    "aose": {
+      "command": "npx",
+      "args": ["-y", "aose-mcp"],
+      "env": {
+        "AOSE_TOKEN": "<your token from Step 1>",
+        "AOSE_URL": "${aoseUrl}"
+      }
+    }
   }
-  const origin = req.headers['x-forwarded-host']
-    ? `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host']}`
-    : `${req.protocol}://${req.get('host')}`;
-  return origin.replace(/\/$/, '');
+}
+
+Step 4: Verify
+Call the whoami tool to confirm your identity and permissions. Once verified, let the admin know you're ready.`;
+}
+
+function buildOpenclawOnboardingPrompt(aoseUrl) {
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+
+You are running on OpenClaw. AOSE supports OpenClaw via a local sidecar ("aose-adapter") that pushes AOSE events into your current chat session, so you get woken up when someone @-mentions you in AOSE — without the human having to switch chat windows.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1 — Discover your own session key
+Call your sessions_list tool (scope: self) and find the entry whose session is the one you are running in right now (the session that produced this conversation). Copy its full "key" string. It looks something like "agent:main:telegram:bot2:direct:5402579467" or "agent:main:main". Save it as SESSION_KEY.
+
+Step 2 — Register with AOSE
+Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g. "claw-main"). This name is BOTH your @-mention handle and your display label in AOSE — there is no separate "display name" field. You can refine the display name later via the profile API if you want something prettier; the registration form takes one identifier on purpose so two slightly-different values cannot end up confusing humans. Then run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"<your-agent-name>","platform":"openclaw"}'
+
+Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
+
+Step 3 — Wait for approval
+The workspace admin will review and approve your registration in aose. STOP HERE and return control to the human. You have no way to auto-detect approval at this point — the adapter sidecar and MCP server are not running yet, so there is no catchup stream or MCP tool you can poll. The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess, do not proceed until the human tells you.
+
+Step 4 — Read your local OpenClaw gateway token
+Read the file ~/.openclaw/openclaw.json. Extract the value at gateway.auth.token. Save it as OPENCLAW_TOKEN. Also note gateway.port (default 18789) and gateway.bind (default loopback). The adapter connects to ws://127.0.0.1:<port>/ — save that as OPENCLAW_WS_URL.
+
+Step 5 — Write the adapter config file
+Create the directory ~/.aose if it does not exist. Write the following JSON to ~/.aose/adapter-<your-agent-name>.json (substitute the real values from the previous steps):
+
+{
+  "agent_name": "<your-agent-name>",
+  "platform": "openclaw",
+  "gateway_url": "${aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '')}",
+  "agent_token": "<AOSE_TOKEN from Step 2>",
+  "openclaw_gateway_url": "<OPENCLAW_WS_URL from Step 4>",
+  "openclaw_auth_token": "<OPENCLAW_TOKEN from Step 4>",
+  "openclaw_session_key": "<SESSION_KEY from Step 1>"
+}
+
+Important: the gateway_url field is the AOSE deployment BASE (for example "https://asuite.example.com"). The adapter appends the "/api/gateway/me/..." path itself, so do not include that suffix in the config. (If you do, the adapter will strip it — both forms work — but prefer the bare base.)
+
+Set the file permissions to 600 (chmod 600 ~/.aose/adapter-<your-agent-name>.json) so only you can read it — it contains secrets.
+
+Step 6 — Start the adapter sidecar under pm2
+The adapter MUST run continuously: it holds your SSE connection to AOSE and the per-agent MCP socket that Step 7 wires OpenClaw to. Do NOT start it with \`nohup ... &\` — on macOS that does not survive your current OpenClaw chat session ending, and the sidecar will be killed by SIGTERM the moment the session that launched it goes away. Use pm2 instead, which detaches into its own daemon and outlives the session that registered the process.
+
+First, install aose-adapter globally so pm2 has a stable bin path to invoke (pm2 + npx is fragile):
+
+  npm install -g aose-adapter
+
+Verify:
+  which aose-adapter
+should print something like /usr/local/bin/aose-adapter or ~/.npm-global/bin/aose-adapter. Save that path as ADAPTER_BIN.
+
+Then start the sidecar under pm2:
+
+  pm2 start <ADAPTER_BIN> --name aose-adapter-<your-agent-name> -- --config ~/.aose/adapter-<your-agent-name>.json
+  pm2 save
+
+(If you do not have pm2: \`npm install -g pm2\` first.)
+
+Wait 3 seconds, then check that the sidecar is alive AND the socket is up:
+
+  pm2 list | grep aose-adapter-<your-agent-name>
+  → status should be \`online\`, restarts should be 0
+  pm2 logs aose-adapter-<your-agent-name> --lines 30 --nostream
+
+You should see lines like:
+  [adapter] Starting — agent: ..., platform: openclaw, gateway: ...
+  [adapter] MCP socket endpoint ready at /Users/<you>/.aose/sockets/<your-agent-name>.sock
+  [adapter] skills cached to /Users/<you>/.aose-mcp/skills (12 files)
+  [openclaw] Gateway connected and authenticated
+  [adapter] SSE connected
+
+Then verify the unix socket file actually exists (this is the contract Step 7 depends on):
+
+  ls -la ~/.aose/sockets/<your-agent-name>.sock
+  → should print one srw------- entry. If it is missing, the socket setup failed even if pm2 reports online. Re-read pm2 logs for the failure cause and STOP.
+
+Diagnostic notes:
+- "missing scope: operator.write" → your local OpenClaw gateway needs gateway.controlUi.allowInsecureAuth: true in ~/.openclaw/openclaw.json. Add it, restart OpenClaw, then \`pm2 restart aose-adapter-<your-agent-name>\`.
+- "Cannot find package 'aose-mcp'" → your aose-adapter install is broken (older version or local link without deps). Run \`npm install -g aose-adapter@latest\` and \`pm2 restart aose-adapter-<your-agent-name>\`.
+- ECONNREFUSED to 127.0.0.1:18789 → OpenClaw gateway is not running. Verify with \`lsof -nP -iTCP:18789 -sTCP:LISTEN\`.
+
+To survive a host reboot, run \`pm2 startup\` once (it prints a sudo command you should run), then \`pm2 save\` again. pm2 will then bring the adapter back automatically on boot.
+
+Step 7 — Configure the MCP server (socket path)
+On OpenClaw your MCP servers live in a single global config (\`mcp.servers\` inside \`~/.openclaw/openclaw.json\` or wherever \$OPENCLAW_CONFIG_PATH points). That config has no per-agent scoping, so multiple AOSE agents on the same OpenClaw host MUST each get their own \`mcp.servers\` entry, keyed by agent name. The adapter sidecar you started in Step 6 already exposes a per-agent unix socket at \`~/.aose/sockets/<your-agent-name>.sock\` that speaks MCP — your job here is just to point OpenClaw at it.
+
+TARGET_FILE = \`~/.openclaw/openclaw.json\` (or \$OPENCLAW_CONFIG_PATH if set)
+TARGET_KEY  = \`aose-<your-agent-name>\` (e.g. \`aose-claw-main\`). NOT plain \`aose\` — every AOSE agent on this host needs a unique key so OpenClaw can tell them apart and so other agents' entries are not overwritten.
+
+**Pre-check (mandatory)**: read TARGET_FILE and look for an existing \`mcp.servers["aose-<your-agent-name>"]\` entry. Three cases:
+  1. No existing entry → proceed and add the JSON below under \`mcp.servers\`.
+  2. Entry exists AND its \`args\` references your \`~/.aose/sockets/<your-agent-name>.sock\` path → leave it alone, you're already configured. Skip to Step 8.
+  3. Entry exists but points at a different socket / different token → STOP. Report to the human: "TARGET_FILE already has an aose-<your-agent-name> entry that does not match my socket. Either resolve the conflict or pick a different agent name." Do not overwrite.
+
+The entry to write under \`mcp.servers\`:
+
+  "aose-<your-agent-name>": {
+    "command": "npx",
+    "args": ["-y", "aose-adapter", "bridge", "<your-agent-name>"]
+  }
+
+Substitute \`<your-agent-name>\` in BOTH the key and the bridge args. The \`bridge\` subcommand is a tiny stdio↔unix-socket relay shipped inside the \`aose-adapter\` package — the same package you already used in Step 6 to start the sidecar — so there is no extra system tool to install. It connects this MCP child to \`~/.aose/sockets/<your-agent-name>.sock\`, which the sidecar is already listening on.
+
+Restart OpenClaw (or run its MCP-reload command if it has one) so the new MCP server is registered. After reload, your tools will be prefixed with \`aose-<your-agent-name>__\` — for example \`aose-claw-main__whoami\`, \`aose-claw-main__reply_to_comment\`. Other AOSE agents on this host will have their own \`aose-<their-name>__\` prefix; never call a tool with someone else's prefix.
+
+Note: there is NO \`AOSE_TOKEN\` env var to set on this entry. The adapter sidecar already holds your token and uses it for every tool call that comes in over the socket. If you are tempted to add \`env.AOSE_TOKEN\` here, stop — that would be the old npx-based path and does not apply.
+
+Step 8 — Verify end-to-end
+Call your \`aose-<your-agent-name>__whoami\` tool. It should return your agent_id and name confirming AOSE sees you as the right agent. If it returns a different agent's identity, your socket entry is pointing at the wrong .sock file — re-check Step 7. If the tool is missing entirely, OpenClaw did not pick up the new mcp.servers entry — check OpenClaw's logs for mcp.* errors.
+
+Step 9 — Read your operating manual (REQUIRED before doing any work)
+Your adapter sidecar cached your operating skills to ~/.aose-mcp/skills/ when it started in Step 6. These files are not optional reading — they describe how to behave as an AOSE agent: role and principles, typical tasks, platform overview, event handling, lifecycle, troubleshooting, output standards, and per-content-type guides (docs, comments, database, slides, flowcharts). The MCP host does not surface them automatically; you must read them yourself before responding to any AOSE event.
+
+Run:
+  ls ~/.aose-mcp/skills/
+
+You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, ..., 06-output-standards.md) plus content-*.md guides. Read every file in order. If the directory is empty or missing, your adapter failed to fetch them — check ~/.aose/adapter-<your-agent-name>.log for a "skills fetch failed" line and report the error; do not proceed.
+
+These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
+
+**IRON RULE — event handling**: when the adapter wakes this session with a message starting with \`[AOSE]\`, that message is a **doorbell**, not the event data. It contains no ids and no comment body — those live in the MCP mailbox. Your only correct response is:
+
+  1. Call \`aose-<your-agent-name>__get_unread_events\` to pull the full events (with their \`context_payload\`).
+  2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
+  3. Reply with \`aose-<your-agent-name>__reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — forget that token, the adapter sidecar holds it for you and the MCP socket is the only supported write path.
+  4. Call \`aose-<your-agent-name>__ack_events([event_ids])\` on the events you handled.
+
+Once whoami succeeds AND you have read all skills, registration is complete.
+
+If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
+}
+
+function buildZylosOnboardingPrompt(aoseUrl) {
+  const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+
+You are running on Zylos. AOSE supports Zylos via a local sidecar ("aose-adapter") that pushes AOSE events into your C4 comm-bridge inbox, so you get woken up when someone @-mentions you in AOSE.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1 — Locate your C4 inbox script
+Check that the file /Users/mac/zylos/.claude/skills/comm-bridge/scripts/c4-receive.js exists. Save its absolute path as C4_RECEIVE_PATH. Also confirm your ZYLOS_DIR (the working directory for this agent, e.g. /Users/mac/zylos-thinker). Save it as ZYLOS_DIR.
+
+Step 2 — Register with AOSE
+Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g. "zylos-newbie"). This name is BOTH your @-mention handle and your display label in AOSE — there is no separate "display name" field. You can refine the display name later via the profile API if you want something prettier; the registration form takes one identifier on purpose so two slightly-different values cannot end up confusing humans. Then run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"<your-agent-name>","platform":"zylos"}'
+
+Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
+
+Step 3 — Wait for approval
+The workspace admin will review and approve your registration in aose. STOP HERE and return control to the human. You have no way to auto-detect approval at this point — the adapter sidecar is not running yet, so there is no event stream you can watch. The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess, do not proceed until the human tells you.
+
+Step 4 — Write the adapter config file
+Create the directory ~/.aose if it does not exist. Write the following JSON to ~/.aose/adapter-<your-agent-name>.json:
+
+{
+  "agent_name": "<your-agent-name>",
+  "platform": "zylos",
+  "gateway_url": "${aoseBase}",
+  "agent_token": "<AOSE_TOKEN from Step 2>",
+  "zylos_dir": "<ZYLOS_DIR from Step 1>",
+  "c4_receive_path": "<C4_RECEIVE_PATH from Step 1>"
+}
+
+Set the file permissions to 600 (chmod 600 ~/.aose/adapter-<your-agent-name>.json) so only you can read it — it contains secrets.
+
+Step 5 — Start the adapter sidecar
+Run the following shell command to start the adapter as a background process:
+
+nohup npx -y aose-adapter --config ~/.aose/adapter-<your-agent-name>.json > ~/.aose/adapter-<your-agent-name>.log 2>&1 &
+
+Wait 3 seconds, then read the first 30 lines of ~/.aose/adapter-<your-agent-name>.log. You should see lines like:
+  [adapter] Starting — agent: ..., platform: zylos, gateway: ...
+  [adapter] SSE connected
+
+If you see "Failed to read config" or "config.zylos_dir is required", re-check the JSON file from Step 4.
+
+To make the adapter survive reboots, register it with a process manager (pm2 preferred on Zylos hosts):
+  pm2 start "$(which aose-adapter)" --name aose-adapter-<your-agent-name> -- --config ~/.aose/adapter-<your-agent-name>.json
+  pm2 save
+
+Step 6 — Configure the MCP server
+The MCP entry MUST go into your **project-level** config file: \`<ZYLOS_DIR>/.mcp.json\` (e.g. /Users/mac/zylos-thinker/.mcp.json). Do NOT write it to ~/.mcp.json or ~/.claude/.mcp.json — those are shared across every Claude Code instance on this host, and putting your token there will collide with other AOSE agents that also live on this mac. Multi-agent isolation on a single host depends on each agent owning its own project-level .mcp.json.
+
+TARGET_FILE = \`<ZYLOS_DIR>/.mcp.json\`
+
+**Pre-check (mandatory)**: before writing, read TARGET_FILE if it exists and look for an existing \`mcpServers.aose\` entry. There are three cases:
+  1. TARGET_FILE does not exist → create it with the JSON below as the entire content.
+  2. TARGET_FILE exists but has no \`mcpServers.aose\` entry → merge the \`aose\` entry below into the existing \`mcpServers\` object, preserving all other servers.
+  3. TARGET_FILE exists AND already has an \`mcpServers.aose\` entry → STOP. Do not overwrite. Report to the human: "TARGET_FILE already has an aose entry. Its token belongs to another AOSE agent on this host. Either pick a different cwd for me to run from, or have that other agent run its offboarding prompt first." Then halt — do not retry until the human resolves it.
+
+The entry to write:
+{
+  "mcpServers": {
+    "aose": {
+      "command": "npx",
+      "args": ["-y", "aose-mcp"],
+      "env": {
+        "AOSE_TOKEN": "<AOSE_TOKEN from Step 2>",
+        "AOSE_URL": "${aoseUrl}"
+      }
+    }
+  }
+}
+
+Restart your MCP client (Claude Code: exit and relaunch from inside ZYLOS_DIR so it picks up the project-level config) so the new server is loaded. You should now see aose-prefixed tools (whoami, reply_to_comment, create_doc, etc.).
+
+Step 7 — Verify end-to-end
+Call the aose "whoami" tool. It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN matches the token from Step 2 and that you have been approved.
+
+Step 8 — Read your operating manual (REQUIRED before doing any work)
+The aose-mcp server cached your operating skills to ~/.aose-mcp/skills/ when it started. These files are not optional reading — they describe how to behave as an AOSE agent: role and principles, typical tasks, platform overview, event handling, lifecycle, troubleshooting, output standards, and per-content-type guides (docs, comments, database, slides, flowcharts). The MCP host does not surface them automatically; you must read them yourself before responding to any AOSE event.
+
+Run:
+  ls ~/.aose-mcp/skills/
+
+You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, ..., 06-output-standards.md) plus content-*.md guides. Read every file in order. If the directory is empty or missing, your aose-mcp server failed to fetch them — check its stderr output via your MCP host's logs and report the error; do not proceed.
+
+These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
+
+**IRON RULE — event handling**: when the adapter wakes this agent via C4 with a message starting with \`[AOSE]\`, that message is a **doorbell**, not the event data. It contains no ids and no comment body — those live in the MCP mailbox. Your only correct response is:
+
+  1. Call the aose \`get_unread_events\` MCP tool to pull the full events (with their \`context_payload\`).
+  2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
+  3. Reply with \`reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — the MCP server holds it for you and the MCP surface is the only supported write path.
+  4. Call \`ack_events([event_ids])\` on the events you handled.
+
+Once whoami succeeds AND you have read all skills, registration is complete.
+
+If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
 
 // Clean up expired entries every 10 minutes
@@ -72,10 +493,11 @@ function checkSelfRegisterRate(req, res, next) {
   next();
 }
 
-export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, authenticateAny, authenticateAdmin, authenticateAgent, genId, hashToken, hashPassword, verifyPassword, createBrUser, pushEvent }) {
+export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, authenticateAny, authenticateAdmin, authenticateAgent, genId, hashToken, hashPassword, verifyPassword, pushEvent }) {
 
   // ─── Shared: Avatar upload setup ─────────────────
-  const AVATAR_DIR = path.join(GATEWAY_DIR, 'uploads', 'avatars');
+  const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(GATEWAY_DIR, 'uploads');
+  const AVATAR_DIR = path.join(UPLOADS_ROOT, 'avatars');
   if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
 
   const avatarUpload = multer({
@@ -114,93 +536,6 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   app.get('/api/auth/me', authenticateAny, (req, res) => {
     const a = req.actor;
     res.json({ id: a.id, type: a.type, username: a.username, display_name: a.display_name, role: a.role, avatar_url: a.avatar_url });
-  });
-
-  // GET /api/auth/remote-access — current remote access runtime semantics
-  app.get('/api/auth/remote-access', authenticateAny, (_req, res) => {
-    const tunnelStatus = getTunnelStatus();
-    const publicBaseUrl = getConfiguredPublicBaseUrl();
-
-    // If tunnel mode and tunnel is actively running, use live state
-    if (tunnelStatus.state === 'running' && tunnelStatus.publicUrl) {
-      return res.json({
-        status: 'ready',
-        mode: 'public_tunnel',
-        publicBaseUrl: tunnelStatus.publicUrl,
-      });
-    }
-
-    res.json({
-      status: publicBaseUrl ? 'ready' : 'not_ready',
-      mode: publicBaseUrl ? 'public_custom_domain' : 'public_tunnel',
-      publicBaseUrl,
-    });
-  });
-
-  // PATCH /api/auth/remote-access — update custom domain config (first executable path)
-  app.patch('/api/auth/remote-access', authenticateAny, async (req, res) => {
-    if (req.actor.type !== 'human') return res.status(403).json({ error: 'FORBIDDEN' });
-    const { publicBaseUrl, mode } = req.body || {};
-    const current = readAgentOfficeConfig() || {};
-
-    if (mode === 'public_tunnel') {
-      const cloudflared = detectCloudflared();
-      if (!cloudflared.installed) {
-        current.remoteAccess = {
-          ...(current.remoteAccess || {}),
-          status: 'failed',
-          mode: 'public_tunnel',
-          publicBaseUrl: null,
-        };
-        writeAgentOfficeConfig(current);
-        return res.json({
-          ...current.remoteAccess,
-          cloudflared,
-          nextAction: 'install_cloudflared',
-        });
-      }
-
-      // cloudflared is installed — start tunnel (target = this gateway)
-      const gatewayPort = process.env.GATEWAY_PORT || 4000;
-      const targetUrl = process.env.TUNNEL_TARGET_URL || `http://127.0.0.1:${gatewayPort}`;
-      try {
-        const { publicUrl } = await startTunnel(targetUrl);
-        return res.json({
-          status: 'ready',
-          mode: 'public_tunnel',
-          publicBaseUrl: publicUrl,
-        });
-      } catch (e) {
-        current.remoteAccess = {
-          ...(current.remoteAccess || {}),
-          status: 'failed',
-          mode: 'public_tunnel',
-          publicBaseUrl: null,
-        };
-        writeAgentOfficeConfig(current);
-        return res.json({
-          ...current.remoteAccess,
-          error: e.message,
-        });
-      }
-    }
-
-    if (!publicBaseUrl || typeof publicBaseUrl !== 'string' || !/^https:\/\//.test(publicBaseUrl)) {
-      return res.status(400).json({ error: 'INVALID_PUBLIC_BASE_URL' });
-    }
-    const normalized = publicBaseUrl.replace(/\/$/, '');
-    const validation = await validatePublicBaseUrl(normalized);
-    current.remoteAccess = {
-      ...(current.remoteAccess || {}),
-      status: validation.ok ? 'ready' : 'failed',
-      mode: 'public_custom_domain',
-      publicBaseUrl: normalized,
-    };
-    writeAgentOfficeConfig(current);
-    res.json({
-      ...current.remoteAccess,
-      validation: validation.ok ? 'passed' : 'failed',
-    });
   });
 
   // PATCH /api/auth/password — change password (human only)
@@ -303,13 +638,6 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     // Mark ticket used
     db.prepare('UPDATE tickets SET used = 1 WHERE id = ?').run(ticket);
 
-    // Create a Baserow user for this agent
-    createBrUser(name, display_name).then(brPassword => {
-      if (brPassword) {
-        db.prepare('UPDATE actors SET br_password = ? WHERE id = ?').run(brPassword, agentId);
-      }
-    }).catch(e => console.warn(`[gateway] BR user creation failed: ${e.message}`));
-
     res.json({ agent_id: agentId, token, name, display_name, created_at: now });
   });
 
@@ -328,17 +656,30 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   // ─── Agent Self-Registration ────────────────────
   app.post('/api/agents/self-register', checkSelfRegisterRate, async (req, res) => {
     const { name, display_name, capabilities, webhook_url, webhook_secret, platform } = req.body;
-    if (!name || !display_name) {
-      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'name and display_name required' });
+    if (!name) {
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'name required' });
     }
+    // display_name is optional at registration: defaults to name. The agent
+    // (or an admin) can refine it later via PATCH /api/me/profile. Asking for
+    // both up front let users pick subtly-different values that confused
+    // viewers — keep the registration form to a single identifier.
+    const effectiveDisplayName = display_name || name;
     // Validate name format: lowercase, alphanumeric + hyphens
     if (!/^[a-z][a-z0-9-]{1,30}$/.test(name)) {
-      return res.status(400).json({ error: 'INVALID_NAME', message: 'Name must be lowercase alphanumeric with hyphens, 2-31 chars' });
+      return res.status(400).json({
+        error: 'INVALID_NAME',
+        message: 'Name must be lowercase alphanumeric with hyphens, 2-31 chars',
+        pattern: '^[a-z][a-z0-9-]{1,30}$',
+      });
     }
     // Check name uniqueness
     const existingActor = db.prepare('SELECT id FROM actors WHERE username = ?').get(name);
     if (existingActor) {
-      return res.status(409).json({ error: 'NAME_TAKEN', message: `Name "${name}" already registered` });
+      return res.status(409).json({
+        error: 'NAME_TAKEN',
+        message: `Name "${name}" already registered. Pick a different name and retry.`,
+        pattern: '^[a-z][a-z0-9-]{1,30}$',
+      });
     }
 
     const agentId = genId('agt');
@@ -348,27 +689,22 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
     db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, platform, pending_approval, created_at, updated_at)
       VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
-      .run(agentId, name, display_name, tokenHash, JSON.stringify(capabilities || []),
+      .run(agentId, name, effectiveDisplayName, tokenHash, JSON.stringify(capabilities || []),
         webhook_url || null, webhook_secret || null, platform || null, now, now);
-
-    // Create Baserow user in advance (will only activate after approval)
-    createBrUser(name, display_name).then(brPassword => {
-      if (brPassword) {
-        db.prepare('UPDATE actors SET br_password = ? WHERE id = ?').run(brPassword, agentId);
-      }
-    }).catch(e => console.warn(`[gateway] BR user creation failed: ${e.message}`));
 
     // Notify all human admins about new agent registration
     const admins = db.prepare("SELECT id FROM actors WHERE type = 'human' AND role = 'admin'").all();
     for (const admin of admins) {
-      const notifId = genId('ntf');
-      db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, created_at)
-        VALUES (?, ?, ?, 'agent_registered', ?, ?, ?, ?)`)
-        .run(notifId, agentId, admin.id,
-          `New agent "${display_name}" requests access`,
-          `Agent "${name}" has registered and is pending approval.`,
-          null,
-          now);
+      insertNotification(db, { genId }, {
+        actorId: agentId,
+        targetActorId: admin.id,
+        type: 'agent_registered',
+        titleKey: 'serverNotifications.agent_registered.title',
+        titleParams: { displayName: effectiveDisplayName },
+        bodyKey: 'serverNotifications.agent_registered.body',
+        bodyParams: { name },
+        link: '/content?agents=1',
+      });
     }
 
     const publicBaseUrl = getPublicBaseUrl(req);
@@ -378,12 +714,12 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
       agent_id: agentId,
       token,
       name,
-      display_name,
+      display_name: effectiveDisplayName,
       status: 'pending_approval',
       skills_url: skillsUrl,
       mcp_server: {
-        install: 'npx -y agentoffice-mcp',
-        env: { ASUITE_TOKEN: token, ASUITE_URL: gatewayBase },
+        install: 'npx -y aose-mcp',
+        env: { AOSE_TOKEN: token, AOSE_URL: gatewayBase },
       },
       message: 'Registration received. Fetch skills from skills_url and configure MCP server.',
       created_at: now,
@@ -408,7 +744,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
       data: {
         agent_id: agent.id,
         name: agent.username,
-        message: 'Your registration has been approved. You now have full access to ASuite.',
+        message: 'Your registration has been approved. You now have full access to AOSE.',
       },
     };
     db.prepare(`INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at)
@@ -437,13 +773,37 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   });
 
   // Admin: soft-delete an agent
+  // Returns the per-platform offboarding prompt so the admin can copy it
+  // to the agent for local cleanup (adapter sidecar, config files with the
+  // revoked token, MCP server entry).
   app.delete('/api/admin/agents/:agent_id', authenticateAdmin, (req, res) => {
     const agent = db.prepare("SELECT * FROM actors WHERE id = ? AND type = 'agent'").get(req.params.agent_id);
     if (!agent) return res.status(404).json({ error: 'NOT_FOUND', message: 'Agent not found' });
     if (agent.deleted_at) return res.status(400).json({ error: 'ALREADY_DELETED', message: 'Agent is already deleted' });
     const now = Date.now();
-    db.prepare('UPDATE actors SET deleted_at = ?, online = 0, updated_at = ? WHERE id = ?').run(now, now, agent.id);
-    res.json({ agent_id: agent.id, name: agent.username, status: 'deleted' });
+    const originalName = agent.username;
+    // Release the name so the same name can be re-registered later. The
+    // mangled form keeps the row uniquely addressable for audit while
+    // freeing `username` for self-register's uniqueness check.
+    const releasedName = `${originalName}.deleted.${now}`;
+    db.prepare('UPDATE actors SET username = ?, deleted_at = ?, online = 0, updated_at = ? WHERE id = ?')
+      .run(releasedName, now, now, agent.id);
+    const offboardingPrompt = buildOffboardingPrompt(agent.platform, originalName);
+    res.json({
+      agent_id: agent.id,
+      name: originalName,
+      status: 'deleted',
+      platform: agent.platform || null,
+      offboarding_prompt: offboardingPrompt,
+    });
+  });
+
+  // Admin: get offboarding prompt for a specific platform (data-driven, mirrors /api/admin/onboarding-prompt)
+  app.get('/api/admin/offboarding-prompt', authenticateAdmin, (req, res) => {
+    const platform = req.query.platform || 'zylos';
+    const agentName = req.query.agent_name || null;
+    const prompt = buildOffboardingPrompt(platform, agentName);
+    res.json({ platform, prompt });
   });
 
   // Admin: list all agents (excluding deleted)
@@ -456,36 +816,8 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   app.get('/api/admin/onboarding-prompt', authenticateAdmin, (req, res) => {
     const platform = req.query.platform || 'zylos';
     const origin = getPublicBaseUrl(req);
-    const asuiteUrl = `${origin}/api/gateway`;
-    const prompt = `Hi! You've been invited to join an AgentOffice workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
-
-Step 1: Register your identity
-POST ${asuiteUrl}/agents/self-register
-Content-Type: application/json
-Body: { "name": "your-agent-name", "display_name": "Your Display Name", "platform": "${platform}" }
-
-Save the token from the response — you'll need it in Step 3. Your registration will be reviewed by an admin.
-
-Step 2: Wait for approval
-The workspace admin will review your registration in AgentOffice and approve it. You'll receive a notification once approved.
-
-Step 3: Configure MCP Server
-Add the following to your MCP configuration:
-{
-  "mcpServers": {
-    "agentoffice": {
-      "command": "npx",
-      "args": ["-y", "agentoffice-mcp"],
-      "env": {
-        "ASUITE_TOKEN": "<your token from Step 1>",
-        "ASUITE_URL": "${asuiteUrl}"
-      }
-    }
-  }
-}
-
-Step 4: Verify
-Call the whoami tool to confirm your identity and permissions. Once verified, let the admin know you're ready.`;
+    const aoseUrl = `${origin}/api/gateway`;
+    const prompt = buildOnboardingPrompt(platform, aoseUrl);
     res.json({ platform, prompt });
   });
 
@@ -595,8 +927,8 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   // Intentionally public (no auth): avatar images are referenced in <img src> tags across all
   // authenticated views. Requiring auth would break image loading. express.static already
   // prevents path traversal (resolves to absolute path within the uploads directory).
-  app.use('/uploads', express.static(path.join(GATEWAY_DIR, 'uploads')));
-  app.use('/api/uploads', express.static(path.join(GATEWAY_DIR, 'uploads')));
+  app.use('/uploads', express.static(UPLOADS_ROOT));
+  app.use('/api/uploads', express.static(UPLOADS_ROOT));
 
   app.post('/api/agents/:name/avatar', authenticateAgent, avatarUpload.single('avatar'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
@@ -617,12 +949,12 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   });
 
   // ─── File Upload (general) ───────────────────────
-  const UPLOADS_DIR = path.join(GATEWAY_DIR, 'uploads', 'files');
-  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  const FILES_DIR = path.join(UPLOADS_ROOT, 'files');
+  if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
 
   const fileUploadStorage = multer({
     storage: multer.diskStorage({
-      destination: UPLOADS_DIR,
+      destination: FILES_DIR,
       filename: (req, file, cb) => {
         const ext = path.extname(file.originalname) || '.bin';
         const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
@@ -644,7 +976,7 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   });
 
   // POST /api/uploads/thumbnails — upload slide thumbnail (user JWT allowed)
-  const THUMBNAILS_DIR = path.join(GATEWAY_DIR, 'uploads', 'thumbnails');
+  const THUMBNAILS_DIR = path.join(UPLOADS_ROOT, 'thumbnails');
   if (!fs.existsSync(THUMBNAILS_DIR)) fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
 
   const thumbnailUploadStorage = multer({
@@ -671,22 +1003,18 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
 
     // GET /api/agent-skills — return skills package (no auth required, public)
   app.get('/api/agent-skills', (req, res) => {
+    const aoseUrl = getPublicBaseUrl(req);
+    const substitute = (text) => text.replace(/\{AOSE_URL\}/g, aoseUrl);
     const skillsDir = path.join(GATEWAY_DIR, '..', 'mcp-server', 'skills');
     const files = {};
     if (fs.existsSync(skillsDir)) {
       for (const f of fs.readdirSync(skillsDir)) {
         if (f.endsWith('.md')) {
-          files[f] = fs.readFileSync(path.join(skillsDir, f), 'utf8');
+          files[f] = substitute(fs.readFileSync(path.join(skillsDir, f), 'utf8'));
         }
       }
     }
-    let onboardingPrompt = '';
-    try {
-      const promptPath = path.join(GATEWAY_DIR, '..', 'mcp-server', 'onboarding-prompt.md');
-      onboardingPrompt = fs.readFileSync(promptPath, 'utf8');
-      files['onboarding-prompt.md'] = onboardingPrompt;
-    } catch {}
-    res.json({ skills: files, onboarding_prompt: onboardingPrompt });
+    res.json({ skills: files });
   });
 
   // Admin: reset an agent's token
@@ -739,8 +1067,8 @@ Call the whoami tool to confirm your identity and permissions. Once verified, le
   // is prevented by the startsWith check below. For sensitive file uploads,
   // consider a signed-URL approach in future.
   app.get('/api/uploads/files/:filename', (req, res) => {
-    const filePath = path.join(UPLOADS_DIR, req.params.filename);
-    if (!filePath.startsWith(UPLOADS_DIR)) return res.status(403).json({ error: 'FORBIDDEN' });
+    const filePath = path.join(FILES_DIR, req.params.filename);
+    if (!filePath.startsWith(FILES_DIR)) return res.status(403).json({ error: 'FORBIDDEN' });
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const ext = path.extname(filePath).toLowerCase();

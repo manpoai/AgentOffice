@@ -101,16 +101,16 @@
   "content": {
     "title": "内容",
     "newBoard": "新建画板",
-    "newSpreadsheet": "新建表格",
+    "newSpreadsheet": "新建数据库",
     "searchDocs": "搜索文档...",
     "noMatch": "未找到匹配的文档",
-    "untitled": "无标题",
-    "untitledTable": "无标题表格",
+    "untitled": "未命名",
+    "untitledTable": "未命名数据库",
     "untitledBoard": "无标题画板",
-    "untitledPresentation": "无标题演示文稿",
-    "untitledSpreadsheet": "无标题表格",
-    "untitledDiagram": "无标题画板",
-    "selectHint": "选择文档或数据表",
+    "untitledPresentation": "未命名幻灯片",
+    "untitledSpreadsheet": "未命名数据库",
+    "untitledDiagram": "未命名流程图",
+    "selectHint": "选择文档或数据库",
     "createHint": "或点击左上角 + 新建",
     "comments": "评论",
     "moreActions": "更多操作",
@@ -159,9 +159,9 @@
     "connections": "条连接",
     "typeContent": "内容",
     "typeDocument": "文档",
-    "typeTable": "表格",
-    "typePresentation": "演示文稿",
-    "typeDiagram": "图表",
+    "typeTable": "数据库",
+    "typePresentation": "幻灯片",
+    "typeDiagram": "流程图",
     "justNow": "刚刚",
     "minutesAgo": "分钟前",
     "hoursAgo": "小时前",
@@ -182,8 +182,8 @@
     "lastModified": "最后修改",
     "by": "由",
     "link": "Link",
-    "presentation": "演示文稿",
-    "presentationNotFound": "未找到演示文稿",
+    "presentation": "幻灯片",
+    "presentationNotFound": "未找到幻灯片",
     "pinned": "置顶",
     "library": "知识库",
     "trashEmpty": "回收站为空",
@@ -216,6 +216,7 @@
     "cancel": "取消"
   },
   "editor": {
+    "outline": "目录",
     "heading1": "标题 1",
     "heading1Desc": "大标题",
     "heading2": "标题 2",
@@ -252,7 +253,7 @@
     "mathBlock": "数学公式",
     "mathBlockDesc": "LaTeX 数学块",
     "mermaid": "流程图",
-    "mermaidDesc": "Mermaid 图表",
+    "mermaidDesc": "Mermaid 流程图",
     "paragraph": "正文",
     "paragraphDesc": "普通文本段落",
     "bold": "加粗",
@@ -284,18 +285,18 @@
       "tip": "提示"
     },
     "contentLink": "内容链接",
-    "contentLinkDesc": "插入文档、表格或图表的链接",
-    "embedDiagram": "嵌入图表",
-    "embedDiagramDesc": "嵌入带实时预览的图表",
+    "contentLinkDesc": "插入文档、数据库或流程图的链接",
+    "embedDiagram": "嵌入流程图",
+    "embedDiagramDesc": "嵌入带实时预览的流程图",
     "listNumbering": {
       "continueFrom": "继续编号（从{n}开始）",
       "startNew": "开始新列表（从1开始）"
     },
     "emptyMathBlock": "空的数学公式块",
-    "emptyMermaidDiagram": "空的 Mermaid 图表",
+    "emptyMermaidDiagram": "空的 Mermaid 流程图",
     "error": "编辑器错误",
-    "insertDiagramEmbedFailed": "插入嵌入画板失败",
-    "mermaidDiagram": "Mermaid 图表",
+    "insertDiagramEmbedFailed": "插入嵌入流程图失败",
+    "mermaidDiagram": "Mermaid 流程图",
     "mermaidRenderError": "Mermaid 渲染错误",
     "notice": "提示",
     "preview": "预览",
@@ -703,13 +704,13 @@
     "initializing": "正在初始化..."
   },
   "diagram": {
-    "loadFailed": "图表编辑器加载失败",
+    "loadFailed": "流程图编辑器加载失败",
     "retry": "重试",
     "shapes": "形状",
-    "deleteConfirm": "确定要删除此图表吗？",
-    "migrationNotice": "此图表使用旧格式，已自动迁移到新引擎。",
+    "deleteConfirm": "确定要删除此流程图吗？",
+    "migrationNotice": "此流程图使用旧格式，已自动迁移到新引擎。",
     "saveNewFormat": "保存新格式",
-    "crashed": "图表编辑器崩溃",
+    "crashed": "流程图编辑器崩溃",
     "tools": {
       "text": "文本 (T)",
       "shape": "图形 (R)",
@@ -725,7 +726,7 @@
       "rounded": "折线",
       "smooth": "曲线"
     },
-    "initFailed": "图表初始化失败",
+    "initFailed": "流程图初始化失败",
     "centralTopic": "中心主题",
     "rectangle": "矩形",
     "roundedRectangle": "圆角矩形",
@@ -740,8 +741,8 @@
     "empty": "空白流程图",
     "editDiagram": "编辑流程图",
     "searchDiagrams": "搜索流程图...",
-    "embedEmpty": "空白图表",
-    "embedBadge": "◇ 图表",
+    "embedEmpty": "空白流程图",
+    "embedBadge": "◇ 流程图",
     "shortcuts": {
       "addChild": "添加子节点",
       "addSibling": "添加兄弟节点",
@@ -749,19 +750,19 @@
       "selectAll": "全选"
     },
     "clickToEdit": "点击编辑",
-    "diagram": "画板",
+    "diagram": "流程图",
     "doubleClickToEdit": "双击编辑",
     "doubleClickToEditShort": "双击编辑",
-    "emptyDiagram": "空白画板",
-    "failedToLoadDiagram": "加载画板失败",
-    "loadingDiagram": "加载画板中...",
+    "emptyDiagram": "空白流程图",
+    "failedToLoadDiagram": "加载流程图失败",
+    "loadingDiagram": "加载流程图中...",
     "noNodes": "无节点",
-    "untitledDiagram": "无标题画板",
+    "untitledDiagram": "未命名流程图",
     "branch": "分支",
     "newNode": "新节点",
     "export": "导出",
-    "noMatchingDiagrams": "没有匹配的图表",
-    "noDiagramsYet": "暂无图表"
+    "noMatchingDiagrams": "没有匹配的流程图",
+    "noDiagramsYet": "暂无流程图"
   },
   "toolbar": {
     "fonts": {
@@ -931,23 +932,23 @@
     "batchDeleteFailed": "批量删除失败",
     "batchEditFailed": "批量编辑失败",
     "exportCSVFailed": "导出 CSV 失败",
-    "deleteTableFailed": "删除表格失败",
-    "updateDiagramTitleFailed": "更新图表标题失败",
-    "deleteDiagramFailed": "删除图表失败",
+    "deleteTableFailed": "删除数据库失败",
+    "updateDiagramTitleFailed": "更新流程图标题失败",
+    "deleteDiagramFailed": "删除流程图失败",
     "autoSaveFailed": "自动保存失败",
     "saveCustomIconFailed": "保存自定义图标失败",
     "revisionParseFailed": "版本数据解析失败",
     "imageUploadFallback": "图片上传失败，使用本地预览",
-    "loadDiagramPreviewFailed": "加载图表预览失败",
+    "loadDiagramPreviewFailed": "加载流程图预览失败",
     "bgImageUploadFailed": "背景图片上传失败",
     "restoreVersionFailed": "恢复版本失败",
     "updateFieldFailed": "更新字段失败",
     "deleteFailed": "删除失败",
     "togglePinFailed": "置顶切换失败",
     "createDocFailed": "创建文档失败",
-    "createTableFailed": "创建表格失败",
-    "createPresentationFailed": "创建演示文稿失败",
-    "createDiagramFailed": "创建图表失败",
+    "createTableFailed": "创建数据库失败",
+    "createPresentationFailed": "创建幻灯片失败",
+    "createDiagramFailed": "创建流程图失败",
     "imageUploadFailed": "图片上传失败",
     "markdownParseFailed": "Markdown 解析失败",
     "restoreFailed": "恢复失败",
@@ -969,28 +970,34 @@
     "resolveCommentFailed": "解决评论失败",
     "unresolveCommentFailed": "取消解决评论失败",
     "replyCommentFailed": "回复失败",
-    "diagramAutoSaveFailed": "图表自动保存失败",
+    "diagramAutoSaveFailed": "流程图自动保存失败",
     "markAllNotificationsReadFailed": "标记所有通知已读失败",
     "notificationClickFailed": "通知点击失败",
     "customIconUploadFailed": "自定义图标上传失败",
-    "presentationAutoSaveFailed": "演示文稿自动保存失败",
-    "insertDiagramFailed": "插入图表失败",
-    "refreshDiagramPreviewFailed": "刷新图表预览失败",
+    "presentationAutoSaveFailed": "幻灯片自动保存失败",
+    "insertDiagramFailed": "插入流程图失败",
+    "refreshDiagramPreviewFailed": "刷新流程图预览失败",
     "renderVersionFailed": "渲染此版本失败",
     "diffComputationFailed": "差异计算失败",
     "parseDocumentFailed": "解析文档内容失败",
-    "loginFailed": "登录失败"
+    "loginFailed": "登录失败",
+    "addColumnFailed": "添加列失败",
+    "renameColumnFailed": "重命名列失败",
+    "changeColumnTypeFailed": "更改列类型失败",
+    "deleteColumnFailed": "删除列失败",
+    "duplicateColumnFailed": "复制列失败",
+    "operationFailed": "操作失败"
   },
   "entities": {
     "doc": "文档",
-    "table": "表格",
+    "table": "数据库",
     "slides": "幻灯片",
     "flowchart": "流程图",
     "agent": "Agent"
   },
   "actions": {
     "newDoc": "新建文档",
-    "newTable": "新建表格",
+    "newTable": "新建数据库",
     "newSlides": "新建幻灯片",
     "newFlowchart": "新建流程图",
     "newAgent": "新建 Agent",
@@ -1028,6 +1035,8 @@
     "agentMembers": "Agent 成员",
     "addAgent": "添加 Agent",
     "sendToAgent": "发给你的 Agent",
+    "sendCleanupToAgent": "把清理步骤发给该 Agent",
+    "deleted": "已删除",
     "copyPrompt": "复制",
     "resetToken": "重置 Token",
     "resetTokenConfirm": "这将使当前 Token 失效，确认继续？",
@@ -1047,7 +1056,7 @@
     "flipHorizontal": "水平翻转",
     "flipVertical": "垂直翻转",
     "selectPlatform": "选择 Agent 平台",
-    "platformDescription": "AgentOffice 支持长驻型 Agent（能保持在线并接收事件）。临时会话类工具（如 Claude Code、Cursor）暂不支持。",
+    "platformDescription": "aose 支持长驻型 Agent（能保持在线并接收事件）。临时会话类工具（如 Claude Code、Cursor）暂不支持。",
     "confirmDelete": "确认删除?"
   },
   "notification": {
@@ -1130,5 +1139,85 @@
       "objectPropertiesWithType": "{type} 属性",
       "objectFallback": "对象"
     }
+  },
+  "serverNotifications": {
+    "content_created": {
+      "title": "{title}",
+      "body": "{agent} 创建了{kind}「{title}」"
+    },
+    "doc_created": {
+      "title": "{title}",
+      "body": "{agent} 创建了文档「{title}」"
+    },
+    "agent_registered": {
+      "title": "新 Agent「{displayName}」申请接入",
+      "body": "Agent「{name}」已注册，等待审批。"
+    },
+    "kinds": {
+      "doc": "文档",
+      "diagram": "流程图",
+      "table": "数据库",
+      "presentation": "幻灯片",
+      "board": "看板",
+      "spreadsheet": "数据库"
+    },
+    "defaults": {
+      "newContent": "新内容",
+      "newDoc": "新文档"
+    },
+    "comments": {
+      "comment_on_content_titled": "{actor} 评论了《{title}》",
+      "comment_on_content": "{actor} 评论了你的内容",
+      "comment_reply": "{actor} 回复了你的评论",
+      "mention": "{actor} 在评论中提到了你",
+      "comment_resolved": "{actor} 解决了你的评论",
+      "comment_unresolved": "{actor} 重新打开了你的评论"
+    }
+  },
+  "commentContext": {
+    "anchors": {
+      "text_range": "文本选区",
+      "image": "图片",
+      "table": "表格",
+      "diagram_embed": "流程图",
+      "mermaid": "Mermaid 图",
+      "slide": "第 {index} 页",
+      "element": "元素",
+      "node": "节点",
+      "edge": "连线",
+      "row": "Row #{id}"
+    },
+    "previews": {
+      "image": "图片",
+      "table": "内嵌表格",
+      "diagram_embed": "嵌入流程图",
+      "mermaid": "Mermaid 图",
+      "slide": "Slide {index}",
+      "element_fallback": "元素",
+      "node": "流程图节点",
+      "edge": "流程图连线"
+    },
+    "summary": {
+      "comment_on_whole": "针对整个{kind}的评论",
+      "comment_on_row": "针对数据库行记录的评论",
+      "comment_on_anchor": "针对{anchor}的评论",
+      "kinds": {
+        "doc": "文档",
+        "table": "数据库",
+        "presentation": "幻灯片",
+        "diagram": "流程图",
+        "content": "内容"
+      },
+      "anchorKinds": {
+        "slide": "幻灯片",
+        "row": "数据库行"
+      }
+    }
+  },
+  "serverSnapshots": {
+    "pre_agent_edit": "agent 编辑前自动保存",
+    "post_agent_edit": "agent 编辑后保存",
+    "pre_restore": "恢复版本前自动保存",
+    "auto_initial": "初始版本"
   }
 }

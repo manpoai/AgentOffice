@@ -1,10 +1,10 @@
 {
-  "name": "agentoffice-main",
-  "version": "1.0.26",
-  "description": "AgentOffice bootstrap package — one-command install for the runtime artifact.",
+  "name": "aose",
+  "version": "2.0.0",
+  "description": "aose (Agent Office Suite) bootstrap package — one-command install for the runtime artifact.",
   "type": "module",
   "bin": {
-    "agentoffice-main": "bootstrap-cli.js"
+    "aose": "bootstrap-cli.js"
   },
   "files": [
     "bootstrap-cli.js",
@@ -19,8 +19,9 @@
     "SECURITY.md"
   ],
   "keywords": [
+    "aose",
+    "agent-office-suite",
     "agentoffice",
-    "agent-office",
     "workspace",
     "ai-agent",
     "collaboration",

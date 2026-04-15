@@ -1,7 +1,7 @@
 /**
  * Table interaction plugin for ProseMirror.
  *
- * Provides Outline-style table controls:
+ * Provides table editing controls:
  * - Left sidebar bar with row controls and row insertion dots
  * - Top bar with column controls and column insertion dots
  * - Column context menu (toggle header, insert, move, merge, delete)

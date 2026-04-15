@@ -3,6 +3,7 @@
  */
 import { createUnifiedComment } from '../lib/comment-service.js';
 import { createSnapshot, isAgentRequest } from '../lib/snapshot-helper.js';
+import { insertNotification } from '../lib/notifications.js';
 import { restoreDocFromSnapshot, extractTextFromProseMirror } from '../lib/doc-restore-helper.js';
 
 // Get display name for the authenticated actor (human or agent)
@@ -76,17 +77,19 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
 
       // Notify human users
       const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+      const titleStr = title || docId;
       for (const actor of humanActors) {
-        const notifId = genId('notif');
-        db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
-          VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
-          notifId, agentName, actor.id, 'doc_created',
-          title || '新文档',
-          `${agentName} 创建了文档「${title || docId}」`,
-          `/content?id=doc:${docId}`,
-          JSON.stringify({ doc_id: docId }),
-          Date.now()
-        );
+        const { id: notifId } = insertNotification(db, { genId }, {
+          actorId: agentName,
+          targetActorId: actor.id,
+          type: 'doc_created',
+          titleKey: 'serverNotifications.doc_created.title',
+          titleParams: { title: title || '' },
+          bodyKey: 'serverNotifications.doc_created.body',
+          bodyParams: { agent: agentName, title: titleStr },
+          link: `/content?id=doc:${docId}`,
+          meta: { doc_id: docId },
+        });
         pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'doc_created', doc_id: docId, title } });
         pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type: 'doc', id: docId, title } });
       }
@@ -124,7 +127,6 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
         triggerType: 'pre_agent_edit',
         actorId: doc.updated_by || doc.created_by,
         title: doc.title,
-        description: 'agent 编辑前自动保存',
       });
     }
 
@@ -140,7 +142,7 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
         triggerType: 'post_agent_edit',
         actorId: agentName,
         title: title || doc.title,
-        description: req.body.revision_description || 'agent 编辑后保存',
+        description: req.body.revision_description || null,
       });
     }
 
@@ -365,17 +367,19 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
     // Notify human users when an agent creates a document
     if (isAgentRequest(req)) {
       const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+      const titleStr = title || docId;
       for (const actor of humanActors) {
-        const notifId = genId('notif');
-        db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
-          VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
-          notifId, agentName, actor.id, 'doc_created',
-          title || '新文档',
-          `${agentName} 创建了文档「${title || docId}」`,
-          `/content?id=doc:${docId}`,
-          JSON.stringify({ doc_id: docId }),
-          Date.now()
-        );
+        const { id: notifId } = insertNotification(db, { genId }, {
+          actorId: agentName,
+          targetActorId: actor.id,
+          type: 'doc_created',
+          titleKey: 'serverNotifications.doc_created.title',
+          titleParams: { title: title || '' },
+          bodyKey: 'serverNotifications.doc_created.body',
+          bodyParams: { agent: agentName, title: titleStr },
+          link: `/content?id=doc:${docId}`,
+          meta: { doc_id: docId },
+        });
         pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'doc_created', doc_id: docId, title } });
         pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type: 'doc', id: docId, title } });
       }
@@ -414,7 +418,6 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
         triggerType: 'pre_agent_edit',
         actorId: doc.updated_by || doc.created_by,
         title: doc.title,
-        description: 'agent 编辑前自动保存',
       });
     }
 
@@ -440,7 +443,7 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
         triggerType: 'post_agent_edit',
         actorId: actorName(req),
         title: updated.title,
-        description: req.body.revision_description || 'agent 编辑后保存',
+        description: req.body.revision_description || null,
       });
     }
 

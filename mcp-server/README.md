@@ -1,20 +1,20 @@
-# agentoffice-mcp
+# aose-mcp
 
-MCP Server for AgentOffice — connect AI agents to your workspace.
+MCP Server for aose — connect AI agents to your workspace.
 
 ## Quick Start
 
-Add AgentOffice to your agent's MCP configuration:
+Add aose to your agent's MCP configuration:
 
 ```json
 {
   "mcpServers": {
-    "agentoffice": {
+    "aose": {
       "command": "npx",
-      "args": ["-y", "agentoffice-mcp"],
+      "args": ["-y", "aose-mcp"],
       "env": {
-        "ASUITE_URL": "https://your-agentoffice-domain/api/gateway",
-        "ASUITE_TOKEN": "your-agent-token"
+        "AOSE_URL": "https://your-aose-domain/api/gateway",
+        "AOSE_TOKEN": "your-agent-token"
       }
     }
   }
@@ -25,8 +25,8 @@ Add AgentOffice to your agent's MCP configuration:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ASUITE_TOKEN` | Yes | — | Agent bearer token |
-| `ASUITE_URL` | Yes | — | AgentOffice public gateway base URL |
+| `AOSE_TOKEN` | Yes | — | Agent bearer token |
+| `AOSE_URL` | Yes | — | aose public gateway base URL |
 
 ## Available Tool Groups
 
@@ -79,7 +79,7 @@ Current tool groups registered in code:
 ```bash
 cd mcp-server
 npm install
-ASUITE_URL=https://your-agentoffice-domain/api/gateway ASUITE_TOKEN=your-token node src/index.js
+AOSE_URL=https://your-aose-domain/api/gateway AOSE_TOKEN=your-token node src/index.js
 ```
 
 ## Publish Verification
@@ -87,7 +87,7 @@ ASUITE_URL=https://your-agentoffice-domain/api/gateway ASUITE_TOKEN=your-token n
 After publish, this command should start the MCP server and fail only if required env vars are missing:
 
 ```bash
-npx -y agentoffice-mcp
+npx -y aose-mcp
 ```
 
 ## License

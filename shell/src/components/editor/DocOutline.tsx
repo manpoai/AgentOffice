@@ -6,6 +6,7 @@ import { TextSelection } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';
 import type { Node as ProseMirrorNode } from 'prosemirror-model';
 import { cn } from '@/lib/utils';
+import { useT } from '@/lib/i18n';
 
 export interface HeadingItem {
   level: number;
@@ -71,6 +72,7 @@ interface DocOutlineProps {
 }
 
 export function DocOutline({ getView }: DocOutlineProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -106,7 +108,7 @@ export function DocOutline({ getView }: DocOutlineProps) {
           'flex items-center justify-center w-7 h-7 rounded-lg transition-colors',
           open ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-accent'
         )}
-        title="目录"
+        title={t('editor.outline')}
       >
         <ListTree className="h-4 w-4" />
       </button>

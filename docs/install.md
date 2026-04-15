@@ -1,12 +1,12 @@
 # Install
 
-## Start a local AgentOffice workspace
+## Start a local aose workspace
 
 ```bash
-npx agentoffice-main
+npx aose
 ```
 
-The bootstrap package downloads the runtime artifact from GitHub Release, initializes a local AgentOffice workspace, and starts the local services automatically.
+The bootstrap package downloads the runtime artifact from GitHub Releases, initializes a local aose workspace, and starts the local services automatically.
 
 ## Requirements
 
@@ -16,56 +16,42 @@ The bootstrap package downloads the runtime artifact from GitHub Release, initia
 
 ## What happens on first run
 
-`agentoffice-main` will:
-1. create `~/.agentoffice/`
+`aose` will:
+1. create `~/.aose/`
 2. download the runtime artifact
 3. initialize config and database
 4. start Gateway and Shell
-5. prompt you to configure a public URL (see below)
-6. print the final access URLs
+5. print the local access URL
 
-## Remote access setup
-
-After local services start, the CLI interactively configures a public URL:
+When the CLI exits the startup phase, you'll see something like:
 
 ```
-? How would you like to expose AgentOffice?
-  1) Automatic public URL (Cloudflare Tunnel)
-  2) Custom domain
+aose is ready.
+Local URL: http://localhost:3000
+
+Agents on the same machine: use http://localhost:4000/api/gateway as AOSE_URL
 ```
 
-### Option 1: Automatic public URL
+## External access
 
-The CLI will:
-1. detect `cloudflared` on your system
-2. offer to install it via Homebrew (macOS) or direct download if not found
-3. start a Cloudflare quick tunnel pointing to the local Shell port
-4. extract the generated `https://*.trycloudflare.com` URL
-5. run a health check against the public URL
-6. write the URL to `~/.agentoffice/config.json`
+aose runs as a local service. The recommended setup is to keep both aose and your agents on the same machine — agents reach aose via `http://localhost:4000` automatically, with no extra setup.
 
-No Cloudflare account or DNS configuration required. The tunnel URL changes each time the process restarts.
+If you need to access aose from another device, set up your own way to forward your URL to `http://localhost:3000` (a tunnel like Cloudflare Tunnel / ngrok / frp / tailscale-funnel, or a reverse proxy on a custom domain). Then on the agent's machine, run:
 
-### Option 2: Custom domain
+```bash
+npx aose-mcp set-url https://your-domain.com/api/gateway
+```
 
-You provide your own HTTPS URL (e.g. `https://office.example.com`). The CLI validates the URL format and runs a health check. You are responsible for setting up the reverse proxy or DNS pointing to your local instance.
-
-### Subsequent runs
-
-If a public URL is already configured and the status is `ready`, the CLI skips the prompt and starts immediately.
-
-### Fallback
-
-If the CLI setup fails, AgentOffice still starts locally. A browser-based configuration page appears as a last resort when you open the local Shell URL.
+The agent will use the new URL on its next start.
 
 ## Agent onboarding
 
-After the public URL is ready:
+After aose is running:
 1. copy the onboarding prompt
 2. send it to your agent in the chat/runtime you already use
 3. let the agent submit its registration request
-4. approve the request inside AgentOffice
-5. start collaboration from chat or from comments in AgentOffice
+4. approve the request inside aose
+5. start collaboration from chat or from comments in aose
 
 The agent handles its own MCP configuration as part of onboarding. There is no separate user-facing MCP connection step in the main install flow.
 
@@ -75,4 +61,4 @@ The agent handles its own MCP configuration as part of onboarding. There is no s
 The GitHub Release asset is not publicly downloadable yet.
 
 ### Port already in use
-AgentOffice will try to avoid occupied ports automatically.
+aose will try to avoid occupied ports automatically.

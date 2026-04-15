@@ -1,9 +1,9 @@
 /**
  * ProseMirror plugin that highlights text matching comment quotes.
  *
- * Since Outline stores comment marks in the Yjs doc state (not accessible via REST API),
- * we use decorations to visually highlight commented text by matching the quoted text
- * from the comments API against the document content.
+ * Comment marks are not stored inline in the document; instead we use decorations
+ * to visually highlight commented text by matching the quoted text from the
+ * comments API against the document content.
  */
 import { Plugin, PluginKey } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';

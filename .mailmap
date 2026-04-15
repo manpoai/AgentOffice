@@ -1,0 +1,6 @@
+# .mailmap — canonical author identity for git log / GitHub UI display.
+# Does not rewrite history; only affects how authors are displayed.
+# See: https://git-scm.com/docs/gitmailmap
+
+manpoai <264366834+manpoai@users.noreply.github.com> moonyaan <mac@macdeMac-mini.local>
+manpoai <264366834+manpoai@users.noreply.github.com> manpoai <gridtabs@gmail.com>

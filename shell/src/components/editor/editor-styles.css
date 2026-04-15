@@ -3,13 +3,13 @@
 @import 'prosemirror-gapcursor/style/gapcursor.css';
 @import 'prosemirror-tables/style/tables.css';
 
-/* ProseMirror Editor Styles — Outline-compatible */
+/* ProseMirror Editor Styles */
 
-.outline-editor {
+.doc-editor {
   position: relative;
 }
 
-.outline-editor-mount {
+.doc-editor-mount {
   padding: 0 3rem 200px;
 }
 
@@ -28,11 +28,11 @@
 .doc-full-width .doc-title-area {
   max-width: none;
 }
-.doc-full-width .outline-editor-content {
+.doc-full-width .doc-editor-content {
   max-width: none;
 }
 
-.outline-editor-content {
+.doc-editor-content {
   outline: none;
   max-width: 48rem;
   margin: 0 auto;
@@ -42,7 +42,7 @@
 }
 
 /* Empty document placeholder (full text hint) */
-.outline-editor-content p.is-empty-placeholder::before {
+.doc-editor-content p.is-empty-placeholder::before {
   content: attr(data-placeholder);
   color: hsl(var(--muted-foreground, 0 0% 45%));
   float: left;
@@ -51,12 +51,12 @@
 }
 
 /* "+" handle on focused empty paragraph */
-.outline-editor-content p.is-empty-line {
+.doc-editor-content p.is-empty-line {
   position: relative;
 }
 
 /* Clickable "+" block-add handle (widget decoration) */
-.outline-editor-content .block-add-handle {
+.doc-editor-content .block-add-handle {
   position: absolute;
   left: -1.5rem;
   top: 50%;
@@ -78,13 +78,13 @@
   padding: 0;
   transition: opacity 0.15s, background 0.15s;
 }
-.outline-editor-content .block-add-handle:hover {
+.doc-editor-content .block-add-handle:hover {
   opacity: 1;
   background: hsl(var(--muted, 0 0% 96%));
 }
 
 /* Block drag handle */
-.outline-editor-content .block-drag-handle {
+.doc-editor-content .block-drag-handle {
   position: absolute;
   left: -28px;
   width: 20px;
@@ -101,13 +101,13 @@
   user-select: none;
   z-index: 10;
 }
-.outline-editor-content .block-drag-handle:hover {
+.doc-editor-content .block-drag-handle:hover {
   opacity: 1 !important;
   background: hsl(var(--muted, 0 0% 96%));
 }
 
 /* Block handle menu */
-.outline-editor-content .block-handle-menu {
+.doc-editor-content .block-handle-menu {
   animation: blockMenuFadeIn 0.1s ease-out;
 }
 @keyframes blockMenuFadeIn {
@@ -116,30 +116,30 @@
 }
 
 /* Headings */
-.outline-editor-content h1 {
+.doc-editor-content h1 {
   font-size: 1.75rem;
   font-weight: 700;
   margin-top: 1.5rem;
   margin-bottom: 0.5rem;
   line-height: 1.3;
 }
-.outline-editor-content h2 {
+.doc-editor-content h2 {
   font-size: 1.375rem;
   font-weight: 600;
   margin-top: 1.25rem;
   margin-bottom: 0.4rem;
   line-height: 1.35;
 }
-.outline-editor-content h3 {
+.doc-editor-content h3 {
   font-size: 1.125rem;
   font-weight: 600;
   margin-top: 1rem;
   margin-bottom: 0.3rem;
   line-height: 1.4;
 }
-.outline-editor-content h4,
-.outline-editor-content h5,
-.outline-editor-content h6 {
+.doc-editor-content h4,
+.doc-editor-content h5,
+.doc-editor-content h6 {
   font-size: 1rem;
   font-weight: 600;
   margin-top: 0.75rem;
@@ -147,36 +147,36 @@
 }
 
 /* Paragraphs */
-.outline-editor-content p {
+.doc-editor-content p {
   margin: 0.25rem 0;
 }
-.outline-editor-content p + p {
+.doc-editor-content p + p {
   margin-top: 0.5rem;
 }
 
 /* Links */
-.outline-editor-content a {
+.doc-editor-content a {
   color: hsl(var(--sidebar-primary, 220 80% 60%));
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.outline-editor-content a:hover {
+.doc-editor-content a:hover {
   opacity: 0.8;
 }
 
 /* Bold, italic, etc */
-.outline-editor-content strong { font-weight: 700; }
-.outline-editor-content em { font-style: italic; }
-.outline-editor-content u { text-decoration: underline; }
-.outline-editor-content del { text-decoration: line-through; opacity: 0.7; }
-.outline-editor-content mark {
+.doc-editor-content strong { font-weight: 700; }
+.doc-editor-content em { font-style: italic; }
+.doc-editor-content u { text-decoration: underline; }
+.doc-editor-content del { text-decoration: line-through; opacity: 0.7; }
+.doc-editor-content mark {
   background: hsl(50 90% 60% / 0.3);
   padding: 0.1em 0.2em;
   border-radius: 2px;
 }
 
 /* Inline code */
-.outline-editor-content code {
+.doc-editor-content code {
   background: hsl(var(--muted, 0 0% 96%));
   padding: 0.15em 0.35em;
   border-radius: 3px;
@@ -185,7 +185,7 @@
 }
 
 /* Code blocks */
-.outline-editor-content pre {
+.doc-editor-content pre {
   background: hsl(var(--muted, 0 0% 96%));
   border: 1px solid hsl(var(--border, 0 0% 90%));
   border-radius: 0.5rem;
@@ -196,7 +196,7 @@
   font-size: 0.8125rem;
   line-height: 1.6;
 }
-.outline-editor-content pre code {
+.doc-editor-content pre code {
   background: none;
   padding: 0;
   border-radius: 0;
@@ -204,57 +204,57 @@
 }
 
 /* Syntax highlighting */
-.outline-editor-content pre .keyword { color: hsl(270 60% 55%); }
-.outline-editor-content pre .string { color: hsl(142 50% 40%); }
-.outline-editor-content pre .number { color: hsl(30 80% 50%); }
-.outline-editor-content pre .comment { color: hsl(var(--muted-foreground, 0 0% 45%)); font-style: italic; }
-.outline-editor-content pre .function { color: hsl(210 70% 50%); }
-.outline-editor-content pre .operator { color: hsl(340 60% 50%); }
-.outline-editor-content pre .punctuation { color: hsl(var(--muted-foreground, 0 0% 45%)); }
-.outline-editor-content pre .builtin { color: hsl(180 50% 40%); }
-.outline-editor-content pre .attr-name { color: hsl(30 60% 50%); }
-.outline-editor-content pre .attr-value { color: hsl(142 50% 40%); }
-.outline-editor-content pre .tag { color: hsl(340 60% 50%); }
+.doc-editor-content pre .keyword { color: hsl(270 60% 55%); }
+.doc-editor-content pre .string { color: hsl(142 50% 40%); }
+.doc-editor-content pre .number { color: hsl(30 80% 50%); }
+.doc-editor-content pre .comment { color: hsl(var(--muted-foreground, 0 0% 45%)); font-style: italic; }
+.doc-editor-content pre .function { color: hsl(210 70% 50%); }
+.doc-editor-content pre .operator { color: hsl(340 60% 50%); }
+.doc-editor-content pre .punctuation { color: hsl(var(--muted-foreground, 0 0% 45%)); }
+.doc-editor-content pre .builtin { color: hsl(180 50% 40%); }
+.doc-editor-content pre .attr-name { color: hsl(30 60% 50%); }
+.doc-editor-content pre .attr-value { color: hsl(142 50% 40%); }
+.doc-editor-content pre .tag { color: hsl(340 60% 50%); }
 
 /* Lists */
-.outline-editor-content ul,
-.outline-editor-content ol {
+.doc-editor-content ul,
+.doc-editor-content ol {
   padding-left: 1.5rem;
   margin: 0.5rem 0;
 }
-.outline-editor-content ul { list-style-type: disc; }
-.outline-editor-content ol { list-style-type: decimal; cursor: default; }
-.outline-editor-content ol > li::marker { cursor: pointer; }
-.outline-editor-content li { margin: 0.15rem 0; }
-.outline-editor-content li p { margin: 0; }
+.doc-editor-content ul { list-style-type: disc; }
+.doc-editor-content ol { list-style-type: decimal; cursor: default; }
+.doc-editor-content ol > li::marker { cursor: pointer; }
+.doc-editor-content li { margin: 0.15rem 0; }
+.doc-editor-content li p { margin: 0; }
 
 /* List marker color — theme accent */
-.outline-editor-content ul > li::marker {
+.doc-editor-content ul > li::marker {
   color: hsl(var(--brand));
 }
-.outline-editor-content ol > li::marker {
+.doc-editor-content ol > li::marker {
   color: hsl(var(--brand));
 }
 
 /* Image inside a list item: prevent it from creating a new list counter */
-.outline-editor-content li > .image-node-wrapper,
-.outline-editor-content li > p > .image-node-wrapper {
+.doc-editor-content li > .image-node-wrapper,
+.doc-editor-content li > p > .image-node-wrapper {
   list-style: none;
   display: block;
   margin: 0.5rem 0;
 }
 /* Paragraph containing only an image in a list item — hide the list marker */
-.outline-editor-content li:has(> .image-node-wrapper),
-.outline-editor-content li:has(> p > .image-node-wrapper:only-child) {
+.doc-editor-content li:has(> .image-node-wrapper),
+.doc-editor-content li:has(> p > .image-node-wrapper:only-child) {
   list-style: none;
 }
 
 /* Checkbox list */
-.outline-editor-content ul.checkbox-list {
+.doc-editor-content ul.checkbox-list {
   list-style: none;
   padding-left: 0;
 }
-.outline-editor-content li.checkbox-item {
+.doc-editor-content li.checkbox-item {
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -263,7 +263,7 @@
 /* Checkbox rendered by NodeView (node-views.ts) — no ::before needed */
 
 /* Blockquote */
-.outline-editor-content blockquote {
+.doc-editor-content blockquote {
   border-left: 3px solid hsl(var(--border, 0 0% 80%));
   padding-left: 1rem;
   margin: 0.75rem 0;
@@ -271,51 +271,51 @@
 }
 
 /* Horizontal rule */
-.outline-editor-content hr {
+.doc-editor-content hr {
   border: none;
   border-top: 1px solid hsl(var(--border, 0 0% 90%));
   margin: 1.5rem 0;
 }
 
 /* Notice / Callout blocks */
-.outline-editor-content .notice-block {
+.doc-editor-content .notice-block {
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   margin: 0.75rem 0;
   border-left: 4px solid;
 }
-.outline-editor-content .notice-info {
+.doc-editor-content .notice-info {
   background: hsl(210 60% 50% / 0.1);
   border-left-color: hsl(210 60% 55%);
 }
-.outline-editor-content .notice-success {
+.doc-editor-content .notice-success {
   background: hsl(142 50% 45% / 0.1);
   border-left-color: hsl(142 50% 50%);
 }
-.outline-editor-content .notice-warning {
+.doc-editor-content .notice-warning {
   background: hsl(38 90% 50% / 0.1);
   border-left-color: hsl(38 90% 55%);
 }
-.outline-editor-content .notice-tip {
+.doc-editor-content .notice-tip {
   background: hsl(270 50% 55% / 0.1);
   border-left-color: hsl(270 50% 60%);
 }
-.outline-editor-content .notice-block p {
+.doc-editor-content .notice-block p {
   margin: 0.15rem 0;
 }
 
 /* Math block — KaTeX rendered */
-.outline-editor-content .math-block {
+.doc-editor-content .math-block {
   margin: 0.75rem 0;
   padding: 0.75rem 1rem;
   overflow-x: auto;
   text-align: center;
 }
-.outline-editor-content .math-block .katex-display {
+.doc-editor-content .math-block .katex-display {
   margin: 0;
 }
 /* Fallback for raw math source (editing mode) */
-.outline-editor-content .math-block code {
+.doc-editor-content .math-block code {
   background: hsl(var(--muted, 0 0% 96%));
   padding: 0.5rem 1rem;
   border-radius: 0.5rem;
@@ -323,49 +323,49 @@
   font-size: 0.8125rem;
   border: 1px solid hsl(var(--border, 0 0% 90%));
 }
-.outline-editor-content .math-block .katex-html {
+.doc-editor-content .math-block .katex-html {
   font-size: 1.1em;
 }
 
 /* Images */
-.outline-editor-content .image-node-wrapper {
+.doc-editor-content .image-node-wrapper {
   margin: 0.5rem 0;
   user-select: none;
   -webkit-user-select: none;
   position: relative;
 }
-.outline-editor-content .image-node-wrapper img {
+.doc-editor-content .image-node-wrapper img {
   max-width: 100%;
   border-radius: 0.25rem;
   transition: outline 0.15s;
 }
 /* Kill ALL native ::selection on image wrappers — covers NodeSelection, TextSelection, and drag */
-.outline-editor-content .image-node-wrapper *::selection,
-.outline-editor-content .image-node-wrapper *::-moz-selection,
-.outline-editor-content .image-node-wrapper::selection,
-.outline-editor-content .image-node-wrapper::-moz-selection {
+.doc-editor-content .image-node-wrapper *::selection,
+.doc-editor-content .image-node-wrapper *::-moz-selection,
+.doc-editor-content .image-node-wrapper::selection,
+.doc-editor-content .image-node-wrapper::-moz-selection {
   background: transparent !important;
   color: inherit !important;
 }
 /* Prevent blue overlay on node-selected images (ProseMirror adds .ProseMirror-selectednode) */
-.outline-editor-content .image-node-wrapper.ProseMirror-selectednode,
-.outline-editor-content .image-node-wrapper.image-selected {
+.doc-editor-content .image-node-wrapper.ProseMirror-selectednode,
+.doc-editor-content .image-node-wrapper.image-selected {
   background: transparent !important;
   outline: none !important;
 }
 /* Image in text selection range — custom styled indicator instead of blue overlay */
-.outline-editor-content .image-node-wrapper.image-in-selection img {
+.doc-editor-content .image-node-wrapper.image-in-selection img {
   outline: 2px solid hsl(var(--sidebar-primary, 151 66% 49%));
   outline-offset: 2px;
   border-radius: 4px;
 }
 /* Caption placeholder */
-.outline-editor-content .image-node-wrapper [contenteditable][data-placeholder]:empty::before {
+.doc-editor-content .image-node-wrapper [contenteditable][data-placeholder]:empty::before {
   content: attr(data-placeholder);
   color: hsl(var(--muted-foreground, 0 0% 45%) / 0.4);
   pointer-events: none;
 }
-.outline-editor-content img {
+.doc-editor-content img {
   display: block;
   max-width: 100%;
   border-radius: 0.25rem;
@@ -373,20 +373,20 @@
 }
 
 /* Tables */
-.outline-editor-content table {
+.doc-editor-content table {
   border-collapse: collapse;
   width: 100%;
   margin: 0.75rem 0;
 }
-.outline-editor-content th,
-.outline-editor-content td {
+.doc-editor-content th,
+.doc-editor-content td {
   border: 1px solid hsl(var(--border, 0 0% 85%));
   padding: 0.4rem 0.6rem;
   text-align: left;
   font-size: 0.875rem;
   position: relative;
 }
-.outline-editor-content th {
+.doc-editor-content th {
   background: hsl(var(--muted, 0 0% 96%));
   font-weight: 600;
 }
@@ -415,14 +415,14 @@
 }
 
 /* Selection */
-.outline-editor-content ::selection {
+.doc-editor-content ::selection {
   background: hsl(var(--sidebar-primary, 220 80% 60%) / 0.3);
 }
 /* When ProseMirror hides selection (NodeSelection active), suppress the blue overlay */
-.outline-editor-content.ProseMirror-hideselection ::selection {
+.doc-editor-content.ProseMirror-hideselection ::selection {
   background: transparent !important;
 }
-.outline-editor-content.ProseMirror-hideselection ::-moz-selection {
+.doc-editor-content.ProseMirror-hideselection ::-moz-selection {
   background: transparent !important;
 }
 
@@ -756,17 +756,17 @@
 }
 
 /* ── Table cell background support ─────────────────────────────── */
-.outline-editor-content td[data-background],
-.outline-editor-content th[data-background] {
+.doc-editor-content td[data-background],
+.doc-editor-content th[data-background] {
   /* Background is set via inline style by ProseMirror */
 }
 
 /* ── Search match highlights ─────────────────────────────────── */
-.outline-editor-content .search-match {
+.doc-editor-content .search-match {
   background: hsl(50 100% 60% / 0.4);
   border-radius: 2px;
 }
-.outline-editor-content .search-match-current {
+.doc-editor-content .search-match-current {
   background: hsl(30 100% 50% / 0.5);
   outline: 2px solid hsl(30 100% 50% / 0.6);
   outline-offset: -1px;
@@ -776,7 +776,7 @@
 /* ── Comment marker highlights ──────────────────────────────── */
 
 /* Normal state: subtle underline on unresolved, non-draft comments */
-.outline-editor-content .comment-marker:not([data-resolved]):not([data-draft]) {
+.doc-editor-content .comment-marker:not([data-resolved]):not([data-draft]) {
   text-decoration: underline 2px rgba(43, 194, 255, 0.5);
   transition: background 100ms ease-in-out;
   cursor: pointer;
@@ -784,14 +784,14 @@
 }
 
 /* Images with comment marks: colored border (applied via plugin since marks don't wrap NodeViews) */
-.outline-editor-content .image-node-wrapper.image-commented {
+.doc-editor-content .image-node-wrapper.image-commented {
   outline: 2px solid rgba(43, 194, 255, 0.6);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 /* Draft comments by the current user also show styling */
-.outline-editor-content .comment-marker[data-draft] {
+.doc-editor-content .comment-marker[data-draft] {
   text-decoration: underline 2px rgba(43, 194, 255, 0.5);
   transition: background 100ms ease-in-out;
   cursor: pointer;
@@ -799,36 +799,36 @@
 }
 
 /* Hover state: background highlight */
-.outline-editor-content .comment-marker:not([data-resolved]):not([data-draft]):hover,
-.outline-editor-content .comment-marker[data-draft]:hover {
+.doc-editor-content .comment-marker:not([data-resolved]):not([data-draft]):hover,
+.doc-editor-content .comment-marker[data-draft]:hover {
   background: rgba(43, 194, 255, 0.5);
 }
 
-.outline-editor-content .comment-marker:not([data-resolved]):not([data-draft]):hover *,
-.outline-editor-content .comment-marker[data-draft]:hover * {
+.doc-editor-content .comment-marker:not([data-resolved]):not([data-draft]):hover *,
+.doc-editor-content .comment-marker[data-draft]:hover * {
   background: transparent !important;
 }
 
 /* Focused/active state: stronger highlight when comment is selected in sidebar */
-.outline-editor-content .comment-marker.comment-focused {
+.doc-editor-content .comment-marker.comment-focused {
   background: rgba(43, 194, 255, 0.5);
   text-decoration: underline 2px rgba(43, 194, 255, 0.5);
 }
-.outline-editor-content .comment-marker.comment-focused * {
+.doc-editor-content .comment-marker.comment-focused * {
   background: transparent !important;
 }
 
 /* Block-level comment markers (images, tables, mermaid, etc.) */
-.outline-editor-content .comment-marker-block:not([data-resolved]) {
+.doc-editor-content .comment-marker-block:not([data-resolved]) {
   cursor: pointer;
 }
 
-.outline-editor-content .comment-marker-block:not([data-resolved]):hover,
-.outline-editor-content .comment-marker-block.comment-focused {
+.doc-editor-content .comment-marker-block:not([data-resolved]):hover,
+.doc-editor-content .comment-marker-block.comment-focused {
 }
 
 /* Resolved comments: no styling */
-.outline-editor-content .comment-marker[data-resolved] {
+.doc-editor-content .comment-marker[data-resolved] {
   background: transparent !important;
   border: none !important;
   text-decoration: none !important;
@@ -836,7 +836,7 @@
 }
 
 /* ── Revision diff highlights ────────────────────────────────── */
-.outline-editor-content .revision-diff-added {
+.doc-editor-content .revision-diff-added {
   background: hsl(210 80% 60% / 0.2);
   border-radius: 2px;
 }

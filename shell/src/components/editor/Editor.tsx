@@ -36,7 +36,7 @@ interface EditorProps {
 }
 
 /**
- * ProseMirror editor — Outline-style UX:
+ * ProseMirror editor:
  * - Always editable (no separate view/edit modes)
  * - "/" slash command menu for block types
  * - Floating toolbar on text selection for inline formatting
@@ -264,7 +264,7 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
             }
           },
           attributes: {
-            class: 'outline-editor-content',
+            class: 'doc-editor-content',
           },
         });
 
@@ -358,7 +358,7 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
 
   if (error) {
     return (
-      <div className={`outline-editor ${className || ''}`}>
+      <div className={`doc-editor ${className || ''}`}>
         <div className="p-4 text-sm text-destructive">{getT()('editor.error')}: {error}</div>
       </div>
     );
@@ -429,8 +429,8 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
   }, [readOnly]);
 
   return (
-    <div className={`outline-editor ${className || ''}`} onClick={handleWrapperClick}>
-      <div ref={editorRef} className="outline-editor-mount" />
+    <div className={`doc-editor ${className || ''}`} onClick={handleWrapperClick}>
+      <div ref={editorRef} className="doc-editor-mount" />
       {selectionInfo && !readOnly && (
         <FloatingToolbar
           items={getDocsTextItems()}
@@ -438,7 +438,7 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
           anchor={selectionInfo.anchor}
           visible={true}
           onHover={(hovering) => {
-            const el = editorRef.current?.closest('.outline-editor') as any;
+            const el = editorRef.current?.closest('.doc-editor') as any;
             el?.__toolbarHover?.(hovering);
             el?.__toolbarInteracting?.(hovering);
           }}
@@ -451,7 +451,7 @@ function EditorInner({ defaultValue, defaultDocJson, onChange, onDocJson, readOn
           anchor={tableToolbarInfo.anchor}
           visible={true}
           onHover={(hovering) => {
-            const el = editorRef.current?.closest('.outline-editor') as any;
+            const el = editorRef.current?.closest('.doc-editor') as any;
             el?.__toolbarHover?.(hovering);
             el?.__toolbarInteracting?.(hovering);
           }}

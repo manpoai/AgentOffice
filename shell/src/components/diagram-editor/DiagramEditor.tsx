@@ -245,7 +245,7 @@ function DiagramEditorInner({
         edges: edges.map(e => ({ ...e, selected: undefined })),
         viewport,
       }).catch((err: Error) => {
-        showError('Diagram auto-save failed', err);
+        showError(t('errors.diagramAutoSaveFailed'), err);
       });
     }, 1000);
   }, [diagramId, nodes, edges, reactFlowInstance]);
@@ -403,7 +403,7 @@ function DiagramEditorInner({
   if (!diagram) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        <div className="text-sm">Diagram not found</div>
+        <div className="text-sm">Flowchart not found</div>
       </div>
     );
   }
@@ -452,7 +452,7 @@ function DiagramEditorInner({
                     className="text-foreground font-medium truncate hover:text-primary transition-colors"
                     title={t('content.rename') || 'Click to rename'}
                   >
-                    {crumb.title || (t('content.untitledDiagram') || 'Untitled Diagram')}
+                    {crumb.title || (t('content.untitledDiagram') || 'Untitled Flowchart')}
                   </button>
                 )}
               </span>

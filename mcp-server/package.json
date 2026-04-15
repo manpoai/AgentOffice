@@ -1,22 +1,28 @@
 {
-  "name": "agentoffice-mcp",
-  "version": "1.0.1",
-  "description": "MCP Server for AgentOffice — connect AI agents to your workspace",
+  "name": "aose-mcp",
+  "version": "2.1.1",
+  "description": "MCP Server for aose (Agent Office Suite) — connect AI agents to your workspace",
   "type": "module",
   "bin": {
-    "agentoffice-mcp": "src/index.js"
+    "aose-mcp": "src/index.js"
   },
   "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./socket": "./src/socket-server.js",
+    "./build-server": "./src/build-server.js",
+    "./skills-fetch": "./src/skills-fetch.js"
+  },
   "files": [
     "src/",
     "skills/",
-    "README.md",
-    "onboarding-prompt.md"
+    "README.md"
   ],
   "keywords": [
     "mcp",
+    "aose",
+    "agent-office-suite",
     "agentoffice",
-    "agent-office",
     "ai-agent",
     "workspace",
     "collaboration"

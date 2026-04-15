@@ -1,4 +1,4 @@
-// Stub for Outline's types module
+// Shared types for navigation, menus, etc.
 export type NavigationNode = {
   id: string;
   title: string;

@@ -1,9 +1,33 @@
 {
-  "name": "asuite-adapters",
-  "version": "0.1.0",
-  "description": "ASuite platform adapters — unified entry + platform plugins",
+  "name": "aose-adapter",
+  "version": "0.2.3",
+  "description": "AOSE adapter sidecar — bridges AOSE events to a local agent runtime (zylos, openclaw, ...)",
   "type": "module",
+  "bin": {
+    "aose-adapter": "index.js"
+  },
+  "main": "./index.js",
+  "files": [
+    "index.js",
+    "bridge.js",
+    "event-translator.js",
+    "platforms/",
+    "README.md"
+  ],
+  "keywords": [
+    "aose",
+    "agent-office-suite",
+    "adapter",
+    "sidecar",
+    "openclaw",
+    "zylos"
+  ],
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20 <25"
+  },
   "dependencies": {
+    "aose-mcp": "^2.1.0",
     "eventsource": "^2.0.2",
     "ws": "^8.16.0"
   }

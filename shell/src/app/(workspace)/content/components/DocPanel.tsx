@@ -161,7 +161,7 @@ export function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDelet
         setCommentQuote(detail.text);
         setShowComments(true);
         // Calculate top offset of the selection for sidebar alignment
-        const editorArea = document.querySelector('.outline-editor');
+        const editorArea = document.querySelector('.doc-editor');
         if (editorArea) {
           const editorRect = editorArea.getBoundingClientRect();
           // Try selection range first (inline comments), then blockRect (block comments)
@@ -214,7 +214,7 @@ export function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDelet
       setFocusedCommentId(id);
 
       // Calculate offset for sidebar alignment
-      const editorArea = document.querySelector('.outline-editor');
+      const editorArea = document.querySelector('.doc-editor');
       if (editorArea) {
         const editorRect = editorArea.getBoundingClientRect();
         const markRect = commentEl.getBoundingClientRect();
@@ -305,7 +305,7 @@ export function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDelet
         setSaveStatus('saved');
       }
     } catch (e) {
-      showError('Auto-save failed', e);
+      showError(t('errors.autoSaveFailed'), e);
       if (saveDocId === docIdRef.current) setSaveStatus('error');
     }
   }, [queryClient]);
@@ -392,7 +392,7 @@ export function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDelet
         await gw.setDocIcon(doc.id, selectedEmoji);
         queryClient.invalidateQueries({ queryKey: ['content-items'] });
       } catch (e) {
-        showError('Failed to save custom icon', e);
+        showError(t('errors.saveCustomIconFailed'), e);
       }
     } else {
       // Unicode emoji or null (remove): save to Gateway doc metadata, remove custom icon
@@ -421,7 +421,7 @@ export function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDelet
   const mobileReadOnly = isMobile && !mobileEditMode;
 
   const getEditorView = useCallback(() => {
-    const mount = document.querySelector('.outline-editor-mount') as any;
+    const mount = document.querySelector('.doc-editor-mount') as any;
     return mount?.__pmView || null;
   }, []);
 
@@ -582,7 +582,7 @@ export function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDelet
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       const wrapper = (e.target as HTMLElement).closest('.doc-title-wrap');
-                      const mount = wrapper?.parentElement?.querySelector('.outline-editor-mount') as any;
+                      const mount = wrapper?.parentElement?.querySelector('.doc-editor-mount') as any;
                       const view = mount?.__pmView;
                       if (view) {
                         view.focus();
@@ -619,7 +619,7 @@ export function DocPanel({ doc, customIcon, breadcrumb, onBack, onSaved, onDelet
             <div className="sticky top-0 z-30 flex justify-end pr-4">
               <SearchBar
                 getView={() => {
-                  const mount = document.querySelector('.outline-editor-mount') as any;
+                  const mount = document.querySelector('.doc-editor-mount') as any;
                   return mount?.__pmView || null;
                 }}
                 showReplace={searchWithReplace}

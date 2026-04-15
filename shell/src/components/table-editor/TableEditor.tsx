@@ -26,7 +26,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
 import { useT, getT } from '@/lib/i18n';
-import * as br from '@/lib/api/baserow';
+import * as br from '@/lib/api/tables';
 import * as gw from '@/lib/api/gateway';
 import { RowDetailPanel } from './RowDetailPanel';
 import { ColTypeDef, COLUMN_TYPES } from './types';
@@ -45,7 +45,7 @@ interface SnapshotPreview {
 }
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { BottomSheet } from '@/components/shared/BottomSheet';
-import { EditFAB } from '@/components/shared/EditFAB';
+import { MobileCommentBar } from '@/components/shared/MobileCommentBar';
 import { ContentMenuList } from '@/components/shared/ContentMenuList';
 import { buildActionMap } from '@/actions/types';
 import { tableColumnActions } from '@/actions/table-column.actions';
@@ -80,16 +80,17 @@ function getOptionColor(color?: string, idx?: number) {
 // ── Read-only column types ──
 const READONLY_TYPES = new Set(['ID', 'AutoNumber', 'CreatedTime', 'LastModifiedTime', 'CreatedBy', 'LastModifiedBy', 'Formula', 'Rollup', 'Lookup', 'Count', 'Links']);
 
-/** Resolve NocoDB attachment path to a proxied URL */
-function ncAttachmentUrl(a: { signedPath?: string; path?: string }): string {
-  const p = a.signedPath || a.path || '';
+/** Resolve attachment path to a proxied URL */
+function ncAttachmentUrl(a: { signedPath?: string; path?: string; url?: string }): string {
+  const p = (a as { url?: string }).url || a.signedPath || a.path || '';
   if (!p) return '';
-  // Already a full URL
+  // Full URL
   if (p.startsWith('http://') || p.startsWith('https://')) return p;
-  // Already proxied
-  if (p.startsWith('/api/')) return p;
-  // NocoDB relative path — use query-param route to avoid Next.js file-extension routing issues
-  return `/api/gateway/data/dl?path=${encodeURIComponent(p)}`;
+  // Gateway-native paths (/api/uploads/files/xxx) must be proxied through the shell.
+  if (p.startsWith('/api/gateway/')) return p;
+  if (p.startsWith('/api/')) return `/api/gateway${p.slice(4)}`;
+  if (p.startsWith('/uploads/')) return `/api/gateway${p}`;
+  return `/api/gateway/uploads/files/${encodeURIComponent(p.replace(/^\/+/, ''))}`;
 }
 
 // ── Compact cell display for kanban/gallery views ──
@@ -138,7 +139,14 @@ function CompactCellDisplay({ value, col }: { value: unknown; col: br.BRColumn }
 
   // MultiSelect — colored badges
   if (colType === 'MultiSelect') {
-    const items = String(value).split(',').map(s => s.trim()).filter(Boolean);
+    let items: string[] = [];
+    if (Array.isArray(value)) items = (value as unknown[]).map(v => String(v));
+    else if (typeof value === 'string' && value) {
+      if (value.trim().startsWith('[')) {
+        try { const p = JSON.parse(value); items = Array.isArray(p) ? p.map(String) : []; } catch { items = value.split(',').map(s => s.trim()); }
+      } else items = value.split(',').map(s => s.trim());
+    }
+    items = items.filter(Boolean);
     return (
       <div className="flex flex-wrap gap-0.5">
         {items.map((item, i) => {
@@ -348,10 +356,10 @@ export function TableEditor(props: TableEditorProps) {
 function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate, onCopyLink, docListVisible, onToggleDocList, focusCommentId, showComments, onShowComments, onCloseComments, onToggleComments, isPinned, onTogglePin }: TableEditorProps) {
   const { t } = useT();
   const isMobile = useIsMobile();
-  const [mobileEditing, setMobileEditing] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  // On mobile, default to read-only preview; on desktop always editable
-  const mobilePreview = isMobile && !mobileEditing;
+  // On mobile, list view is always read-only. Editing happens in the
+  // full-screen RowDetailPanel.
+  const mobilePreview = isMobile;
   const [page, setPage] = useState(1);
   const [editingCell, setEditingCell] = useState<{ rowId: number; col: string } | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -368,7 +376,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const [numFormat, setNumFormat] = useState<{ decimals: number; thousands: boolean; prefix: string; suffix: string }>({ decimals: 0, thousands: false, prefix: '', suffix: '' });
   const [currencySymbol, setCurrencySymbol] = useState('$');
   const [decimalPrecision, setDecimalPrecision] = useState(2);
-  const [durationFormat, setDurationFormat] = useState(0); // NocoDB duration format index
+  const [durationFormat, setDurationFormat] = useState(0); // Duration format index
   const [ratingMax, setRatingMax] = useState(5);
   const [ratingIcon, setRatingIcon] = useState('star');
   const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
@@ -445,7 +453,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   // Freeze columns state (persisted per table)
   const [frozenColCount, setFrozenColCountRaw] = useState(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(`asuite-table-frozen-${tableId}`);
+      const saved = localStorage.getItem(`aose-table-frozen-${tableId}`);
       return saved ? parseInt(saved, 10) : 1;
     }
     return 1;
@@ -453,7 +461,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const setFrozenColCount = useCallback((v: number | ((prev: number) => number)) => {
     setFrozenColCountRaw(prev => {
       const next = typeof v === 'function' ? v(prev) : v;
-      localStorage.setItem(`asuite-table-frozen-${tableId}`, String(next));
+      localStorage.setItem(`aose-table-frozen-${tableId}`, String(next));
       return next;
     });
   }, [tableId]);
@@ -547,7 +555,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       return;
     }
     if (meta.views?.length) {
-      const savedViewId = localStorage.getItem(`asuite-table-last-view-${tableId}`);
+      const savedViewId = localStorage.getItem(`aose-table-last-view-${tableId}`);
       const savedView = savedViewId ? meta.views.find(v => v.view_id === savedViewId) : null;
       const defaultView = savedView || meta.views.find(v => v.is_default) || meta.views[0];
       setActiveViewId(defaultView.view_id);
@@ -557,9 +565,22 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   // Save active view to localStorage when it changes
   useEffect(() => {
     if (activeViewId) {
-      localStorage.setItem(`asuite-table-last-view-${tableId}`, activeViewId);
+      localStorage.setItem(`aose-table-last-view-${tableId}`, activeViewId);
     }
   }, [activeViewId, tableId]);
+
+  // Auto-pick fk_grp_col_id for kanban views when exactly one SingleSelect column exists
+  useEffect(() => {
+    if (!meta || !activeViewId) return;
+    const v = meta.views?.find(x => x.view_id === activeViewId);
+    if (!v || v.type !== 4 || v.fk_grp_col_id) return;
+    const selectCols = (meta.columns || []).filter(c => c.type === 'SingleSelect');
+    if (selectCols.length === 1) {
+      br.updateKanbanConfig(activeViewId, { fk_grp_col_id: selectCols[0].column_id })
+        .then(() => queryClient.invalidateQueries({ queryKey: ['nc-table-meta', tableId] }))
+        .catch(() => {});
+    }
+  }, [meta, activeViewId, tableId, queryClient]);
 
   const views = meta?.views || [];
 
@@ -577,7 +598,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
     enabled: !!activeViewId,
   });
 
-  // Build NocoDB where clause from view filters: (field,op,value)~and(field2,op2,value2)
+  // Build where clause from view filters: (field,op,value)~and(field2,op2,value2)
   const whereParam = useMemo(() => {
     if (!viewFilters?.length || !meta?.columns) return undefined;
     const parts = viewFilters.map(f => {
@@ -612,8 +633,8 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
     return parts.length > 0 ? parts.join(',') : 'Id';
   }, [viewSorts, meta?.columns, sortParam]);
 
-  // Always query from table (not view) — NocoDB view-scoped queries strip columns hidden
-  // in NocoDB's native view settings, which breaks Kanban grouping and card field display.
+  // Always query from table (not view) — view-scoped queries strip columns hidden
+  // in native view settings, which breaks Kanban grouping and card field display.
   // Shell manages column visibility independently via Gateway view_column_settings.
   // Filters and sorts from the view are applied as query params.
   const { data: rowsData, isLoading, isFetching } = useQuery({
@@ -1002,13 +1023,14 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
     setEditingCell({ rowId, col });
     // Format date values for HTML date/datetime-local inputs
     if ((colType === 'Date' || colType === 'DateTime') && currentValue) {
-      const d = new Date(String(currentValue));
+      const raw = typeof currentValue === 'number' ? currentValue : (/^\d{10,}$/.test(String(currentValue)) ? parseInt(String(currentValue), 10) : String(currentValue));
+      const d = new Date(raw as number | string);
       if (!isNaN(d.getTime())) {
-        if (colType === 'Date') {
-          setEditValue(d.toISOString().slice(0, 10)); // YYYY-MM-DD
-        } else {
-          setEditValue(d.toISOString().slice(0, 16)); // YYYY-MM-DDTHH:MM
-        }
+        // Use local components — toISOString shifts to UTC and eats the user's
+        // selected hour (bug: Shanghai 14:00 → UTC 06:00).
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        setEditValue(colType === 'Date' ? local.slice(0, 10) : local);
         return;
       }
     }
@@ -1018,26 +1040,34 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   const saveEdit = useCallback(async () => {
     if (!editingCell) return;
     const { rowId, col } = editingCell;
-    const newVal = editValue;
+    // Determine the column type to handle null-vs-empty correctly (bug #7).
+    const colDef = meta?.columns?.find(c => c.column_id === col);
+    const numericTypes = new Set(['Number', 'Decimal', 'Currency', 'Percent', 'Rating', 'Duration']);
+    let newVal: unknown = editValue;
+    if (editValue === '' && colDef && numericTypes.has(colDef.type)) {
+      newVal = null;
+    }
     setEditingCell(null);
-    // Optimistic update: patch the cached data immediately
+    // Optimistic update: patch the cached data immediately.
     queryClient.setQueriesData({ queryKey: ['nc-rows', tableId] }, (old: unknown) => {
       if (!old || typeof old !== 'object' || !('list' in (old as Record<string, unknown>))) return old;
       const data = old as { list: Record<string, unknown>[]; pageInfo?: unknown };
       if (!Array.isArray(data.list)) return old;
+      const patch: Record<string, unknown> = { [col]: newVal };
+      if (colDef?.title) patch[colDef.title] = newVal;
       return {
         ...data,
-        list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col]: newVal } : r),
+        list: data.list.map(r => (r.Id as number) === rowId ? { ...r, ...patch } : r),
       };
     });
     try {
       await br.updateRow(tableId, rowId, { [col]: newVal });
-      refresh(); // Sync with server. Row order is stable with numeric Id sort.
+      refresh();
     } catch (e) {
       console.error('Update failed:', e);
-      refresh(); // revert on error
+      refresh();
     }
-  }, [editingCell, editValue, tableId, queryClient]);
+  }, [editingCell, editValue, tableId, queryClient, meta]);
 
   const toggleCheckbox = async (rowId: number, col: string, current: unknown) => {
     const newVal = !current;
@@ -1048,7 +1078,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col]: newVal } : r) };
     });
     try {
-      // NocoDB/PostgreSQL requires boolean values, not integers (1/0 causes type error)
+      // Backend requires boolean values, not integers (1/0 causes type error)
       await br.updateRow(tableId, rowId, { [col]: newVal });
     } catch (e) {
       console.error('Toggle failed:', e);
@@ -1095,26 +1125,35 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
   };
 
   const toggleMultiSelect = async (rowId: number, col: string, current: unknown, option: string) => {
-    const currentStr = current ? String(current) : '';
-    const currentItems = currentStr ? currentStr.split(',').map(s => s.trim()) : [];
+    // `current` may be a JSON string, a CSV string, or already an array.
+    let currentItems: string[] = [];
+    if (Array.isArray(current)) currentItems = current.map(String);
+    else if (typeof current === 'string' && current) {
+      try {
+        const parsed = JSON.parse(current);
+        currentItems = Array.isArray(parsed) ? parsed.map(String) : current.split(',').map(s => s.trim()).filter(Boolean);
+      } catch {
+        currentItems = current.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
     const newItems = currentItems.includes(option)
       ? currentItems.filter(i => i !== option)
       : [...currentItems, option];
-    const newValue = newItems.join(',');
-    // Optimistic update
+    const wireValue = newItems.join(','); // display form for the grid
     queryClient.setQueriesData({ queryKey: ['nc-rows', tableId] }, (old: unknown) => {
       const data = old as { list: Record<string, unknown>[]; pageInfo?: unknown } | undefined;
       if (!data) return old;
-      return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col]: newValue } : r) };
+      return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col]: wireValue } : r) };
     });
     try {
       if (!currentItems.includes(option)) await ensureSelectOption(col, option);
-      await br.updateRow(tableId, rowId, { [col]: newValue });
+      // Backend requires an array for MultiSelect (coerce throws on string).
+      await br.updateRow(tableId, rowId, { [col]: newItems });
       refresh();
       refreshMeta();
     } catch (e) {
       console.error('Toggle multi-select failed:', e);
-      refresh(); // revert optimistic update
+      refresh();
     }
   };
 
@@ -1144,7 +1183,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       const uploadRes = await fetch('/api/gateway/data/upload', { method: 'POST', body: formData });
       if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
       const uploaded = await uploadRes.json(); // array of { path, title, mimetype, size }
-      // Get existing attachments (NocoDB stores as array, not JSON string)
+      // Get existing attachments (stored as array, not JSON string)
       const row = rows.find(r => (r.Id as number) === rowId);
       let existing: unknown[] = [];
       if (row?.[colTitle]) {
@@ -1155,7 +1194,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
         }
       }
       const merged = [...existing, ...uploaded];
-      // NocoDB expects array, not JSON string for Attachment columns
+      // Backend expects array, not JSON string for Attachment columns
       await br.updateRow(tableId, rowId, { [colTitle]: merged });
       refresh();
       // Re-open attachment dropdown to show updated list
@@ -1578,15 +1617,10 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
     setNewColType(col.type);
     setNewColOptions(col.options?.map(o => o.title).join(', ') || '');
     setNewColOptionsList(col.options?.map(o => o.title) || []);
-    setNewColFormula(col.formula || '');
     setNewColRelTable(col.relatedTableId || '');
     setNewColRelType(col.relationType || 'mm');
     setNewColRelMulti(col.relationType !== 'bt');
     setNewColRelBidirectional(true);
-    setNewColRelCol(col.fk_relation_column_id || '');
-    setNewColLookupCol(col.fk_lookup_column_id || '');
-    setNewColRollupCol(col.fk_rollup_column_id || '');
-    setNewColRollupFn(col.rollup_function || 'sum');
     // Number format from meta
     if (col.meta) {
       const m = col.meta as Record<string, unknown>;
@@ -1833,7 +1867,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       if (nextRowIdx < rows.length) {
         const nextRow = rows[nextRowIdx];
         const nextRowId = nextRow.Id as number;
-        setTimeout(() => startEdit(nextRowId, col.title, nextRow[col.title], col.type), 50);
+        setTimeout(() => startEdit(nextRowId, col.column_id, nextRow[col.column_id] ?? nextRow[col.title], col.type), 50);
       }
     }
     if (e.key === 'Tab') {
@@ -1846,7 +1880,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
         const rowId = editingCell?.rowId;
         if (rowId == null) return;
         const row = rows.find(r => (r.Id as number) === rowId);
-        if (row) setTimeout(() => startEdit(rowId, nextCol.title, row[nextCol.title], nextCol.type), 50);
+        if (row) setTimeout(() => startEdit(rowId, nextCol.column_id, row[nextCol.column_id] ?? row[nextCol.title], nextCol.type), 50);
       }
     }
   };
@@ -2214,7 +2248,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
       )}
       </>}{/* end view tabs conditional */}
 
-      {/* Toolbar bar — NocoDB style, view-type aware — hidden during history preview and mobile preview */}
+      {/* Toolbar bar — view-type aware — hidden during history preview and mobile preview */}
       {!previewSnapshot && !mobilePreview && (() => {
         const activeView = views.find(v => v.view_id === activeViewId);
         const viewType = activeView?.type || 3;
@@ -2350,12 +2384,13 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                       <div className="p-3">
                         <div className="text-xs text-muted-foreground mb-1.5">{t('dataTable.selectGroupCondition')}</div>
                         <div className="space-y-0.5">
-                          {displayCols.filter(c => !c.primary_key && c.title !== 'created_by').map(c => {
+                          {displayCols.filter(c => c.type === 'SingleSelect').map(c => {
                             const ColIcon = getColIcon(c.type);
                             const isActive = activeView?.fk_grp_col_id === c.column_id;
                             return (
                               <button
                                 key={c.column_id}
+                                onMouseDown={e => e.stopPropagation()}
                                 onClick={async () => {
                                   if (activeView) {
                                     await br.updateKanbanConfig(activeView.view_id, { fk_grp_col_id: c.column_id });
@@ -2411,9 +2446,15 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                             className="w-full bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none"
                           >
                             <option value="">{t('dataTable.none')}</option>
-                            {displayCols.filter(c => c.type === 'Attachment').map(c => (
-                              <option key={c.column_id} value={c.column_id}>{c.title}</option>
-                            ))}
+                            {(() => {
+                              const atts = displayCols.filter(c => c.type === 'Attachment');
+                              const titleCount = new Map<string, number>();
+                              atts.forEach(c => titleCount.set(c.title, (titleCount.get(c.title) || 0) + 1));
+                              return atts.map(c => {
+                                const label = (titleCount.get(c.title) || 0) > 1 ? `${c.title} · ${c.column_id.slice(-6)}` : c.title;
+                                return <option key={c.column_id} value={c.column_id}>{label}</option>;
+                              });
+                            })()}
                           </select>
                         </div>
                         <div>
@@ -2472,9 +2513,15 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                             className="w-full bg-muted rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none"
                           >
                             <option value="">{t('dataTable.none')}</option>
-                            {displayCols.filter(c => c.type === 'Attachment').map(c => (
-                              <option key={c.column_id} value={c.column_id}>{c.title}</option>
-                            ))}
+                            {(() => {
+                              const atts = displayCols.filter(c => c.type === 'Attachment');
+                              const titleCount = new Map<string, number>();
+                              atts.forEach(c => titleCount.set(c.title, (titleCount.get(c.title) || 0) + 1));
+                              return atts.map(c => {
+                                const label = (titleCount.get(c.title) || 0) > 1 ? `${c.title} · ${c.column_id.slice(-6)}` : c.title;
+                                return <option key={c.column_id} value={c.column_id}>{label}</option>;
+                              });
+                            })()}
                           </select>
                         </div>
                         <div>
@@ -2890,8 +2937,23 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             {previewSnapshot.rows.length === 0 ? (
               <div className="p-8 text-center text-sm text-muted-foreground">{t('dataTable.emptyTable')}</div>
             ) : (() => {
-              const HIDDEN_SNAPSHOT_UIDTS = new Set(['ID', 'CreatedTime', 'LastModifiedTime', 'CreatedBy', 'LastModifiedBy', 'Links', 'LinkToAnotherRecord', 'Lookup', 'Rollup', 'Formula', 'Count']);
+              const HIDDEN_SNAPSHOT_UIDTS = new Set(['Links', 'LinkToAnotherRecord', 'Lookup', 'Rollup', 'Formula', 'Count']);
               const snapshotCols = previewSnapshot.schema.filter((c: { uidt: string }) => !HIDDEN_SNAPSHOT_UIDTS.has(c.uidt));
+              // P4.2 snapshots key row values by field id (ufld_xxx). Virtual fields
+              // (CreatedTime/LastModifiedTime/CreatedBy/LastModifiedBy/ID) are not written
+              // to row[fieldId] — they live on the row's builtin columns.
+              const virtualKeyMap: Record<string, string> = {
+                ID: 'id',
+                CreatedTime: 'created_at',
+                LastModifiedTime: 'updated_at',
+                CreatedBy: 'created_by',
+                LastModifiedBy: 'updated_by',
+              };
+              const cellValue = (row: Record<string, unknown>, col: { id?: string; title: string; uidt: string }) => {
+                if (virtualKeyMap[col.uidt]) return row[virtualKeyMap[col.uidt]];
+                if (col.id && col.id in row) return row[col.id];
+                return row[col.title];
+              };
               return (
                 <table className="text-xs" style={{ minWidth: '100%' }}>
                   <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm z-[5]">
@@ -2908,9 +2970,9 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                     {previewSnapshot.rows.map((row: Record<string, unknown>, ri: number) => (
                       <tr key={ri} className="border-b border-border/30 hover:bg-accent/20">
                         <td className="w-10 min-w-[40px] px-2 py-1.5 text-center text-[10px] text-muted-foreground/50 border-r border-border sticky left-0 bg-amber-50/30 dark:bg-amber-950/10 z-10">{ri + 1}</td>
-                        {snapshotCols.map((col: { title: string; uidt: string }, ci: number) => (
+                        {snapshotCols.map((col: { id?: string; title: string; uidt: string }, ci: number) => (
                           <td key={ci} className="px-3 py-1.5 text-foreground max-w-[250px]">
-                            <SnapshotCellValue value={row[col.title]} colType={col.uidt} />
+                            <SnapshotCellValue value={cellValue(row, col)} colType={col.uidt} />
                           </td>
                         ))}
                       </tr>
@@ -2963,7 +3025,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
             onSubmit={async (data) => { await br.insertRow(tableId, data); refresh(); }}
           />
         );
-        // Calendar view (frontend-only, NocoDB doesn't support it)
+        // Calendar view (frontend-only)
         if (viewType === 5) return (
           <CalendarView
             rows={rows}
@@ -3117,13 +3179,11 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                   );
                 })}
                   </SortableContext>
-                {!mobilePreview && (
                 <th className="px-2 py-1.5 border-r border-border">
-                  <button onClick={(e) => { const rect = (e.target as HTMLElement).getBoundingClientRect(); setEditFieldAnchor({ x: rect.right - 384, y: rect.bottom + 4 }); setInsertColPosition(null); openAddField(); }} className="p-0.5 text-muted-foreground hover:text-foreground" title={t('dataTable.addCol')}>
+                  <button onClick={(e) => { if (isMobile) { setEditFieldAnchor(null); } else { const rect = (e.target as HTMLElement).getBoundingClientRect(); setEditFieldAnchor({ x: rect.right - 384, y: rect.bottom + 4 }); } setInsertColPosition(null); openAddField(); }} className="p-0.5 text-muted-foreground hover:text-foreground" title={t('dataTable.addCol')}>
                     <Plus className="h-3.5 w-3.5" />
                   </button>
                 </th>
-                )}
               </tr>
             </thead>
             <tbody>
@@ -3151,8 +3211,8 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                       </div>
                     </td>
                     {visibleCols.map((col, colIdx) => {
-                      const val = row[col.title];
-                      const isEditing = editingCell?.rowId === rowId && editingCell?.col === col.title;
+                      const val = row[col.column_id] ?? row[col.title];
+                      const isEditing = editingCell?.rowId === rowId && editingCell?.col === col.column_id;
                       const isReadonly = READONLY_TYPES.has(col.type);
                       const isPK = col.primary_key;
                       const width = colWidths[col.column_id];
@@ -3166,7 +3226,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                           className={cn(
                             'px-2 relative',
                             isLastFrozen ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-[2px] after:bg-border' : 'border-r border-border',
-                            (selectDropdown?.rowId === rowId && selectDropdown?.col === col.title) || (userPicker?.rowId === rowId && userPicker?.col === col.title) || (datePicker?.rowId === rowId && datePicker?.col === col.title) || (attachmentDropdown?.rowId === rowId && attachmentDropdown?.col === col.title) ? 'overflow-visible' : 'overflow-hidden',
+                            (selectDropdown?.rowId === rowId && selectDropdown?.col === col.title) || (userPicker?.rowId === rowId && userPicker?.col === col.title) || (datePicker?.rowId === rowId && datePicker?.col === col.column_id) || (attachmentDropdown?.rowId === rowId && attachmentDropdown?.col === col.title) ? 'overflow-visible' : 'overflow-hidden',
                             isEditing && 'ring-2 ring-sidebar-primary ring-inset bg-card',
                             !mobilePreview && (!isReadonly || col.type === 'Links' || col.type === 'Attachment' || col.type === 'User' || col.type === 'Collaborator') && !isEditing && 'cursor-pointer',
                             mobilePreview && 'cursor-pointer',
@@ -3200,8 +3260,26 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                               return;
                             }
                             if ((col.type === 'Date' || col.type === 'DateTime') && !isReadonly) {
-                              const dateStr = val ? String(val) : '';
-                              setDatePicker({ rowId, col: col.title, colType: col.type, value: dateStr });
+                              let dateStr = '';
+                              if (val != null && val !== '') {
+                                let d: Date | null = null;
+                                if (typeof val === 'number') d = new Date(val);
+                                else {
+                                  const s = String(val);
+                                  if (/^\d{10,}$/.test(s)) d = new Date(Number(s));
+                                  else {
+                                    const parsed = Date.parse(s);
+                                    if (!Number.isNaN(parsed)) d = new Date(parsed);
+                                  }
+                                }
+                                if (d && !Number.isNaN(d.getTime())) {
+                                  const pad = (n: number) => String(n).padStart(2, '0');
+                                  dateStr = col.type === 'DateTime'
+                                    ? `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+                                    : `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+                                }
+                              }
+                              setDatePicker({ rowId, col: col.column_id, colType: col.type, value: dateStr });
                               return;
                             }
                             if (isEditing || isReadonly) return;
@@ -3217,7 +3295,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                             } else if (col.type === 'Rating') {
                               // Rating handled by inline stars
                             } else {
-                              startEdit(rowId, col.title, val, col.type);
+                              startEdit(rowId, col.column_id, val, col.type);
                             }
                           }}
                         >
@@ -3577,7 +3655,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                             );
                           })()}
                           {/* Date picker dropdown */}
-                          {datePicker?.rowId === rowId && datePicker?.col === col.title && (
+                          {datePicker?.rowId === rowId && datePicker?.col === col.column_id && (
                             <DatePickerDropdown
                               value={datePicker.value}
                               showTime={datePicker.colType === 'DateTime'}
@@ -3587,9 +3665,9 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                                 queryClient.setQueriesData({ queryKey: ['nc-rows', tableId] }, (old: unknown) => {
                                   const data = old as { list: Record<string, unknown>[]; pageInfo?: unknown } | undefined;
                                   if (!data) return old;
-                                  return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col.title]: dateStr || null } : r) };
+                                  return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col.column_id]: dateStr || null, [col.title]: dateStr || null } : r) };
                                 });
-                                try { await br.updateRow(tableId, rowId, { [col.title]: dateStr || null }); refresh(); }
+                                try { await br.updateRow(tableId, rowId, { [col.column_id]: dateStr || null }); refresh(); }
                                 catch (e) { console.error('Date update failed:', e); refresh(); }
                               }}
                               onClose={() => setDatePicker(null)}
@@ -3847,20 +3925,6 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
                       className="w-14 border border-border rounded px-2 py-1 text-xs outline-none bg-transparent"
                     />
                   </label>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-foreground">{t('dataTable.icon')}</span>
-                    {[
-                      { key: 'star', icon: '★' }, { key: 'heart', icon: '❤' }, { key: 'thumb', icon: '👍' },
-                      { key: 'fire', icon: '🔥' }, { key: 'smile', icon: '😊' }, { key: 'flower', icon: '🌸' },
-                      { key: 'bolt', icon: '⚡' }, { key: 'puzzle', icon: '🧩' }, { key: 'number', icon: '🔢' },
-                    ].map(({ key, icon: ico }) => (
-                      <button key={key} onClick={() => setRatingIcon(key)}
-                        className={cn('px-2 py-1 rounded text-sm', ratingIcon === key ? 'bg-sidebar-primary/10 ring-1 ring-sidebar-primary' : 'bg-muted')}
-                      >
-                        {ico}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               )}
               {/* Date format config */}
@@ -4290,23 +4354,6 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
         />
       )}
 
-      {/* Mobile Edit FAB */}
-      {isMobile && (
-        <EditFAB
-          isEditing={mobileEditing}
-          onEdit={() => setMobileEditing(true)}
-          onSave={() => {
-            // Save any active edit before exiting edit mode
-            if (editingCell) saveEdit();
-            setMobileEditing(false);
-          }}
-          onCancel={() => {
-            setEditingCell(null);
-            setMobileEditing(false);
-          }}
-        />
-      )}
-
       {/* Row Detail Panel */}
       {expandedRowIdx != null && rows[expandedRowIdx] && (
         <RowDetailPanel
@@ -4342,6 +4389,26 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
           e.target.value = ''; // reset so same file can be re-selected
         }}
       />
+
+      {/* Mobile: bottom comment bar + add-row FAB (grid view only, not in detail/history) */}
+      {isMobile && !previewSnapshot && expandedRowIdx == null && (() => {
+        const vt = views.find(v => v.view_id === activeViewId)?.type || 3;
+        if (vt !== 3) return null;
+        return (
+          <MobileCommentBar
+            onClick={() => { onShowComments(); setShowHistory(false); }}
+            rightSlot={
+              <button
+                onClick={handleAddRow}
+                className="flex items-center justify-center w-16 h-16 rounded-full bg-card text-foreground shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] border border-border shrink-0"
+                title={t('dataTable.addRecord')}
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            }
+          />
+        );
+      })()}
 
       </div>{/* end main table content */}
 
@@ -4570,7 +4637,7 @@ function DatePickerDropdown({ value, showTime, onChange, onClose }: {
     if (showTime) {
       const hours = String(hh || 0).padStart(2, '0');
       const mins = String(mm || 0).padStart(2, '0');
-      return `${y}-${mo}-${da} ${hours}:${mins}`;
+      return `${y}-${mo}-${da}T${hours}:${mins}:00`;
     }
     return `${y}-${mo}-${da}`;
   };
@@ -4661,14 +4728,18 @@ function DatePickerDropdown({ value, showTime, onChange, onClose }: {
             onChange={e => {
               const newTime = e.target.value;
               setTimeStr(newTime);
-              // If a date is already selected, immediately save with new time
-              if (currentParsed) {
-                const [hh, mm] = newTime.split(':').map(Number);
-                const y = currentParsed.year;
-                const mo = String(currentParsed.month + 1).padStart(2, '0');
-                const da = String(currentParsed.day).padStart(2, '0');
-                onChange(`${y}-${mo}-${da} ${String(hh || 0).padStart(2, '0')}:${String(mm || 0).padStart(2, '0')}`);
+              // Save with new time, using selected day (or today if none selected yet)
+              const [hh, mm] = newTime.split(':').map(Number);
+              let y = selectedYear, mo = selectedMonth, da = selectedDay;
+              if (da === null) {
+                const n = new Date();
+                y = n.getFullYear(); mo = n.getMonth(); da = n.getDate();
+                setSelectedYear(y); setSelectedMonth(mo); setSelectedDay(da);
+                setViewYear(y); setViewMonth(mo);
               }
+              const moStr = String(mo + 1).padStart(2, '0');
+              const daStr = String(da).padStart(2, '0');
+              onChange(`${y}-${moStr}-${daStr}T${String(hh || 0).padStart(2, '0')}:${String(mm || 0).padStart(2, '0')}:00`);
             }}
             className="bg-muted rounded px-2 py-1 text-xs text-foreground outline-none"
           />
@@ -4766,6 +4837,13 @@ function CellDisplay({ value, col, onDeleteAttachment }: { value: unknown; col: 
     if (colType === 'User' || colType === 'Collaborator') {
       return <span className="text-xs py-1.5 block text-muted-foreground/40 flex items-center gap-1"><User className="h-3 w-3" /> {t('dataTable.selectMember')}</span>;
     }
+    if (colType === 'Checkbox') {
+      return (
+        <div className="flex items-center justify-center py-1">
+          <div className="w-4 h-4 rounded border border-border bg-transparent cursor-pointer" />
+        </div>
+      );
+    }
     return <span className="text-xs py-1.5 block select-none">&nbsp;</span>;
   }
 
@@ -4789,19 +4867,12 @@ function CellDisplay({ value, col, onDeleteAttachment }: { value: unknown; col: 
     );
   }
 
-  // Rating
+  // Rating — fixed 5-star display, no configurable icon
   if (colType === 'Rating') {
     const n = typeof value === 'number' ? value : parseInt(str) || 0;
     const meta = col.meta as Record<string, unknown> | undefined;
     const max = (meta?.max as number) || 5;
-    const iconType = (meta?.iconIdx as string) || 'star';
-    const iconMap: Record<string, [string, string]> = {
-      star: ['★', '☆'], heart: ['❤', '♡'], thumb: ['👍', '·'], flag: ['🚩', '·'],
-      fire: ['🔥', '·'], smile: ['😊', '·'], flower: ['🌸', '·'],
-      bolt: ['⚡', '·'], puzzle: ['🧩', '·'], number: ['🔢', '·'],
-    };
-    const [filled, empty] = iconMap[iconType] || iconMap.star;
-    return <span className="text-sm py-1 block select-none">{filled.repeat(n)}{empty.repeat(Math.max(0, max - n))}</span>;
+    return <span className="text-sm py-1 block select-none">{'★'.repeat(n)}{'☆'.repeat(Math.max(0, max - n))}</span>;
   }
 
   // SingleSelect
@@ -4815,9 +4886,24 @@ function CellDisplay({ value, col, onDeleteAttachment }: { value: unknown; col: 
     );
   }
 
-  // MultiSelect
+  // MultiSelect — value may be an already-decoded array, a JSON string, or CSV.
   if (colType === 'MultiSelect') {
-    const items = str.split(',').map(s => s.trim()).filter(Boolean);
+    let items: string[] = [];
+    if (Array.isArray(value)) {
+      items = (value as unknown[]).map(v => String(v));
+    } else if (typeof value === 'string' && value) {
+      if (value.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(value);
+          items = Array.isArray(parsed) ? parsed.map(String) : [];
+        } catch {
+          items = value.split(',').map(s => s.trim()).filter(Boolean);
+        }
+      } else {
+        items = value.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    items = items.filter(Boolean);
     return (
       <div className="flex flex-wrap gap-0.5 py-1">
         {items.map((item, i) => {
@@ -4865,9 +4951,21 @@ function CellDisplay({ value, col, onDeleteAttachment }: { value: unknown; col: 
 
   // Date / DateTime / CreatedTime / LastModifiedTime
   if (colType === 'Date' || colType === 'DateTime' || colType === 'CreatedTime' || colType === 'LastModifiedTime') {
-    // Parse date string directly without Date object to avoid timezone issues
-    const dateMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
-    if (!dateMatch) return <span className="text-xs py-1.5 block text-foreground/70">{str}</span>;
+    // Backend now stores Date/DateTime as numeric ms. Render in the user's
+    // local timezone — toISOString would shift "14:00 Shanghai" to "06:00 UTC".
+    let normalized = str;
+    if (typeof value === 'number' || /^\d{10,}$/.test(str)) {
+      const ms = typeof value === 'number' ? value : parseInt(str, 10);
+      if (!isNaN(ms)) {
+        const d = new Date(ms);
+        if (!isNaN(d.getTime())) {
+          const pad = (n: number) => String(n).padStart(2, '0');
+          normalized = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+      }
+    }
+    const dateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+    if (!dateMatch) return <span className="text-xs py-1.5 block text-foreground/70">{normalized}</span>;
     const meta = col.meta as Record<string, unknown> | undefined;
     const fmt = (meta?.date_format as string) || 'YYYY-MM-DD';
     const y = dateMatch[1];
@@ -4884,7 +4982,7 @@ function CellDisplay({ value, col, onDeleteAttachment }: { value: unknown; col: 
     // If format doesn't include HH:mm, append time for DateTime/system types
     const needsTime = colType !== 'Date' && !fmt.includes('HH');
     const timePart = needsTime ? ` ${hh}:${mm}` : '';
-    return <span className="text-xs py-1.5 block text-foreground/70" title={str}>{formatted}{timePart}</span>;
+    return <span className="text-xs py-1.5 block text-foreground/70" title={normalized}>{formatted}{timePart}</span>;
   }
 
   // Time
@@ -5308,14 +5406,16 @@ function KanbanView({ rows, columns, activeView, isLoading, onUpdateRow, onAddRo
                 return (
                   <KanbanCard key={rowId ?? i} id={rowId} isDragging={draggedRowId === rowId}>
                     {coverCol && (() => {
-                      const coverVal = row[coverCol.title];
-                      if (!coverVal) return <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />;
+                      const coverVal = row[coverCol.column_id] ?? row[coverCol.title];
+                      const placeholder = <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />;
+                      if (!coverVal) return placeholder;
                       try {
                         const arr = Array.isArray(coverVal) ? coverVal : JSON.parse(String(coverVal));
-                        const img = arr.find((a: any) => a.mimetype?.startsWith('image/'));
-                        if (!img) return <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />;
+                        if (!Array.isArray(arr) || arr.length === 0) return placeholder;
+                        const img = arr.find((a: any) => (a?.mimetype || '').startsWith('image/')) || arr[0];
+                        if (!img) return placeholder;
                         return <img src={ncAttachmentUrl(img)} className="w-full h-24 object-cover rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} alt="" />;
-                      } catch { return <div className="w-full h-24 bg-muted/60 rounded-t -m-3 mb-1.5" style={{ width: 'calc(100% + 24px)' }} />; }
+                      } catch { return placeholder; }
                     })()}
                     <div className="text-xs font-medium text-foreground truncate cursor-pointer" onClick={() => onExpandRow?.(rowId)}>
                       {titleCol ? String(row[titleCol.title] ?? '') : `#${rowId}`}
@@ -5395,14 +5495,16 @@ function GalleryView({ rows, columns, activeView, isLoading, onAddRow, hiddenCol
               onClick={() => onExpandRow?.(rowId)}
             >
               {coverCol && (() => {
-                const coverVal = row[coverCol.title];
-                if (!coverVal) return <div className="w-full h-32 bg-muted/60" />;
+                const coverVal = row[coverCol.column_id] ?? row[coverCol.title];
+                const placeholder = <div className="w-full h-32 bg-muted/60" />;
+                if (!coverVal) return placeholder;
                 try {
                   const arr = Array.isArray(coverVal) ? coverVal : JSON.parse(String(coverVal));
-                  const img = arr.find((a: any) => a.mimetype?.startsWith('image/'));
-                  if (!img) return <div className="w-full h-32 bg-muted/60" />;
+                  if (!Array.isArray(arr) || arr.length === 0) return placeholder;
+                  const img = arr.find((a: any) => (a?.mimetype || '').startsWith('image/')) || arr[0];
+                  if (!img) return placeholder;
                   return <img src={ncAttachmentUrl(img)} className="w-full h-32 object-cover" alt="" />;
-                } catch { return <div className="w-full h-32 bg-muted/60" />; }
+                } catch { return placeholder; }
               })()}
               <div className="p-4 space-y-2">
               <div className="text-sm font-semibold text-foreground truncate">

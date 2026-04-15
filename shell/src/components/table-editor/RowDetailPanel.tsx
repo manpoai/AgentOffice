@@ -10,7 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
-import * as br from '@/lib/api/baserow';
+import * as br from '@/lib/api/tables';
 import * as gw from '@/lib/api/gateway';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { MobileCommentBar } from '@/components/shared/MobileCommentBar';
@@ -33,7 +33,7 @@ function attachmentUrl(a: { signedPath?: string; path?: string }): string {
   const p = a.signedPath || a.path || '';
   if (!p) return '';
   if (p.startsWith('/api/')) return p;
-  // Proxy all URLs (including http://localhost Baserow URLs) through gateway
+  // Proxy all URLs through gateway
   return `/api/gateway/data/dl?path=${encodeURIComponent(p)}`;
 }
 
@@ -92,10 +92,10 @@ export function RowDetailPanel({
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, onNavigate]);
 
-  // ─── Mobile: Full-screen detail page (rendered inline, replaces table grid) ───
+  // ─── Mobile: Full-screen detail page (fixed overlay covering the viewport) ───
   if (isMobile) {
     return (
-      <div className="flex-1 flex flex-col min-h-0 bg-card">
+      <div className="fixed inset-0 z-50 flex flex-col bg-card">
         {/* Header: < back | title | ... more — matches design spec */}
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border shrink-0 bg-card">
           <button onClick={onClose} className="p-1.5 -ml-1 text-foreground/70">
@@ -132,7 +132,7 @@ export function RowDetailPanel({
             <FieldRow
               key={col.column_id}
               col={col}
-              value={row[col.title]}
+              value={col.column_id in row ? row[col.column_id] : row[col.title]}
               rowId={rowId}
               tableId={tableId}
               onSaved={onRefresh}
@@ -220,7 +220,7 @@ export function RowDetailPanel({
               <FieldRow
                 key={col.column_id}
                 col={col}
-                value={row[col.title]}
+                value={col.column_id in row ? row[col.column_id] : row[col.title]}
                 rowId={rowId}
                 tableId={tableId}
                 onSaved={onRefresh}
@@ -280,7 +280,7 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
       if (col.type === 'Number' || col.type === 'Decimal' || col.type === 'Currency' || col.type === 'Percent' || col.type === 'Year') {
         saveVal = editVal === '' ? null : Number(editVal);
       }
-      await br.updateRow(tableId, rowId, { [col.title]: saveVal });
+      await br.updateRow(tableId, rowId, { [col.column_id]: saveVal });
       onSaved();
     } catch (e) {
       showError(t('errors.saveFailed'), e);
@@ -294,7 +294,7 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
     try {
       const newVal = !value;
       // PostgreSQL requires boolean values, not integers
-      await br.updateRow(tableId, rowId, { [col.title]: newVal });
+      await br.updateRow(tableId, rowId, { [col.column_id]: newVal });
       onSaved();
     } catch (e) {
       showError(t('errors.toggleCheckboxFailed'), e);
@@ -303,7 +303,7 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
 
   const setRating = async (v: number) => {
     try {
-      await br.updateRow(tableId, rowId, { [col.title]: v });
+      await br.updateRow(tableId, rowId, { [col.column_id]: v });
       onSaved();
     } catch (e) {
       showError(t('errors.setRatingFailed'), e);
@@ -312,7 +312,7 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
 
   const setSelectVal = async (v: string) => {
     try {
-      await br.updateRow(tableId, rowId, { [col.title]: v });
+      await br.updateRow(tableId, rowId, { [col.column_id]: v });
       onSaved();
     } catch (e) {
       showError(t('errors.setOptionFailed'), e);
@@ -324,7 +324,7 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
     const items = currentStr ? currentStr.split(',').map(s => s.trim()) : [];
     const newItems = items.includes(option) ? items.filter(i => i !== option) : [...items, option];
     try {
-      await br.updateRow(tableId, rowId, { [col.title]: newItems.join(',') });
+      await br.updateRow(tableId, rowId, { [col.column_id]: newItems.join(',') });
       onSaved();
     } catch (e) {
       showError(t('errors.toggleMultiSelectFailed'), e);
@@ -571,7 +571,7 @@ function FieldDisplay({ value, col }: { value: unknown; col: br.BRColumn }) {
     const handleDeleteAttachment = async (idx: number) => {
       const updated = attachments.filter((_: any, i: number) => i !== idx);
       try {
-        await br.updateRow(tableId, rowId, { [col.title]: updated });
+        await br.updateRow(tableId, rowId, { [col.column_id]: updated });
         onSaved();
       } catch (e) { showError(t('errors.deleteAttachmentFailed'), e); }
     };
@@ -695,7 +695,7 @@ function DateField({ value, col, rowId, tableId, onSaved }: {
   const handleSelect = async (dateStr: string) => {
     setOpen(false);
     try {
-      await br.updateRow(tableId, rowId, { [col.title]: dateStr || null });
+      await br.updateRow(tableId, rowId, { [col.column_id]: dateStr || null });
       onSaved();
     } catch (e) { showError(t('errors.dateUpdateFailed'), e); }
   };
@@ -851,7 +851,7 @@ function AttachmentField({ value, col, rowId, tableId, onSaved }: {
       if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
       const uploaded = await res.json();
       const merged = [...attachments, ...uploaded];
-      await br.updateRow(tableId, rowId, { [col.title]: merged });
+      await br.updateRow(tableId, rowId, { [col.column_id]: merged });
       onSaved();
     } catch (e) { showError(t('errors.uploadAttachmentFailed'), e); }
     finally { setUploading(false); }
@@ -860,7 +860,7 @@ function AttachmentField({ value, col, rowId, tableId, onSaved }: {
   const handleDelete = async (idx: number) => {
     const updated = attachments.filter((_: any, i: number) => i !== idx);
     try {
-      await br.updateRow(tableId, rowId, { [col.title]: updated });
+      await br.updateRow(tableId, rowId, { [col.column_id]: updated });
       onSaved();
     } catch (e) { showError(t('errors.deleteAttachmentFailed'), e); }
   };
@@ -889,7 +889,7 @@ function AttachmentField({ value, col, rowId, tableId, onSaved }: {
             const reordered = arrayMove([...attachments], Number(active.id), Number(over.id));
             setLocalAttachments(reordered);
             try {
-              await br.updateRow(tableId, rowId, { [col.title]: reordered });
+              await br.updateRow(tableId, rowId, { [col.column_id]: reordered });
               onSaved();
             } catch (e) { showError(t('errors.reorderFailed'), e); onSaved(); }
           }}

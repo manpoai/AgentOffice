@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS actors (
   webhook_secret TEXT,
   online      INTEGER DEFAULT 0,
   last_seen_at INTEGER,
-  br_password TEXT,
   platform    TEXT,
   pending_approval INTEGER DEFAULT 0,
   deleted_at  INTEGER,
@@ -38,18 +37,21 @@ CREATE TABLE IF NOT EXISTS tickets (
 );
 
 CREATE TABLE IF NOT EXISTS events (
-  id          TEXT PRIMARY KEY,
-  agent_id    TEXT NOT NULL,
-  event_type  TEXT NOT NULL,
-  source      TEXT NOT NULL,
-  occurred_at INTEGER NOT NULL,
-  payload     TEXT NOT NULL,
-  delivered   INTEGER DEFAULT 0,
-  created_at  INTEGER NOT NULL
+  id              TEXT PRIMARY KEY,
+  agent_id        TEXT NOT NULL,
+  event_type      TEXT NOT NULL,
+  source          TEXT NOT NULL,
+  occurred_at     INTEGER NOT NULL,
+  payload         TEXT NOT NULL,
+  delivered       INTEGER DEFAULT 0,
+  delivered_at    INTEGER,
+  delivery_method TEXT,
+  created_at      INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_agent_time ON events(agent_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_events_agent_undelivered ON events(agent_id, delivered, occurred_at);
+-- idx_events_delivered is created in runMigrations after ALTER TABLE adds delivered_at
 
 -- Thread context links: cross-system associations
 CREATE TABLE IF NOT EXISTS thread_links (

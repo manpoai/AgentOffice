@@ -1,24 +1,24 @@
 /**
- * Shared AgentOffice config file helpers.
- * Single source of truth for reading/writing ~/.agentoffice/config.json.
+ * Shared AOSE config file helpers.
+ * Single source of truth for reading/writing ~/.aose/config.json.
  */
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const AGENTOFFICE_HOME = process.env.AGENTOFFICE_HOME || path.join(os.homedir(), '.agentoffice');
-const AGENTOFFICE_CONFIG_PATH = path.join(AGENTOFFICE_HOME, 'config.json');
+const AOSE_HOME = process.env.AOSE_HOME || path.join(os.homedir(), '.aose');
+const AOSE_CONFIG_PATH = path.join(AOSE_HOME, 'config.json');
 
-export function readAgentOfficeConfig() {
+export function readAoseConfig() {
   try {
-    if (!fs.existsSync(AGENTOFFICE_CONFIG_PATH)) return null;
-    return JSON.parse(fs.readFileSync(AGENTOFFICE_CONFIG_PATH, 'utf8'));
+    if (!fs.existsSync(AOSE_CONFIG_PATH)) return null;
+    return JSON.parse(fs.readFileSync(AOSE_CONFIG_PATH, 'utf8'));
   } catch {
     return null;
   }
 }
 
-export function writeAgentOfficeConfig(nextConfig) {
-  fs.mkdirSync(path.dirname(AGENTOFFICE_CONFIG_PATH), { recursive: true });
-  fs.writeFileSync(AGENTOFFICE_CONFIG_PATH, JSON.stringify(nextConfig, null, 2));
+export function writeAoseConfig(nextConfig) {
+  fs.mkdirSync(path.dirname(AOSE_CONFIG_PATH), { recursive: true });
+  fs.writeFileSync(AOSE_CONFIG_PATH, JSON.stringify(nextConfig, null, 2));
 }

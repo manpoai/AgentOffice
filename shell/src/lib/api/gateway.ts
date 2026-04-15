@@ -1,5 +1,5 @@
 /**
- * ASuite Gateway API client — calls through /api/gateway/* proxy
+ * AOSE Gateway API client — calls through /api/gateway/* proxy
  */
 
 const BASE = '/api/gateway';
@@ -14,12 +14,12 @@ export function resolveAvatarUrl(url: string | null | undefined): string | null 
 
 /** Get auth headers for direct fetch calls to /api/gateway/* */
 export function gwAuthHeaders(): Record<string, string> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 async function gwFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string>),
   };
@@ -62,7 +62,7 @@ export async function updateProfile(fields: { name?: string }): Promise<any> {
 export async function uploadSlideThumbnail(blob: Blob, filename: string): Promise<string> {
   const form = new FormData();
   form.append('file', blob, filename);
-  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}/uploads/thumbnails`, {
@@ -79,7 +79,7 @@ export async function uploadSlideThumbnail(blob: Blob, filename: string): Promis
 export async function uploadUserAvatar(file: File): Promise<{ avatar_url: string }> {
   const form = new FormData();
   form.append('avatar', file);
-  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}/auth/avatar`, {
@@ -114,14 +114,29 @@ export async function rejectAgent(agentId: string): Promise<void> {
   await gwFetch(`/admin/agents/${agentId}/reject`, { method: 'POST' });
 }
 
-/** Admin: soft-delete an agent */
-export async function deleteAgent(agentId: string): Promise<void> {
-  await gwFetch(`/admin/agents/${agentId}`, { method: 'DELETE' });
+/** Admin: soft-delete an agent. Returns a per-platform offboarding prompt
+ * the admin should hand to the agent so it can clean up its local state
+ * (adapter sidecar, config file with revoked token, MCP server entry). */
+export async function deleteAgent(agentId: string): Promise<{
+  agent_id: string;
+  name: string;
+  status: 'deleted';
+  platform: string | null;
+  offboarding_prompt: string;
+}> {
+  return gwFetch(`/admin/agents/${agentId}`, { method: 'DELETE' });
 }
 
 /** Admin: get onboarding prompt for a specific platform */
 export async function getOnboardingPrompt(platform: string): Promise<{ platform: string; prompt: string }> {
   return gwFetch(`/admin/onboarding-prompt?platform=${encodeURIComponent(platform)}`);
+}
+
+/** Admin: get offboarding (cleanup) prompt for a specific platform */
+export async function getOffboardingPrompt(platform: string, agentName?: string): Promise<{ platform: string; prompt: string }> {
+  const q = new URLSearchParams({ platform });
+  if (agentName) q.set('agent_name', agentName);
+  return gwFetch(`/admin/offboarding-prompt?${q.toString()}`);
 }
 
 /** Admin: get list of available platforms (data-driven) */
@@ -134,8 +149,8 @@ export async function resetAgentToken(agentId: string): Promise<{ token: string 
   return gwFetch(`/admin/agents/${agentId}/reset-token`, { method: 'POST' });
 }
 
-/** Get agent skills info including onboarding prompt */
-export async function getAgentSkills(): Promise<{ onboarding_prompt?: string; [key: string]: unknown }> {
+/** Get the cached agent skills package (filename → markdown content) */
+export async function getAgentSkills(): Promise<{ skills: Record<string, string> }> {
   return gwFetch('/agent-skills');
 }
 
@@ -170,7 +185,7 @@ export async function adminUpdateAgent(agentId: string, fields: {
 export async function adminUploadAgentAvatar(agentId: string, file: File): Promise<{ avatar_url: string }> {
   const form = new FormData();
   form.append('avatar', file);
-  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}/admin/agents/${agentId}/avatar`, {
@@ -185,7 +200,7 @@ export async function adminUploadAgentAvatar(agentId: string, file: File): Promi
 export async function uploadAgentAvatar(name: string, file: File): Promise<{ avatar_url: string }> {
   const form = new FormData();
   form.append('avatar', file);
-  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}/agents/${name}/avatar`, {
@@ -236,7 +251,7 @@ export async function listCommentedRows(tableId: string): Promise<{ row_id: stri
 
 export interface ContentItem {
   id: string;          // 'doc:<uuid>' or 'table:<uuid>'
-  raw_id: string;      // original Outline doc ID or Baserow table ID
+  raw_id: string;      // original doc or table ID
   type: 'doc' | 'table' | 'presentation' | 'diagram';
   title: string;
   icon: string | null;
@@ -490,6 +505,13 @@ export interface Notification {
     target_id?: string;
     target_title?: string;
   } | null;
+  // Phase 6 i18n: when present, client should render from these keys+params
+  // using its own locale instead of the pre-rendered title/body strings
+  // (which were rendered in the recipient's preferred_language at write time).
+  title_key?: string | null;
+  title_params?: string | null;
+  body_key?: string | null;
+  body_params?: string | null;
 }
 
 export async function getNotifications(unread?: boolean, limit?: number): Promise<Notification[]> {
@@ -615,7 +637,7 @@ export async function createContentManualSnapshot(contentId: string, description
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('asuite_token') : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
   const res = await fetch(`${BASE}/auth/password`, {
     method: 'PATCH',
     headers: {

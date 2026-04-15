@@ -12,6 +12,7 @@ import {
   setUnifiedCommentResolved,
 } from '../lib/comment-service.js';
 import { createSnapshot, isAgentRequest } from '../lib/snapshot-helper.js';
+import { insertNotification } from '../lib/notifications.js';
 
 /** Normalize agent-created diagram cells to flowchart-node format */
 function normalizeDiagramCells(cells) {
@@ -43,12 +44,6 @@ function normalizeDiagramCells(cells) {
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  br,
-  BR_TO_UIDT,
-  getTableFields, invalidateFieldCache,
-  buildFieldCreateBody,
-} from '../baserow.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GATEWAY_DIR = path.dirname(__dirname);
@@ -59,7 +54,7 @@ function actorName(req) {
   return req.actor?.display_name || req.actor?.username || req.agent?.name || null;
 }
 
-export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATABASE_ID, authenticateAny, authenticateAgent, genId, contentItemsUpsert, syncContentItems, pushEvent, pushHumanEvent, humanClients, deliverWebhook }) {
+export default function contentRoutes(app, { db, authenticateAny, authenticateAgent, genId, contentItemsUpsert, syncContentItems, pushEvent, pushHumanEvent, humanClients, deliverWebhook, tableEngine }) {
 
   // ─── Presentations ─────────────────────────────
   app.post('/api/presentations', authenticateAgent, (req, res) => {
@@ -113,7 +108,6 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         triggerType: 'pre_agent_edit',
         actorId: actorName(req),
         title: pres.title || null,
-        description: 'agent 编辑前自动保存',
       });
     }
 
@@ -130,7 +124,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         triggerType: 'post_agent_edit',
         actorId: actorName(req),
         title: null,
-        description: req.body.revision_description || 'agent 编辑后保存',
+        description: req.body.revision_description || null,
       });
     }
 
@@ -283,7 +277,6 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         triggerType: 'pre_agent_edit',
         actorId: actorName(req),
         title: null,
-        description: 'agent 编辑前自动保存',
       });
     }
 
@@ -298,7 +291,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         triggerType: 'post_agent_edit',
         actorId: actorName(req),
         title: null,
-        description: req.body.revision_description || 'agent 编辑后保存',
+        description: req.body.revision_description || null,
       });
     }
 
@@ -353,17 +346,19 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       try {
         // Notify all human actors
         const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+        const titleStr = contentTitle || contentId;
         for (const actor of humanActors) {
-          const notifId = genId('notif');
-          db.prepare(`INSERT INTO notifications (id, actor_id, target_actor_id, type, title, body, link, meta, read, created_at)
-            VALUES (?,?,?,?,?,?,?,?,0,?)`).run(
-            notifId, agentName, actor.id, 'content_created',
-            contentTitle || 'New content',
-            `${agentName} 创建了${type === 'doc' ? '文档' : type === 'diagram' ? '流程图' : type === 'table' ? '表格' : type === 'presentation' ? '演示文稿' : type}「${contentTitle || contentId}」`,
-            `/content?id=${contentId}`,
-            JSON.stringify({ content_id: contentId, type }),
-            Date.now()
-          );
+          const { id: notifId } = insertNotification(db, { genId }, {
+            actorId: agentName,
+            targetActorId: actor.id,
+            type: 'content_created',
+            titleKey: 'serverNotifications.content_created.title',
+            titleParams: { title: contentTitle || '' },
+            bodyKey: 'serverNotifications.content_created.body',
+            bodyParams: { agent: agentName, kind: `@:serverNotifications.kinds.${type}`, title: titleStr },
+            link: `/content?id=${contentId}`,
+            meta: { content_id: contentId, type },
+          });
           pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'content_created', content_id: contentId, title: contentTitle } });
           pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type, id: contentId, title: contentTitle } });
         }
@@ -396,41 +391,68 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
     }
 
     if (type === 'table') {
-      if (!BR_EMAIL || !BR_PASSWORD) return res.status(503).json({ error: 'BASEROW_NOT_CONFIGURED' });
-
       const tableTitle = title || 'Untitled';
-      const result = await br('POST', `/api/database/tables/database/${BR_DATABASE_ID}/`, { name: tableTitle });
-      if (result.status >= 400) return res.status(result.status).json({ error: 'UPSTREAM_ERROR', detail: result.data });
 
-      const tableId = String(result.data.id);
-
-      const tableCols = columns || [
-        { title: 'Notes', uidt: 'LongText' },
-      ];
+      // Build initial column list for tableEngine.createTable.
+      const tableCols = columns && columns.length ? columns : [{ title: 'Notes', uidt: 'LongText' }];
+      const initialColumns = [];
       for (const col of tableCols) {
         const colTitle = col.title || col.column_name;
         if (!colTitle) continue;
-        try {
-          const fieldBody = buildFieldCreateBody(colTitle, col.uidt || 'SingleLineText', { options: col.options });
-          await br('POST', `/api/database/fields/table/${tableId}/`, fieldBody);
-        } catch {}
+        const fieldOptions = {};
+        if (col.relatedTableId || col.target_table_id) {
+          fieldOptions.target_table_id = col.relatedTableId || col.target_table_id;
+          if (col.relationType === 'oo') fieldOptions.cardinality = 'one';
+        }
+        if (col.meta?.precision != null) fieldOptions.precision = col.meta.precision;
+        initialColumns.push({
+          title: colTitle,
+          uidt: col.uidt || 'SingleLineText',
+          options: Object.keys(fieldOptions).length ? fieldOptions : null,
+          is_primary: col.primary_key ? 1 : 0,
+        });
       }
 
-      try { await br('POST', `/api/database/fields/table/${tableId}/`, { name: 'created_by', type: 'text' }); } catch {}
-
+      let t;
       try {
-        const viewsResult = await br('GET', `/api/database/views/table/${tableId}/`);
-        const views = Array.isArray(viewsResult.data) ? viewsResult.data : [];
-        if (views.length > 0 && views[0].name !== 'Grid') {
-          await br('PATCH', `/api/database/views/${views[0].id}/`, { name: 'Grid' });
-        }
-      } catch {}
+        t = tableEngine.createTable({ title: tableTitle, created_by: agentName, columns: initialColumns });
+      } catch (e) {
+        if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: 'VALIDATION_ERROR', detail: e.message });
+        console.error('[gateway] create table failed:', e);
+        return res.status(500).json({ error: 'INTERNAL_ERROR', detail: e.message });
+      }
 
-      const fields = await getTableFields(tableId);
+      // Seed select options for SingleSelect/MultiSelect fields.
+      const createdFields = tableEngine.listFields(t.id);
+      const fieldByTitle = new Map(createdFields.map(f => [f.title, f]));
+      for (const col of tableCols) {
+        const colTitle = col.title || col.column_name;
+        if (!colTitle) continue;
+        const f = fieldByTitle.get(colTitle);
+        if (!f) continue;
+        if ((f.uidt === 'SingleSelect' || f.uidt === 'MultiSelect') && Array.isArray(col.options)) {
+          for (const o of col.options) {
+            const optTitle = typeof o === 'string' ? o : (o.title || o.value || '');
+            if (!optTitle) continue;
+            tableEngine.addOption(f.id, { value: optTitle, color: o.color || 'light-blue' });
+          }
+        }
+      }
+
+      // Default Grid view.
+      try {
+        tableEngine.view.create({ table_id: t.id, title: 'Grid', view_type: 'grid', is_default: 1 });
+      } catch (e) { console.error('[gateway] default view create failed:', e.message); }
+
+      const fields = tableEngine.listFields(t.id);
       const responseCols = fields.map(f => ({
-        column_id: String(f.id), title: f.name, type: BR_TO_UIDT[f.type] || f.type,
+        column_id: f.id,
+        title: f.title,
+        type: f.uidt,
+        primary_key: !!f.is_primary,
       }));
 
+      const tableId = t.id;
       const nodeId = `table:${tableId}`;
       contentItemsUpsert.run(
         nodeId, tableId, 'table', tableTitle,
@@ -439,10 +461,10 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
         now, now, null, actorId, Date.now()
       );
 
-      // Initial version snapshot only for agent-created tables (human-created start empty)
+      // Initial version snapshot only for agent-created tables (human-created start empty).
       if (isAgentRequest(req)) {
         const schemaJson = JSON.stringify(fields.map(f => ({
-          id: String(f.id), title: f.name, uidt: BR_TO_UIDT[f.type] || f.type, pk: !!f.primary, rqd: false,
+          id: f.id, title: f.title, uidt: f.uidt, pk: !!f.is_primary, rqd: false,
         })));
         const initSnapId = genId('snap');
         db.prepare(
@@ -462,7 +484,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
       const defaultData = JSON.stringify({
         type: 'excalidraw',
         version: 2,
-        source: 'asuite',
+        source: 'aose',
         elements: [],
         appState: {},
         files: {},
@@ -645,9 +667,8 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
     if (item.type === 'doc') {
       db.prepare('DELETE FROM documents WHERE id = ?').run(item.raw_id);
     } else if (item.type === 'table') {
-      if (BR_EMAIL && BR_PASSWORD) {
-        await br('DELETE', `/api/database/tables/${item.raw_id}/`).catch(() => {});
-        invalidateFieldCache(item.raw_id);
+      try { tableEngine.dropTable(item.raw_id); } catch (e) {
+        if (e.code !== 'NOT_FOUND') console.error('[gateway] dropTable failed:', e.message);
       }
     } else if (item.type === 'board') {
       db.prepare('DELETE FROM boards WHERE id = ?').run(item.raw_id);
@@ -1091,8 +1112,7 @@ export default function contentRoutes(app, { db, BR_EMAIL, BR_PASSWORD, BR_DATAB
             triggerType: 'pre_restore',
             actorId: actorName(req),
             title: null,
-            description: '恢复版本前自动保存',
-          });
+            });
         } catch { /* non-fatal */ }
       }
       let data;

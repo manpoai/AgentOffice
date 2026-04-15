@@ -1,7 +1,7 @@
 /**
  * Slash command menu plugin for ProseMirror.
  * Typing "/" at the start of a line opens a popup with block type options.
- * Aligned with Outline's block menu items.
+ * Block menu items: heading, list, quote, code, table, image, etc.
  */
 import { Plugin, PluginKey } from 'prosemirror-state';
 import type { EditorView } from 'prosemirror-view';

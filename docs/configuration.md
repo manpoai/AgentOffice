@@ -1,14 +1,14 @@
 # Configuration
 
-## AgentOffice bootstrap
+## aose bootstrap
 
-### `AGENTOFFICE_HOME`
+### `AOSE_HOME`
 Override the local data/runtime directory.
 
 Default:
 
 ```bash
-~/.agentoffice
+~/.aose
 ```
 
 ### `PORT`
@@ -29,26 +29,26 @@ Default:
 4000
 ```
 
-### `AGENTOFFICE_ARTIFACT_URL`
-Override the runtime artifact download URL used by `agentoffice-main`.
+### `UPLOADS_DIR`
+Override where uploaded files (avatars, attachments, thumbnails) are stored on disk.
+
+Default: `${AOSE_HOME}/data/uploads`.
+
+### `AOSE_ARTIFACT_URL`
+Override the runtime artifact download URL used by `aose`.
 
 Default points to the GitHub Release asset for the current public bootstrap flow.
 
-### `PUBLIC_BASE_URL`
-If set before startup, the CLI skips the interactive remote access prompt and uses this value directly. Useful for automated deployments.
+## External URLs
 
-Example:
-
-```bash
-PUBLIC_BASE_URL=https://office.example.com npx agentoffice-main
-```
+Public-facing links (share links, agent callbacks, webhooks) are derived per-request from the incoming HTTP headers — `X-Forwarded-Proto` / `X-Forwarded-Host` if set by a proxy, otherwise the request's own protocol and host. Configure your reverse proxy to forward those headers correctly and aose will produce the right URLs automatically; there is no setting to maintain on the aose side.
 
 ## Runtime-generated config
 
-On first start, AgentOffice writes:
+On first start, aose writes:
 
 ```text
-~/.agentoffice/config.json
+~/.aose/config.json
 ```
 
 Current fields include:
@@ -56,12 +56,21 @@ Current fields include:
 - `admin_password`
 - `shell_port`
 - `gateway_port`
-- `remoteAccess.publicBaseUrl` — the configured public URL (set by CLI or browser fallback)
-- `remoteAccess.mode` — `public_tunnel` or `public_custom_domain`
-- `remoteAccess.status` — `not_ready`, `configuring`, `ready`, or `failed`
 
 Treat this file as sensitive.
 
 ## Agent-side environment
 
-The agent-side integration path may use environment variables such as `ASUITE_TOKEN` and `ASUITE_URL`, but those belong to the agent onboarding/runtime path rather than the main end-user workspace bootstrap flow.
+The agent-side MCP server (`aose-mcp`) splits its configuration on purpose:
+
+- **URL** — stored in `~/.aose-mcp/config.json` on the agent's machine. Mutable from the CLI via `set-url`, because the URL changes whenever you move aose to a new address.
+- **Token** — read from the `AOSE_TOKEN` env var only. The token is set once by your MCP host's `mcpServers` env block when the agent first registers (the gateway returns it in `mcp_server.env.AOSE_TOKEN` from `/api/agents/self-register`). It is never persisted to disk by the MCP server and cannot be changed from this CLI. Moving aose to a new URL never changes the token.
+
+So the only command you ever run on an agent machine is:
+
+```bash
+npx aose-mcp set-url https://your-domain.com/api/gateway
+npx aose-mcp show-config
+```
+
+If a token ever needs to be rotated (e.g. compromised), use the **Reset token** action in the aose admin UI for that agent — that flow rotates the token server-side and you re-issue the new value to the agent host's env block.
