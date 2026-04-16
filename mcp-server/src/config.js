@@ -48,17 +48,18 @@ export function writeConfig(patch) {
 
 export function loadEffectiveConfig() {
   const fileCfg = readConfig();
-  let baseUrl = fileCfg?.base_url || null;
-  let urlSource = fileCfg?.base_url ? 'file' : null;
+  let baseUrl = null;
+  let urlSource = null;
 
-  if (!baseUrl && process.env.AOSE_URL) {
+  // Env AOSE_URL takes priority — each agent sets it in its own .mcp.json env
+  // block, so project-level isolation works even when config.json has a
+  // different URL from another agent on the same host.
+  if (process.env.AOSE_URL) {
     baseUrl = process.env.AOSE_URL;
-    try {
-      writeConfig({ base_url: baseUrl });
-      urlSource = 'env-migrated';
-    } catch {
-      urlSource = 'env';
-    }
+    urlSource = 'env';
+  } else if (fileCfg?.base_url) {
+    baseUrl = fileCfg.base_url;
+    urlSource = 'file';
   }
 
   const token = process.env.AOSE_TOKEN || null;
