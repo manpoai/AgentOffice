@@ -181,11 +181,16 @@ async function handleEvent(event) {
   }
 
   console.log(`[adapter] Delivering doorbell for ${event.event}`);
-  try {
-    await platformPlugin.deliver(config, result.content);
-  } catch (e) {
-    console.error(`[adapter] Delivery failed: ${e.message}`);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await platformPlugin.deliver(config, result.content);
+      return;
+    } catch (e) {
+      console.error(`[adapter] Delivery attempt ${attempt}/3 failed: ${e.message}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+    }
   }
+  console.error(`[adapter] Delivery failed permanently for ${event.event}`);
 }
 
 // ─── Catchup ────────────────────────────────────

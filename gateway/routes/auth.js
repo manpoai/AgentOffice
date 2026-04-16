@@ -29,6 +29,8 @@ function getPublicBaseUrl(req) {
 function buildOnboardingPrompt(platform, aoseUrl) {
   if (platform === 'openclaw') return buildOpenclawOnboardingPrompt(aoseUrl);
   if (platform === 'zylos') return buildZylosOnboardingPrompt(aoseUrl);
+  if (platform === 'claude-code') return buildClaudeCodeOnboardingPrompt(aoseUrl);
+  if (platform === 'codex') return buildCodexOnboardingPrompt(aoseUrl);
   return buildGenericOnboardingPrompt(platform, aoseUrl);
 }
 
@@ -42,6 +44,8 @@ function buildOffboardingPrompt(platform, agentName) {
   const name = agentName || '<your-agent-name>';
   if (platform === 'openclaw') return buildOpenclawOffboardingPrompt(name);
   if (platform === 'zylos') return buildZylosOffboardingPrompt(name);
+  if (platform === 'claude-code') return buildClaudeCodeOffboardingPrompt(name);
+  if (platform === 'codex') return buildCodexOffboardingPrompt(name);
   return buildGenericOffboardingPrompt(platform, name);
 }
 
@@ -138,6 +142,113 @@ The output should be empty (no PM2 entry for "${name}" remaining).
 You should NOT see adapter-${name}.json or adapter-${name}.log. Other adapter-*.json files belong to other agents and are expected.
 
 Cleanup is complete. If you are re-invited to the workspace later, run the openclaw onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
+}
+
+function buildClaudeCodeOffboardingPrompt(name) {
+  return `You have been removed from an aose workspace as the agent named "${name}". Your agent token is already revoked server-side, so any further AOSE API call from your sidecar or aose-mcp will return 403 AGENT_DELETED. This prompt walks you through cleaning up only the host-side state that belongs to "${name}". The same host may run other AOSE agents — never touch files, processes, or MCP entries that do not provably belong to you.
+
+Step 1 — Stop your dedicated Claude Code process
+  pm2 delete aose-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+DO NOT run a broad pkill. Only stop the pm2 process named aose-${name}.
+
+Step 2 — Stop your adapter sidecar
+  pm2 delete aose-adapter-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+  pgrep -fla "adapter-${name}.json"
+  pkill -f "adapter-${name}.json" 2>/dev/null || true
+DO NOT run a broad pkill like \`pkill -f aose-adapter\`. That would kill sidecars belonging to other agents.
+
+Step 3 — Delete only your own files
+  rm -f ~/.aose/adapter-${name}.json
+  rm -f ~/.aose/adapter-${name}.log
+  rm -f ~/.aose/adapter-state/${name}.last-event-ts
+  rm -f ~/.aose/inbox/${name}.jsonl
+The directory ~/.aose/ is shared across all agents. Do NOT \`rm -rf\` any directory. Other adapter-*.json and inbox files belong to other agents — leave them alone.
+
+Step 4 — Remove the Stop hook
+Check <your-cwd>/.claude/settings.json for the Stop hook entry pointing to stop-hook-aose.sh. Remove only the hook entry that references stop-hook-aose.sh or aose-adapter-${name}. Preserve all other hooks and settings.
+Then delete the hook script: rm -f <your-cwd>/.claude/hooks/stop-hook-aose.sh
+
+Step 5 — Remove the aose MCP server entry from EVERY config file where it is yours
+First, recall your own AOSE_TOKEN from the now-deleted ~/.aose/adapter-${name}.json, or from your memory or the original onboarding response. Save it as MY_TOKEN.
+
+For each of these candidate files (skip silently if the file does not exist):
+  - <your-cwd>/.mcp.json                          (project-level — check this first)
+  - ~/.mcp.json                                   (global MCP host config)
+  - ~/.claude/.mcp.json                           (Claude Code user-level config)
+
+In each existing file:
+  1. Read the aose entry's AOSE_TOKEN (mcpServers.aose.env.AOSE_TOKEN).
+  2. If there is no aose entry, skip this file.
+  3. If the token equals MY_TOKEN → delete the whole aose entry and save (back up as <file>.bak-<timestamp> first).
+  4. If the token differs → leave it alone.
+
+After all files are processed, restart Claude Code if you deleted at least one entry.
+
+Step 6 — Do not touch the shared skills cache
+~/.aose-mcp/skills/ is shared across every AOSE agent that runs aose-mcp on this host. Leave it in place.
+
+Step 7 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from the workspace you were removed from, mark those references as archived/inactive.
+
+Step 8 — Verify
+  pm2 list | grep -E "aose-(adapter-)?${name}"
+The output should be empty (no pm2 processes for "${name}" remaining).
+  ls -la ~/.aose/ 2>/dev/null
+You should NOT see adapter-${name}.json. Other adapter-*.json files belong to other agents and are expected.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the claude-code onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
+}
+
+function buildCodexOffboardingPrompt(name) {
+  return `You have been removed from an aose workspace as the agent named "${name}". Your agent token is already revoked server-side, so any further AOSE API call from your sidecar or aose-mcp will return 403 AGENT_DELETED. This prompt walks you through cleaning up only the host-side state that belongs to "${name}". The same host may run other AOSE agents — never touch files, processes, or MCP entries that do not provably belong to you.
+
+Step 1 — Stop your dedicated Codex process
+  pm2 delete aose-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+DO NOT run a broad pkill. Only stop the pm2 process named aose-${name}.
+
+Step 2 — Stop your adapter sidecar
+  pm2 delete aose-adapter-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+  pgrep -fla "adapter-${name}.json"
+  pkill -f "adapter-${name}.json" 2>/dev/null || true
+DO NOT run a broad pkill like \`pkill -f aose-adapter\`. That would kill sidecars belonging to other agents.
+
+Step 3 — Delete only your own files
+  rm -f ~/.aose/adapter-${name}.json
+  rm -f ~/.aose/adapter-${name}.log
+  rm -f ~/.aose/adapter-state/${name}.last-event-ts
+  rm -f ~/.aose/inbox/${name}.jsonl
+The directory ~/.aose/ is shared across all agents. Do NOT \`rm -rf\` any directory.
+
+Step 4 — Remove the Stop hook
+Check <your-cwd>/.codex/config.toml for the [[hooks.stop]] entry pointing to stop-hook-aose.sh. Remove only the hook entry for stop-hook-aose.sh. Preserve all other hooks and settings.
+Then delete the hook script: rm -f <your-cwd>/.codex/hooks/stop-hook-aose.sh
+
+Step 5 — Remove the aose MCP server entry
+Check <your-cwd>/.codex/config.toml for [mcp.servers.aose]. If its AOSE_TOKEN matches your token (MY_TOKEN), remove the entire [mcp.servers.aose] section and its sub-tables ([mcp.servers.aose.env]). Preserve all other MCP servers.
+
+Also check these fallback locations (skip if they don't exist):
+  - ~/.mcp.json (mcpServers.aose.env.AOSE_TOKEN)
+  - <your-cwd>/.mcp.json
+
+Same rule: only delete if token matches MY_TOKEN.
+
+Step 6 — Do not touch the shared skills cache
+~/.aose-mcp/skills/ is shared across every AOSE agent that runs aose-mcp on this host. Leave it in place.
+
+Step 7 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from the workspace you were removed from, mark those references as archived/inactive.
+
+Step 8 — Verify
+  pm2 list | grep -E "aose-(adapter-)?${name}"
+The output should be empty (no pm2 processes for "${name}" remaining).
+  ls -la ~/.aose/ 2>/dev/null
+You should NOT see adapter-${name}.json. Other adapter-*.json files belong to other agents and are expected.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the codex onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
 }
 
 function buildZylosOffboardingPrompt(name) {
@@ -361,6 +472,333 @@ These skills override any default assumptions you have about how to interact wit
   2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
   3. Reply with \`aose-<your-agent-name>__reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — forget that token, the adapter sidecar holds it for you and the MCP socket is the only supported write path.
   4. Call \`aose-<your-agent-name>__ack_events([event_ids])\` on the events you handled.
+
+Once whoami succeeds AND you have read all skills, registration is complete.
+
+If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
+}
+
+function buildClaudeCodeOnboardingPrompt(aoseUrl) {
+  const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+
+You are running on Claude Code. AOSE supports Claude Code via a local sidecar ("aose-adapter") that manages a dedicated Claude Code process and wakes it via a Stop hook when AOSE events arrive. The sidecar writes to a file-based inbox; the Stop hook checks it and uses asyncRewake (exit 2 + stderr) to resume the session.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1 — Confirm your agent directory
+Your agent directory (AGENT_DIR) is the working directory where this Claude Code session is running — it defines your AOSE identity on this host. Save the absolute path of your current working directory as AGENT_DIR. Different agents on the same host MUST use different AGENT_DIRs.
+
+Step 2 — Register with AOSE
+Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g. "my-assistant"). This name is BOTH your @-mention handle and your display label in AOSE — there is no separate "display name" field. You can refine the display name later via the profile API if you want something prettier; the registration form takes one identifier on purpose so two slightly-different values cannot end up confusing humans. Then run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"<your-agent-name>","platform":"claude-code"}'
+
+Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
+
+Step 3 — Wait for approval
+The workspace admin will review and approve your registration in aose. STOP HERE and return control to the human. You have no way to auto-detect approval at this point — the adapter sidecar is not running yet, so there is no event stream you can watch. The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess, do not proceed until the human tells you.
+
+Step 4 — Write the adapter config file
+Create the directory ~/.aose if it does not exist. Write the following JSON to ~/.aose/adapter-<your-agent-name>.json:
+
+{
+  "agent_name": "<your-agent-name>",
+  "platform": "claude-code",
+  "gateway_url": "${aoseBase}",
+  "agent_token": "<AOSE_TOKEN from Step 2>",
+  "agent_dir": "<AGENT_DIR from Step 1>"
+}
+
+Set the file permissions to 600 (chmod 600 ~/.aose/adapter-<your-agent-name>.json) so only you can read it — it contains secrets.
+
+Step 5 — Install the Stop hook
+The Stop hook is a shell script that checks your inbox file for pending AOSE events. When a message is waiting, it uses asyncRewake (exit 2 + stderr) to wake your Claude Code session.
+
+Create the directory <AGENT_DIR>/.claude/hooks/ if it does not exist. Write the following script to <AGENT_DIR>/.claude/hooks/stop-hook-aose.sh:
+
+\`\`\`bash
+#!/bin/bash
+INPUT=$(cat)
+
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('stop_hook_active','false'))" 2>/dev/null)
+if [ "$STOP_HOOK_ACTIVE" = "true" ] || [ "$STOP_HOOK_ACTIVE" = "True" ]; then
+  exit 0
+fi
+
+INBOX_FILE="$HOME/.aose/inbox/<your-agent-name>.jsonl"
+
+if [ ! -f "$INBOX_FILE" ]; then
+  exit 0
+fi
+
+LINE=$(head -1 "$INBOX_FILE" 2>/dev/null)
+if [ -z "$LINE" ]; then
+  exit 0
+fi
+
+tail -n +2 "$INBOX_FILE" > "$INBOX_FILE.tmp" && mv "$INBOX_FILE.tmp" "$INBOX_FILE"
+
+CONTENT=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" 2>/dev/null)
+if [ -z "$CONTENT" ]; then
+  CONTENT="$LINE"
+fi
+
+echo "$CONTENT" >&2
+exit 2
+\`\`\`
+
+Make it executable: chmod +x <AGENT_DIR>/.claude/hooks/stop-hook-aose.sh
+
+Then register it in <AGENT_DIR>/.claude/settings.json. Read the file first if it exists, then add the hook under the "hooks" key:
+
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<AGENT_DIR>/.claude/hooks/stop-hook-aose.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+If the file already has other hooks or settings, merge carefully — preserve everything else.
+
+Step 6 — Start the adapter sidecar under pm2
+Start the adapter sidecar as a managed process:
+
+  pm2 start "npx -y aose-adapter --config ~/.aose/adapter-<your-agent-name>.json" --name aose-adapter-<your-agent-name>
+  pm2 save
+
+Wait 5 seconds, then check logs:
+  pm2 logs aose-adapter-<your-agent-name> --lines 15 --nostream
+
+You should see lines like:
+  [adapter] Starting — agent: ..., platform: claude-code, gateway: ...
+  [adapter] SSE connected
+
+If you see errors, check the config file from Step 4.
+
+Step 7 — Start the dedicated Claude Code process under pm2
+The sidecar delivers events to your inbox, but you also need a persistent Claude Code process that the Stop hook can wake. Start it as a pm2 process:
+
+  pm2 start "claude --resume" --name aose-<your-agent-name> --cwd <AGENT_DIR>
+  pm2 save
+
+This ensures your agent process survives terminal close and reboots (run \`pm2 startup\` if you haven't already for boot persistence).
+
+Step 8 — Configure the MCP server
+The MCP entry MUST go into your **project-level** config file: \`<AGENT_DIR>/.mcp.json\`. Do NOT write it to ~/.mcp.json or ~/.claude/.mcp.json — those are shared across every Claude Code instance on this host, and putting your token there will collide with other AOSE agents. Multi-agent isolation on a single host depends on each agent owning its own project-level .mcp.json.
+
+TARGET_FILE = \`<AGENT_DIR>/.mcp.json\`
+
+**Pre-check (mandatory)**: before writing, read TARGET_FILE if it exists and look for an existing \`mcpServers.aose\` entry. There are three cases:
+  1. TARGET_FILE does not exist → create it with the JSON below as the entire content.
+  2. TARGET_FILE exists but has no \`mcpServers.aose\` entry → merge the \`aose\` entry below into the existing \`mcpServers\` object, preserving all other servers.
+  3. TARGET_FILE exists AND already has an \`mcpServers.aose\` entry → STOP. Do not overwrite. Report to the human: "TARGET_FILE already has an aose entry. Its token belongs to another AOSE agent on this host. Either pick a different directory for me to run from, or have that other agent run its offboarding prompt first." Then halt — do not retry until the human resolves it.
+
+The entry to write:
+{
+  "mcpServers": {
+    "aose": {
+      "command": "npx",
+      "args": ["-y", "aose-mcp"],
+      "env": {
+        "AOSE_TOKEN": "<AOSE_TOKEN from Step 2>",
+        "AOSE_URL": "${aoseUrl}"
+      }
+    }
+  }
+}
+
+Restart Claude Code (exit and relaunch from inside AGENT_DIR) so the new MCP server is loaded. You should now see aose-prefixed tools (whoami, reply_to_comment, create_doc, etc.).
+
+Step 9 — Verify end-to-end
+Call the aose "whoami" tool. It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN matches the token from Step 2 and that you have been approved.
+
+Step 10 — Read your operating manual (REQUIRED before doing any work)
+The aose-mcp server cached your operating skills to ~/.aose-mcp/skills/ when it started. These files are not optional reading — they describe how to behave as an AOSE agent: role and principles, typical tasks, platform overview, event handling, lifecycle, troubleshooting, output standards, and per-content-type guides (docs, comments, database, slides, flowcharts). The MCP host does not surface them automatically; you must read them yourself before responding to any AOSE event.
+
+Run:
+  ls ~/.aose-mcp/skills/
+
+You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, ..., 06-output-standards.md) plus content-*.md guides. Read every file in order. If the directory is empty or missing, your aose-mcp server failed to fetch them — check its stderr output via your MCP host's logs and report the error; do not proceed.
+
+These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
+
+**IRON RULE — event handling**: when the Stop hook wakes this agent with a message starting with \`[AOSE]\`, that message is a **doorbell**, not the event data. It contains no ids and no comment body — those live in the MCP mailbox. Your only correct response is:
+
+  1. Call the aose \`get_unread_events\` MCP tool to pull the full events (with their \`context_payload\`).
+  2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
+  3. Reply with \`reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — the MCP server holds it for you and the MCP surface is the only supported write path.
+  4. Call \`ack_events([event_ids])\` on the events you handled.
+
+Once whoami succeeds AND you have read all skills, registration is complete.
+
+If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
+}
+
+function buildCodexOnboardingPrompt(aoseUrl) {
+  const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+
+You are running on Codex CLI. AOSE supports Codex via a local sidecar ("aose-adapter") that manages a dedicated Codex process and wakes it via a Stop hook when AOSE events arrive. The sidecar writes to a file-based inbox; the Stop hook checks it and uses decision:block to keep the session alive when a message is waiting.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1 — Confirm your agent directory
+Your agent directory (AGENT_DIR) is the working directory where this Codex session is running — it defines your AOSE identity on this host. Save the absolute path of your current working directory as AGENT_DIR. Different agents on the same host MUST use different AGENT_DIRs.
+
+Step 2 — Register with AOSE
+Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g. "my-codex-agent"). This name is BOTH your @-mention handle and your display label in AOSE — there is no separate "display name" field. You can refine the display name later via the profile API if you want something prettier; the registration form takes one identifier on purpose so two slightly-different values cannot end up confusing humans. Then run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"<your-agent-name>","platform":"codex"}'
+
+Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
+
+Step 3 — Wait for approval
+The workspace admin will review and approve your registration in aose. STOP HERE and return control to the human. You have no way to auto-detect approval at this point — the adapter sidecar is not running yet, so there is no event stream you can watch. The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess, do not proceed until the human tells you.
+
+Step 4 — Write the adapter config file
+Create the directory ~/.aose if it does not exist. Write the following JSON to ~/.aose/adapter-<your-agent-name>.json:
+
+{
+  "agent_name": "<your-agent-name>",
+  "platform": "codex",
+  "gateway_url": "${aoseBase}",
+  "agent_token": "<AOSE_TOKEN from Step 2>",
+  "agent_dir": "<AGENT_DIR from Step 1>"
+}
+
+Set the file permissions to 600 (chmod 600 ~/.aose/adapter-<your-agent-name>.json) so only you can read it — it contains secrets.
+
+Step 5 — Install the Stop hook
+The Stop hook is a shell script that checks your inbox file for pending AOSE events. When a message is waiting, it outputs a decision:block JSON to keep the Codex session alive and process the event.
+
+Create the directory <AGENT_DIR>/.codex/hooks/ if it does not exist. Write the following script to <AGENT_DIR>/.codex/hooks/stop-hook-aose.sh:
+
+\`\`\`bash
+#!/bin/bash
+INPUT=$(cat)
+
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('stop_hook_active','false'))" 2>/dev/null)
+if [ "$STOP_HOOK_ACTIVE" = "true" ] || [ "$STOP_HOOK_ACTIVE" = "True" ]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+
+INBOX_FILE="$HOME/.aose/inbox/<your-agent-name>.jsonl"
+
+if [ ! -f "$INBOX_FILE" ]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+
+LINE=$(head -1 "$INBOX_FILE" 2>/dev/null)
+if [ -z "$LINE" ]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+
+tail -n +2 "$INBOX_FILE" > "$INBOX_FILE.tmp" && mv "$INBOX_FILE.tmp" "$INBOX_FILE"
+
+CONTENT=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" 2>/dev/null)
+if [ -z "$CONTENT" ]; then
+  CONTENT="$LINE"
+fi
+
+ESCAPED=$(echo "$CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip()))" 2>/dev/null)
+
+echo "{\\"decision\\":\\"block\\",\\"reason\\":$ESCAPED}"
+exit 0
+\`\`\`
+
+Make it executable: chmod +x <AGENT_DIR>/.codex/hooks/stop-hook-aose.sh
+
+Then register it in <AGENT_DIR>/.codex/config.toml. Read the file first if it exists, then add the hook. Codex hooks config format:
+
+\`\`\`toml
+[[hooks.stop]]
+command = "<AGENT_DIR>/.codex/hooks/stop-hook-aose.sh"
+\`\`\`
+
+If the file already has other hooks or settings, merge carefully — preserve everything else.
+
+Step 6 — Start the adapter sidecar under pm2
+Start the adapter sidecar as a managed process:
+
+  pm2 start "npx -y aose-adapter --config ~/.aose/adapter-<your-agent-name>.json" --name aose-adapter-<your-agent-name>
+  pm2 save
+
+Wait 5 seconds, then check logs:
+  pm2 logs aose-adapter-<your-agent-name> --lines 15 --nostream
+
+You should see lines like:
+  [adapter] Starting — agent: ..., platform: codex, gateway: ...
+  [adapter] SSE connected
+
+If you see errors, check the config file from Step 4.
+
+Step 7 — Start the dedicated Codex process under pm2
+The sidecar delivers events to your inbox, but you also need a persistent Codex process that the Stop hook can wake. Start it as a pm2 process:
+
+  pm2 start "codex --resume" --name aose-<your-agent-name> --cwd <AGENT_DIR>
+  pm2 save
+
+This ensures your agent process survives terminal close and reboots (run \`pm2 startup\` if you haven't already for boot persistence).
+
+Step 8 — Configure the MCP server
+The MCP entry MUST go into your **project-level** config file. For Codex, this is \`<AGENT_DIR>/.codex/config.toml\`. Do NOT put it in a global config — multi-agent isolation depends on each agent owning its own project-level config.
+
+TARGET_FILE = \`<AGENT_DIR>/.codex/config.toml\`
+
+**Pre-check (mandatory)**: before writing, read TARGET_FILE if it exists and look for an existing \`[mcp.servers.aose]\` section. There are three cases:
+  1. No aose entry → add it.
+  2. An aose entry exists with a different token → STOP. Report to human: "config.toml already has an aose entry belonging to another agent."
+  3. An aose entry exists with the same token → it is already configured (from a previous attempt); verify it matches the format below and continue.
+
+The entry to add:
+\`\`\`toml
+[mcp.servers.aose]
+command = "npx"
+args = ["-y", "aose-mcp"]
+
+[mcp.servers.aose.env]
+AOSE_TOKEN = "<AOSE_TOKEN from Step 2>"
+AOSE_URL = "${aoseUrl}"
+\`\`\`
+
+Restart Codex (exit and relaunch from inside AGENT_DIR) so the new MCP server is loaded. You should now see aose-prefixed tools (whoami, reply_to_comment, create_doc, etc.).
+
+Step 9 — Verify end-to-end
+Call the aose "whoami" tool. It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN matches the token from Step 2 and that you have been approved.
+
+Step 10 — Read your operating manual (REQUIRED before doing any work)
+The aose-mcp server cached your operating skills to ~/.aose-mcp/skills/ when it started. These files are not optional reading — they describe how to behave as an AOSE agent: role and principles, typical tasks, platform overview, event handling, lifecycle, troubleshooting, output standards, and per-content-type guides (docs, comments, database, slides, flowcharts). The MCP host does not surface them automatically; you must read them yourself before responding to any AOSE event.
+
+Run:
+  ls ~/.aose-mcp/skills/
+
+You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, ..., 06-output-standards.md) plus content-*.md guides. Read every file in order. If the directory is empty or missing, your aose-mcp server failed to fetch them — check its stderr output via your MCP host's logs and report the error; do not proceed.
+
+These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
+
+**IRON RULE — event handling**: when the Stop hook wakes this agent with a message, that message is a **doorbell**, not the event data. It contains no ids and no comment body — those live in the MCP mailbox. Your only correct response is:
+
+  1. Call the aose \`get_unread_events\` MCP tool to pull the full events (with their \`context_payload\`).
+  2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
+  3. Reply with \`reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — the MCP server holds it for you and the MCP surface is the only supported write path.
+  4. Call \`ack_events([event_ids])\` on the events you handled.
 
 Once whoami succeeds AND you have read all skills, registration is complete.
 
@@ -824,7 +1262,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   // Admin: list available platforms (data-driven)
   app.get('/api/admin/platforms', authenticateAdmin, (req, res) => {
     const rows = db.prepare("SELECT DISTINCT platform FROM actors WHERE type = 'agent' AND platform IS NOT NULL AND deleted_at IS NULL").all();
-    const knownPlatforms = ['zylos', 'openclaw'];
+    const knownPlatforms = ['zylos', 'openclaw', 'claude-code', 'codex'];
     const activePlatforms = rows.map(r => r.platform);
     const platforms = [...new Set([...knownPlatforms, ...activePlatforms])];
     res.json({ platforms });
