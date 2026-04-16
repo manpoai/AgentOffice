@@ -22,6 +22,7 @@ function platformLabel(name: string) {
 }
 
 function PlatformIcon({ name }: { name: string }) {
+  const [imgSrc, setImgSrc] = useState(`/icons/platform-${name}.png`);
   const [failed, setFailed] = useState(false);
   if (failed) {
     return (
@@ -32,19 +33,26 @@ function PlatformIcon({ name }: { name: string }) {
   }
   return (
     <img
-      src={`/icons/platform-${name.toLowerCase()}.jpg`}
+      src={imgSrc}
       alt={name}
       className="w-10 h-10 rounded-lg object-cover"
-      onError={() => setFailed(true)}
+      onError={() => {
+        if (imgSrc.endsWith('.png')) {
+          setImgSrc(`/icons/platform-${name}.jpg`);
+        } else {
+          setFailed(true);
+        }
+      }}
     />
   );
 }
 
 export interface AgentPanelContentProps {
   variant: 'popover' | 'bottomsheet';
+  onOpenConnectAgents?: () => void;
 }
 
-export function AgentPanelContent({ variant }: AgentPanelContentProps) {
+export function AgentPanelContent({ variant, onOpenConnectAgents }: AgentPanelContentProps) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const [showOnboardingPrompt, setShowOnboardingPrompt] = useState(false);
@@ -121,6 +129,8 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
   function renderAvatar(agent: gw.Agent) {
     const agentId = agent.agent_id || agent.name;
     const avatarUrl = resolveAvatarUrl(agent.avatar_url);
+    // Default avatar: use platform logo if available, otherwise Bot icon
+    const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
     return (
       <div
         className={cn(styles.avatar, 'rounded-full bg-muted overflow-hidden shrink-0 border border-black/10 relative group cursor-pointer')}
@@ -131,7 +141,10 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
       >
         {avatarUrl
           ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-          : <div className="w-full h-full flex items-center justify-center"><Bot className={cn(styles.avatarIcon, 'text-sidebar-primary')} /></div>}
+          : platformFallback
+            ? <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.querySelector('.platform-fallback')?.classList.remove('hidden'); }} />
+            : <div className="w-full h-full flex items-center justify-center"><Bot className={cn(styles.avatarIcon, 'text-sidebar-primary')} /></div>}
+        {!avatarUrl && platformFallback && <div className="platform-fallback hidden w-full h-full flex items-center justify-center absolute inset-0"><Bot className={cn(styles.avatarIcon, 'text-sidebar-primary')} /></div>}
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
           {uploadingAgentId === agentId ? (
             <span className="text-white text-[10px]">...</span>
@@ -161,7 +174,13 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-foreground">{t('actions.agentMembers')}</h3>
         <button
-          onClick={() => { setShowOnboardingPrompt(v => !v); setSelectedPlatform(null); }}
+          onClick={() => {
+            if (onOpenConnectAgents) {
+              onOpenConnectAgents();
+            } else {
+              setShowOnboardingPrompt(v => !v); setSelectedPlatform(null);
+            }
+          }}
           className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-sidebar-primary hover:bg-sidebar-primary/10 rounded transition-colors"
         >
           <Plus className="h-3 w-3" />
@@ -192,7 +211,6 @@ export function AgentPanelContent({ variant }: AgentPanelContentProps) {
       {showOnboardingPrompt && !selectedPlatform && (
         <div className="mb-3 p-3 bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.06] dark:border-border rounded-lg">
           <p className="text-xs font-medium text-foreground mb-1">{t('actions.selectPlatform')}</p>
-          <p className="text-[11px] text-muted-foreground mb-3">{t('actions.platformDescription')}</p>
           <div className="grid grid-cols-2 gap-2">
             {platforms.map(p => (
               <button

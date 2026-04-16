@@ -18,6 +18,7 @@ import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
 import { EditorSkeleton } from '@/components/shared/Skeleton';
 import { EditFAB } from '@/components/shared/EditFAB';
+import { ActorInlineAvatar } from '@/components/shared/ActorInlineAvatar';
 import { BottomSheet } from '@/components/shared/BottomSheet';
 import { MobileCommentBar } from '@/components/shared/MobileCommentBar';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
@@ -612,7 +613,7 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
               className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
             >
               {t('content.lastModified')}: {formatRelativeTime(doc.updated_at)}
-              {doc.updated_by && <span> {t('content.by')} {doc.updated_by}</span>}
+              {doc.updated_by && <span> {t('content.by')} <ActorInlineAvatar name={doc.updated_by} /> {doc.updated_by}</span>}
             </button>
           }
           statusText={statusText}

@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
+import { ActorInlineAvatar } from '@/components/shared/ActorInlineAvatar';
 import { renderField } from '@/lib/i18n/renderField';
 import {
   listContentRevisions,
@@ -251,6 +252,7 @@ export function RevisionHistory({
                     {(revision.created_by || revision.agent) && (
                       <>
                         <span>&middot;</span>
+                        <ActorInlineAvatar name={revision.created_by || revision.agent || ''} />
                         <span>{revision.created_by || revision.agent}</span>
                       </>
                     )}

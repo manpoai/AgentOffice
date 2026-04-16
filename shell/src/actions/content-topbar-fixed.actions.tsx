@@ -78,21 +78,26 @@ export function buildFixedTopBarActionItems(t: TFunc, ctx: FixedTopBarActionCtx)
 
 export function renderFixedTopBarActions(items: FixedActionRenderItem[], opts: { t: TFunc; ctx: FixedTopBarActionCtx; includePresent?: boolean }) {
   const { t, ctx, includePresent } = opts;
+  const orderMap: Record<string, number> = { search: 0, 'copy-link': 2, history: 3, comments: 4 };
   return (
     <>
       {items.map(item => (
         <React.Fragment key={item.id}>
-          {item.render({
-            t,
-            active: item.id === 'history' ? ctx.showHistoryActive : item.id === 'comments' ? ctx.showCommentsActive : false,
-          })}
+          <div style={{ order: orderMap[item.id] ?? 5 }}>
+            {item.render({
+              t,
+              active: item.id === 'history' ? ctx.showHistoryActive : item.id === 'comments' ? ctx.showCommentsActive : false,
+            })}
+          </div>
         </React.Fragment>
       ))}
       {includePresent && ctx.present && (
-        <button onClick={ctx.present} className="flex items-center gap-1.5 h-8 px-3 ml-1 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
-          <Play className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">{t('toolbar.present')}</span>
-        </button>
+        <div style={{ order: 6 }}>
+          <button onClick={ctx.present} className="flex items-center gap-1.5 h-8 px-3 ml-1 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
+            <Play className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{t('toolbar.present')}</span>
+          </button>
+        </div>
       )}
     </>
   );

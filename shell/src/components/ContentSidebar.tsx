@@ -19,6 +19,7 @@ import { CREATE_CONTENT_ITEMS } from '@/actions/create-content.actions';
 import type { CreatableType } from '@/actions/entity-names';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
 import { handleNotificationClick } from '@/lib/notification-click';
+import { ConnectAgentsOverlay } from '@/components/ConnectAgentsOverlay';
 
 interface ContentSidebarProps {
   /** Whether the sidebar is collapsed (56px) or expanded (232px) */
@@ -117,6 +118,17 @@ export function ContentSidebar({
     queryKey: ['notifications-unread-count'],
     queryFn: gw.getUnreadCount,
   });
+
+  // Agents count for conditional button rendering
+  const { data: allAgents } = useQuery({
+    queryKey: ['admin-agents'],
+    queryFn: gw.listAllAgents,
+    refetchInterval: 10_000,
+  });
+  const hasAgents = (allAgents?.length ?? 0) > 0;
+
+  // Connect Agents overlay
+  const [showConnectAgents, setShowConnectAgents] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -262,9 +274,7 @@ export function ContentSidebar({
               {resolveAvatarUrl(actor?.avatar_url) ? (
                 <img src={resolveAvatarUrl(actor?.avatar_url)!} alt="" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs font-medium text-muted-foreground">
-                  {(actor?.display_name || actor?.username || '?')[0].toUpperCase()}
-                </div>
+                <img src="/icons/avatar-default.jpg" alt="" className="w-full h-full object-cover" />
               )}
             </div>
             {/* Username + dropdown */}
@@ -308,9 +318,7 @@ export function ContentSidebar({
                       {resolveAvatarUrl(actor?.avatar_url) ? (
                         <img src={resolveAvatarUrl(actor?.avatar_url)!} alt="" className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-lg font-medium text-muted-foreground">
-                          {(actor?.display_name || actor?.username || '?')[0].toUpperCase()}
-                        </div>
+                        <img src="/icons/avatar-default.jpg" alt="" className="w-full h-full object-cover" />
                       )}
                       {/* Upload overlay on hover */}
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
@@ -516,37 +524,68 @@ export function ContentSidebar({
       {/* ─── Agents + Message buttons ─── */}
       {!collapsed && (
         <div className="px-2 mb-2 flex gap-2 shrink-0 relative">
-          <button
-            ref={agentsBtnRef}
-            onClick={() => {
-              setMenuPos(p => ({ ...p, agents: calcMenuPos(agentsBtnRef, 320) }));
-              setShowAgentsMenu(v => !v); setShowMessageMenu(false);
-            }}
-            className="flex items-center justify-center gap-1.5 h-8 flex-1 rounded-lg text-xs font-medium transition-colors border border-black/10 dark:border-white/10"
-            style={{
-              backgroundColor: 'hsl(var(--sidebar-primary))',
-              color: 'hsl(var(--sidebar-primary-foreground))',
-            }}
-          >
-            <AtSign className="h-4 w-4" />
-            {t('toolbar.agents')}
-          </button>
-          <button
-            ref={messageBtnRef}
-            onClick={() => {
-              setMenuPos(p => ({ ...p, message: calcMenuPos(messageBtnRef, 320) }));
-              setShowMessageMenu(v => !v); setShowAgentsMenu(false);
-            }}
-            className="flex items-center justify-center gap-1.5 h-8 flex-1 rounded-lg text-xs font-medium text-foreground/70 bg-white dark:bg-card border border-black/10 dark:border-white/10 hover:bg-black/[0.02] transition-colors relative"
-          >
-            <Bell className="h-4 w-4" />
-            {t('toolbar.message')}
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-medium flex items-center justify-center px-1">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
-          </button>
+          {hasAgents ? (
+            <>
+              {/* Split Agents button: left = agents panel, right "+" = connect overlay */}
+              <div className="flex h-8 flex-1 rounded-lg overflow-hidden border border-black/10 dark:border-white/10" style={{ backgroundColor: 'hsl(var(--sidebar-primary))' }}>
+                <button
+                  ref={agentsBtnRef}
+                  onClick={() => {
+                    setMenuPos(p => ({ ...p, agents: calcMenuPos(agentsBtnRef, 320) }));
+                    setShowAgentsMenu(v => !v); setShowMessageMenu(false);
+                  }}
+                  className="flex items-center justify-center gap-1.5 flex-1 text-xs font-medium transition-all active:brightness-90"
+                  style={{ color: 'hsl(var(--sidebar-primary-foreground))' }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <AtSign className="h-4 w-4" />
+                  {t('toolbar.agents')}
+                </button>
+                <div className="w-px self-stretch" style={{ backgroundColor: 'rgba(0,0,0,0.1)' }} />
+                <button
+                  onClick={() => { setShowAgentsMenu(false); setShowMessageMenu(false); setShowConnectAgents(true); }}
+                  className="flex items-center justify-center w-8 transition-all active:brightness-90 rounded-r-lg"
+                  style={{ color: 'hsl(var(--sidebar-primary-foreground))', backgroundColor: 'rgba(0,0,0,0.1)' }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.18)')}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)')}
+                  title={t('actions.addAgent')}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+              {/* Message button */}
+              <button
+                ref={messageBtnRef}
+                onClick={() => {
+                  setMenuPos(p => ({ ...p, message: calcMenuPos(messageBtnRef, 320) }));
+                  setShowMessageMenu(v => !v); setShowAgentsMenu(false);
+                }}
+                className="flex items-center justify-center gap-1.5 h-8 flex-1 rounded-lg text-xs font-medium text-foreground/70 bg-white dark:bg-card border border-black/10 dark:border-white/10 hover:bg-black/[0.02] transition-colors relative"
+              >
+                <Bell className="h-4 w-4" />
+                {t('toolbar.message')}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-medium flex items-center justify-center px-1">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+            </>
+          ) : (
+            /* No agents: full-width Connect Agents button */
+            <button
+              onClick={() => setShowConnectAgents(true)}
+              className="flex items-center justify-center gap-1.5 h-8 w-full rounded-lg text-xs font-medium transition-colors border border-black/10 dark:border-white/10"
+              style={{
+                backgroundColor: 'hsl(var(--sidebar-primary))',
+                color: 'hsl(var(--sidebar-primary-foreground))',
+              }}
+            >
+              <AtSign className="h-4 w-4" />
+              {t('toolbar.connectAgents')}
+            </button>
+          )}
         </div>
       )}
 
@@ -560,7 +599,7 @@ export function ContentSidebar({
             style={{ top: `${menuPos.agents?.top ?? 136}px`, left: `${menuPos.agents?.left ?? 8}px`, width: '320px', maxHeight: '499px' }}
           >
             <ScrollArea className="h-full" style={{ maxHeight: '499px' }}>
-              <AgentPanelContent variant="popover" />
+              <AgentPanelContent variant="popover" onOpenConnectAgents={() => { setShowAgentsMenu(false); setShowConnectAgents(true); }} />
             </ScrollArea>
           </div>
         </>
@@ -662,7 +701,7 @@ export function ContentSidebar({
             })}
             <div className="border-t border-black/10 dark:border-border my-1" />
             <button
-              onClick={() => { onShowNewMenuChange(false); setShowAgentsMenu(true); }}
+              onClick={() => { onShowNewMenuChange(false); setShowConnectAgents(true); }}
               className="w-full flex items-center gap-2 px-4 py-2 text-sm text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
             >
               <Users className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
@@ -725,6 +764,9 @@ export function ContentSidebar({
 
         {/* Settings are now in the profile dropdown */}
       </div>
+
+      {/* ─── Connect Agents overlay ─── */}
+      <ConnectAgentsOverlay open={showConnectAgents} onClose={() => setShowConnectAgents(false)} />
     </div>
   );
 }

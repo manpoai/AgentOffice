@@ -17,6 +17,7 @@ import {
   CreditCard, Image, MessageSquare, UserCheck, RotateCcw,
 } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { ActorInlineAvatar } from '@/components/shared/ActorInlineAvatar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
 import { DndContext, closestCenter, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
@@ -1987,7 +1988,7 @@ function TableEditorInner({ tableId, breadcrumb, onBack, onDeleted, onDuplicate,
               className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
             >
               {t('content.lastModified')}: {formatRelativeTime(tableContentItem?.updated_at || meta?.updated_at)}
-              {tableContentItem?.updated_by && <span> {t('content.by')} {tableContentItem.updated_by}</span>}
+              {tableContentItem?.updated_by && <span> {t('content.by')} <ActorInlineAvatar name={tableContentItem.updated_by} /> {tableContentItem.updated_by}</span>}
             </button>
           }
           onHistory={() => setShowHistory(true)}

@@ -1,4 +1,4 @@
-import { Clock, MessageSquare as MessageSquareIcon, Search } from 'lucide-react';
+import { Clock, AtSign, Search } from 'lucide-react';
 import type { ActionDef } from './types';
 import type { ContentItemCtx } from './content-item.actions';
 import { buildActionMap } from './types';
@@ -24,7 +24,7 @@ export const contentTopBarCommonActions: ActionDef<ContentTopBarCommonCtx>[] = [
   {
     id: 'comments',
     label: t => t('content.comments'),
-    icon: MessageSquareIcon,
+    icon: AtSign,
     shortcut: '⌘J',
     group: 'collab',
     execute: ctx => ctx.showComments(),

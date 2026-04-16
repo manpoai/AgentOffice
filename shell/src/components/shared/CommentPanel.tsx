@@ -140,12 +140,12 @@ function CommentText({ text, agents = [] }: { text: string; agents?: Agent[] }) 
                 : null;
             return (
               <span key={i} className="inline-flex items-center gap-0.5 text-blue-500 dark:text-blue-400 font-medium align-middle">
+                {part}
                 {avatarSrc ? (
                   <img src={avatarSrc} alt="" className="w-4 h-4 rounded-full object-cover inline-block" />
                 ) : (
                   <Bot className="w-3.5 h-3.5 inline-block" />
                 )}
-                {part}
               </span>
             );
           }
@@ -764,10 +764,10 @@ export function CommentPanel({
         const now = Date.now();
         const newEntries = pending.map(agent => ({ agent, since: now, threadKey, visible: false }));
         setTypingAgents(prev => [...prev, ...newEntries]);
-        // Show after 300ms delay
+        // Show after 1s delay
         setTimeout(() => {
           setTypingAgents(prev => prev.map(e => e.since === now ? { ...e, visible: true } : e));
-        }, 300);
+        }, 1000);
         // Auto-clear after 3 min
         setTimeout(() => {
           setTypingAgents(prev => prev.filter(e => e.since !== now));
@@ -882,45 +882,39 @@ export function CommentPanel({
               </div>
             );
           }
-          return visibleComments.map((comment) => (
-            <CommentThread
-              key={comment.id}
-              comment={comment}
-              replies={repliesOf(comment.id)}
-              replyTo={replyTo}
-              editingId={editingId}
-              editText={editText}
-              onReply={setReplyTo}
-              onEdit={(id, text) => { setEditingId(id); setEditText(text); }}
-              onEditSave={(id) => editMut.mutate({ id, text: editText })}
-              onEditCancel={() => { setEditingId(null); setEditText(''); }}
-              onEditTextChange={setEditText}
-              onDelete={(id) => deleteMut.mutate(id)}
-              onResolve={(id) => resolveMut.mutate(id)}
-              onUnresolve={(id) => unresolveMut.mutate(id)}
-              isResolved={showResolved}
-              focusCommentId={focusCommentId}
-              focusRefs={focusRefs}
-              onNavigateToAnchor={onNavigateToAnchor}
-              agents={agents}
-              typingAgentsForThread={
-                typingAgents
-                  .filter(e => e.threadKey === comment.id)
-                  .map(e => e.agent)
-              }
-            />
-          ));
+          return visibleComments.map((comment, idx) => {
+            const isLast = idx === visibleComments.length - 1;
+            const threadTyping = typingAgents.filter(e =>
+              e.visible && (e.threadKey === comment.id || (isLast && e.threadKey.startsWith('new-')))
+            );
+            return (
+              <CommentThread
+                key={comment.id}
+                comment={comment}
+                replies={repliesOf(comment.id)}
+                replyTo={replyTo}
+                editingId={editingId}
+                editText={editText}
+                onReply={setReplyTo}
+                onEdit={(id, text) => { setEditingId(id); setEditText(text); }}
+                onEditSave={(id) => editMut.mutate({ id, text: editText })}
+                onEditCancel={() => { setEditingId(null); setEditText(''); }}
+                onEditTextChange={setEditText}
+                onDelete={(id) => deleteMut.mutate(id)}
+                onResolve={(id) => resolveMut.mutate(id)}
+                onUnresolve={(id) => unresolveMut.mutate(id)}
+                isResolved={showResolved}
+                focusCommentId={focusCommentId}
+                focusRefs={focusRefs}
+                onNavigateToAnchor={onNavigateToAnchor}
+                agents={agents}
+                typingAgentsForThread={threadTyping.map(e => e.agent)}
+              />
+            );
+          });
         })()}
 
         {/* Typing indicators for new top-level comments (not in any thread yet) */}
-        {typingAgents
-          .filter(e => e.threadKey.startsWith('new-'))
-          .map(e => (
-            <div key={`typing-${e.agent.agent_id}-${e.since}`} className="bg-card rounded-lg border border-border px-3 pb-3">
-              <TypingIndicator agent={e.agent} />
-            </div>
-          ))
-        }
       </div>
 
       {/* Input bar */}

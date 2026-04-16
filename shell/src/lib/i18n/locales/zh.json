@@ -1038,6 +1038,7 @@
     "sendCleanupToAgent": "把清理步骤发给该 Agent",
     "deleted": "已删除",
     "copyPrompt": "复制",
+    "copied": "已复制！",
     "resetToken": "重置 Token",
     "resetTokenConfirm": "这将使当前 Token 失效，确认继续？",
     "newTokenWarning": "请立即保存此 Token，关闭后不可再查看。",

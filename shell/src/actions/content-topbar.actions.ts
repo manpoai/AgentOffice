@@ -1,4 +1,4 @@
-import { Link2, Download, Trash2, Clock, MessageSquare as MessageSquareIcon } from 'lucide-react';
+import { Link2, Download, Trash2, Clock, AtSign } from 'lucide-react';
 import type { ActionDef, TFunc } from './types';
 import type { ContentMenuItem } from '@/components/shared/ContentTopBar';
 
@@ -45,7 +45,7 @@ export const contentTopBarActions: ActionDef<ContentTopBarCtx>[] = [
   {
     id: 'comments',
     label: t => t('content.comments'),
-    icon: MessageSquareIcon,
+    icon: AtSign,
     shortcut: '⌘J',
     group: 'collab',
     execute: ctx => ctx.showComments(),

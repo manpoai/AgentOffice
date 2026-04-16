@@ -287,7 +287,7 @@ export function ContentTopBar({
               {actions}
               {/* Desktop More popover — driven by menuItems */}
               {menuItems && menuItems.length > 0 && (
-                <div className="relative">
+                <div className="relative" style={{ order: 1 }}>
                   <button
                     onClick={() => setShowDesktopMenu(v => !v)}
                     className="p-2 text-black/70 dark:text-white/70 hover:text-foreground rounded transition-colors"

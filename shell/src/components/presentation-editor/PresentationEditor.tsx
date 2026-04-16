@@ -18,6 +18,7 @@ import {
   Replace, PanelRightClose, PanelRight,
 } from 'lucide-react';
 import { RichTable } from '@/components/shared/RichTable';
+import { ActorInlineAvatar } from '@/components/shared/ActorInlineAvatar';
 import { FloatingToolbar } from '@/components/shared/FloatingToolbar';
 import { getPptTextItems, getPptImageItems, getPptShapeItems, getDocsTableItems } from '@/components/shared/FloatingToolbar/presets';
 import { createDocsTableHandler } from '@/components/editor/docs-toolbar-handler';
@@ -1757,7 +1758,7 @@ export function PresentationEditor({
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
               >
                 {t('content.lastModified')}: {formatRelativeTime(presentation.updated_at)}
-                {presentation.updated_by && <span> {t('content.by')} {presentation.updated_by}</span>}
+                {presentation.updated_by && <span> {t('content.by')} <ActorInlineAvatar name={presentation.updated_by} /> {presentation.updated_by}</span>}
               </button>
             }
             onHistory={() => { setShowHistory(true); onCloseComments(); }}
@@ -1881,7 +1882,7 @@ export function PresentationEditor({
               className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
             >
               {t('content.lastModified')}: {formatRelativeTime(presentation.updated_at)}
-              {presentation.updated_by && <span> {t('content.by')} {presentation.updated_by}</span>}
+              {presentation.updated_by && <span> {t('content.by')} <ActorInlineAvatar name={presentation.updated_by} /> {presentation.updated_by}</span>}
             </button>
           }
           onHistory={() => { setShowHistory(true); onCloseComments(); }}

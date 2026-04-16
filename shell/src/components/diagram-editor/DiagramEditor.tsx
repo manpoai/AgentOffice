@@ -10,6 +10,7 @@ import {
   LayoutGrid, GitBranch, Minus, Plus as PlusIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ActorInlineAvatar } from '@/components/shared/ActorInlineAvatar';
 import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
 import {
@@ -460,7 +461,7 @@ function DiagramEditorInner({
           </div>
           <div className="text-[11px] text-muted-foreground/50 mt-0.5">
             {formatRelativeTime(diagram.updated_at)}
-            {diagram.updated_by && <span> &middot; {diagram.updated_by}</span>}
+            {diagram.updated_by && <span> &middot; <ActorInlineAvatar name={diagram.updated_by} /> {diagram.updated_by}</span>}
           </div>
         </div>
 

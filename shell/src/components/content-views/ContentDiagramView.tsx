@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, Clock, MessageSquare as MessageSquareIcon, Download, Link2, Pin, ExternalLink, AtSign, Share2, Trash2, X } from 'lucide-react';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
+import { ActorInlineAvatar } from '@/components/shared/ActorInlineAvatar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
@@ -180,7 +181,7 @@ export function ContentDiagramView({ diagramId, breadcrumb, onBack, onDeleted, o
                 className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
               >
                 {t('content.lastModified')}: {formatRelativeTime(diagramItem?.updated_at || diagramItem?.created_at)}
-                {diagramItem?.updated_by && <span> {t('content.by')} {diagramItem.updated_by}</span>}
+                {diagramItem?.updated_by && <span> {t('content.by')} <ActorInlineAvatar name={diagramItem.updated_by} /> {diagramItem.updated_by}</span>}
               </button>
             }
             onHistory={() => { setShowHistory(true); onCloseComments(); }}

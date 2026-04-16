@@ -1018,6 +1018,7 @@
     "sendCleanupToAgent": "정리 단계를 에이전트에게 전송",
     "deleted": "삭제됨",
     "copyPrompt": "복사",
+    "copied": "복사됨!",
     "resetToken": "토큰 재설정",
     "resetTokenConfirm": "현재 토큰이 무효화됩니다. 계속하시겠습니까?",
     "newTokenWarning": "지금 이 토큰을 저장하세요. 다시 표시되지 않습니다.",

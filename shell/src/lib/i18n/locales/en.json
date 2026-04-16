@@ -1038,6 +1038,7 @@
     "sendCleanupToAgent": "Send these cleanup steps to the agent",
     "deleted": "deleted",
     "copyPrompt": "Copy",
+    "copied": "Copied!",
     "resetToken": "Reset Token",
     "resetTokenConfirm": "This will invalidate the agent's current token. Continue?",
     "newTokenWarning": "Save this token now. It won't be shown again.",

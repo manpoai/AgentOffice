@@ -46,6 +46,7 @@ import { contentItemActions, type ContentItemCtx } from '@/actions/content-item.
 import { contentItemSurfaces } from '@/surfaces/content-item.surfaces';
 import { toContextMenuItems, toContentMenuItems } from '@/surfaces/bridge';
 import { AgentPanelContent } from '@/components/shared/AgentPanelContent';
+import { ConnectAgentsOverlay } from '@/components/ConnectAgentsOverlay';
 import { buildActionMap } from '@/actions/types';
 import { buildContentLink } from '@/lib/hooks/use-content-tree';
 import { getPublicOrigin } from '@/lib/remote-access';
@@ -206,6 +207,7 @@ export default function ContentPage() {
   const [showMobileFabMenu, setShowMobileFabMenu] = useState(false);
   const [showMobileProfile, setShowMobileProfile] = useState(false);
   const [showMobileAgents, setShowMobileAgents] = useState(false);
+  const [showMobileConnectAgents, setShowMobileConnectAgents] = useState(false);
   const [mobileEditingName, setMobileEditingName] = useState(false);
   const [mobileEditNameValue, setMobileEditNameValue] = useState('');
   const [mobileSavingProfile, setMobileSavingProfile] = useState(false);
@@ -1771,9 +1773,12 @@ export default function ContentPage() {
       {/* Mobile agents BottomSheet */}
       <BottomSheet open={showMobileAgents} onClose={() => setShowMobileAgents(false)} title={t('toolbar.agents')}>
         <div className="py-2 px-4">
-          <AgentPanelContent variant="bottomsheet" />
+          <AgentPanelContent variant="bottomsheet" onOpenConnectAgents={() => { setShowMobileAgents(false); setShowMobileConnectAgents(true); }} />
         </div>
       </BottomSheet>
+
+      {/* Mobile Connect Agents overlay */}
+      <ConnectAgentsOverlay open={showMobileConnectAgents} onClose={() => setShowMobileConnectAgents(false)} />
     </div>
   );
 }

@@ -1018,6 +1018,7 @@
     "sendCleanupToAgent": "クリーンアップ手順をエージェントに送信",
     "deleted": "削除済み",
     "copyPrompt": "コピー",
+    "copied": "コピーしました！",
     "resetToken": "トークンをリセット",
     "resetTokenConfirm": "現在のトークンが無効になります。続行しますか？",
     "newTokenWarning": "このトークンを今すぐ保存してください。再表示されません。",
