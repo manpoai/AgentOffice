@@ -514,18 +514,6 @@ function seedExampleContent(db, gatewayDir) {
   if (!fs.existsSync(seedPath)) return;
 
   try {
-    // Copy seed images to uploads directory so they're accessible via /api/gateway/uploads/files/*
-    const seedAssetsDir = path.join(gatewayDir, 'seed-assets');
-    const uploadsDir = path.join(gatewayDir, 'uploads', 'files');
-    if (fs.existsSync(seedAssetsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-      for (const file of fs.readdirSync(seedAssetsDir)) {
-        const src = path.join(seedAssetsDir, file);
-        const dest = path.join(uploadsDir, `seed-${file}`);
-        if (!fs.existsSync(dest)) fs.copyFileSync(src, dest);
-      }
-    }
-
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
     const now = new Date().toISOString();
     const nowMs = Date.now();
@@ -545,22 +533,7 @@ function seedExampleContent(db, gatewayDir) {
       ).run(doc.id, doc.title, doc.text, doc.data_json, doc.icon, doc.full_width || 0, now, now);
     }
 
-    // Seed presentation
-    if (seed.presentation) {
-      const ci = seed.presentation.content_item;
-      const pres = seed.presentation.presentation;
-      db.prepare(
-        `INSERT INTO content_items (id, raw_id, type, title, icon, parent_id, sort_order, collection_id, created_by, updated_by, created_at, updated_at, synced_at, pinned)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'admin', 'admin', ?, ?, ?, 0)`
-      ).run(ci.id, ci.raw_id, ci.type, ci.title, ci.icon, ci.parent_id, ci.sort_order || 0, ci.collection_id, now, now, nowMs);
-
-      db.prepare(
-        `INSERT INTO presentations (id, data_json, created_by, updated_by, created_at, updated_at)
-         VALUES (?, ?, 'admin', 'admin', ?, ?)`
-      ).run(pres.id, pres.data_json, now, now);
-    }
-
-    console.log('[gateway] Seeded example content (Welcome doc + Overview presentation)');
+    console.log('[gateway] Seeded example content (Welcome doc)');
   } catch (e) {
     console.warn('[gateway] Failed to seed example content:', e.message);
   }
