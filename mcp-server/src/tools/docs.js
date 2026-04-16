@@ -109,6 +109,53 @@ export function registerDocTools(server, gw) {
   );
 
   server.tool(
+    'doc_insert_block_after',
+    'Insert new content (in Markdown) after a specific block in a document. Other blocks are untouched. Use read_doc_outline first to find the after_block_id. Omit after_block_id to insert at the beginning.',
+    {
+      doc_id: z.string().describe('Document ID'),
+      after_block_id: z.string().optional().describe('Insert after this block ID (omit to insert at start)'),
+      content_markdown: z.string().describe('New content in Markdown to insert'),
+      revision_description: z.string().optional().describe('Optional description for the revision history'),
+    },
+    async ({ doc_id, after_block_id, content_markdown, revision_description }) => {
+      const body = { content_markdown };
+      if (after_block_id) body.after_block_id = after_block_id;
+      if (revision_description) body.revision_description = revision_description;
+      const result = await gw.post(`/docs/${doc_id}/blocks`, body);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'doc_append_section',
+    'Append new content (in Markdown) at the end of a document. Useful for adding new sections without affecting existing content.',
+    {
+      doc_id: z.string().describe('Document ID'),
+      content_markdown: z.string().describe('New content in Markdown to append at the end'),
+      revision_description: z.string().optional().describe('Optional description for the revision history'),
+    },
+    async ({ doc_id, content_markdown, revision_description }) => {
+      const body = { content_markdown };
+      if (revision_description) body.revision_description = revision_description;
+      const result = await gw.post(`/docs/${doc_id}/blocks/append`, body);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'doc_delete_block',
+    'Delete a single block from a document by block ID. Other blocks are untouched. Use read_doc_outline first to find the block_id.',
+    {
+      doc_id: z.string().describe('Document ID'),
+      block_id: z.string().describe('Block ID to delete (from read_doc_outline)'),
+    },
+    async ({ doc_id, block_id }) => {
+      const result = await gw.del(`/docs/${doc_id}/blocks/${block_id}`);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
     'comment_on_doc',
     'Add a comment to a document. Can reply to an existing comment thread.',
     {

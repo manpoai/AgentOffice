@@ -379,6 +379,28 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
     }
   });
 
+  // Reorder columns
+  app.patch('/api/data/tables/:table_id/columns/reorder', authenticateAgent, async (req, res) => {
+    const { column_order } = req.body;
+    if (!Array.isArray(column_order) || column_order.length === 0) {
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'column_order must be a non-empty array of column IDs' });
+    }
+    const tableId = req.params.table_id;
+    try {
+      const t = db.prepare('SELECT id FROM user_tables WHERE id = ?').get(tableId);
+      if (!t) return res.status(404).json({ error: 'NOT_FOUND' });
+      for (let i = 0; i < column_order.length; i++) {
+        const f = tableEngine.getField(column_order[i]);
+        if (f) tableEngine.updateField(column_order[i], { position: i });
+      }
+      const updated = tableEngine.listFields(tableId).map(f => ({ column_id: f.id, title: f.title, position: f.position }));
+      res.json({ table_id: tableId, columns: updated });
+    } catch (e) {
+      console.error('[gateway] reorder columns failed:', e);
+      res.status(500).json({ error: 'INTERNAL_ERROR', detail: e.message });
+    }
+  });
+
   // Rename a table
   app.patch('/api/data/tables/:table_id', authenticateAgent, async (req, res) => {
     const { title } = req.body;

@@ -69,6 +69,87 @@ export function replaceTopLevelBlock(docJson, blockId, replacementNode) {
   };
 }
 
+/** Insert one or more nodes after the block with the given blockId.
+ *  If afterBlockId is null, inserts at the beginning of the document. */
+export function insertBlocksAfter(docJson, afterBlockId, newNodes) {
+  if (!Array.isArray(newNodes) || newNodes.length === 0) throw new Error('newNodes must be a non-empty array');
+  for (const n of newNodes) {
+    if (!isBlockNode(n)) throw new Error('each newNode must be a ProseMirror block node');
+  }
+
+  const { doc } = ensureTopLevelBlockIds(docJson);
+  const content = ensureArray(doc.content);
+
+  // Stamp fresh blockIds onto each new node
+  const stamped = newNodes.map(n => {
+    const node = clone(n);
+    node.attrs = { ...(node.attrs || {}), blockId: crypto.randomUUID() };
+    return node;
+  });
+
+  let insertAt;
+  if (afterBlockId === null || afterBlockId === undefined) {
+    insertAt = 0;
+  } else {
+    const index = content.findIndex(node => node?.attrs?.blockId === afterBlockId);
+    if (index === -1) {
+      const error = new Error(`block not found: ${afterBlockId}`);
+      error.code = 'BLOCK_NOT_FOUND';
+      throw error;
+    }
+    insertAt = index + 1;
+  }
+
+  const nextContent = [...content.slice(0, insertAt), ...stamped, ...content.slice(insertAt)];
+  return {
+    doc: { ...doc, content: nextContent },
+    inserted: stamped,
+    at_index: insertAt,
+  };
+}
+
+/** Append one or more nodes at the end of the document. */
+export function appendBlocks(docJson, newNodes) {
+  if (!Array.isArray(newNodes) || newNodes.length === 0) throw new Error('newNodes must be a non-empty array');
+  const { doc } = ensureTopLevelBlockIds(docJson);
+  const content = ensureArray(doc.content);
+
+  const stamped = newNodes.map(n => {
+    const node = clone(n);
+    node.attrs = { ...(node.attrs || {}), blockId: crypto.randomUUID() };
+    return node;
+  });
+
+  return {
+    doc: { ...doc, content: [...content, ...stamped] },
+    inserted: stamped,
+    at_index: content.length,
+  };
+}
+
+/** Delete the top-level block with the given blockId. */
+export function deleteTopLevelBlock(docJson, blockId) {
+  if (!blockId) throw new Error('blockId required');
+
+  const { doc } = ensureTopLevelBlockIds(docJson);
+  const content = ensureArray(doc.content);
+  const index = content.findIndex(node => node?.attrs?.blockId === blockId);
+  if (index === -1) {
+    const error = new Error(`block not found: ${blockId}`);
+    error.code = 'BLOCK_NOT_FOUND';
+    throw error;
+  }
+
+  const deleted = content[index];
+  const nextContent = [...content.slice(0, index), ...content.slice(index + 1)];
+  return {
+    doc: { ...doc, content: nextContent },
+    deleted_block_id: blockId,
+    index,
+    deleted,
+  };
+}
+
 export function extractPlainText(docJson) {
   return extractNodeText(docJson);
 }

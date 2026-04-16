@@ -106,6 +106,19 @@ export function registerDataTools(server, gw) {
   // ─── Row-level tools ─────────────────────────────────────────────────────────
 
   server.tool(
+    'reorder_columns',
+    'Change the display order of columns in a table. Pass column IDs in the desired order. Use describe_table to get current column IDs.',
+    {
+      table_id: z.string().describe('Table ID'),
+      column_order: z.array(z.string()).describe('Column IDs in the desired display order'),
+    },
+    async ({ table_id, column_order }) => {
+      const result = await gw.patch(`/data/tables/${table_id}/columns/reorder`, { column_order });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
     'list_tables',
     'List all database tables in the AOSE workspace. Returns table IDs and titles.',
     {},

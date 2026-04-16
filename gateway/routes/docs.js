@@ -6,7 +6,7 @@ import { createSnapshot, isAgentRequest } from '../lib/snapshot-helper.js';
 import { insertNotification } from '../lib/notifications.js';
 import { restoreDocFromSnapshot, extractTextFromProseMirror } from '../lib/doc-restore-helper.js';
 import { parseMarkdownFragment } from '../lib/pm-parser.js';
-import { ensureTopLevelBlockIds, listTopLevelBlocks, replaceTopLevelBlock } from '../lib/doc-block-ops.js';
+import { ensureTopLevelBlockIds, listTopLevelBlocks, replaceTopLevelBlock, insertBlocksAfter, appendBlocks, deleteTopLevelBlock } from '../lib/doc-block-ops.js';
 
 // Get display name for the authenticated actor (human or agent)
 function actorName(req) {
@@ -319,6 +319,172 @@ export default function docsRoutes(app, { db, authenticateAgent, genId, contentI
       doc_id: req.params.doc_id,
       block_id: req.params.block_id,
       block_index: result.index,
+      updated_at: new Date(now).getTime(),
+    });
+  });
+
+  // POST /api/docs/:doc_id/blocks — insert new block(s) after a given block
+  app.post('/api/docs/:doc_id/blocks', authenticateAgent, (req, res) => {
+    const { after_block_id, content_markdown } = req.body;
+    if (!content_markdown) {
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'content_markdown required' });
+    }
+
+    const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.doc_id);
+    if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    let docJson = null;
+    if (doc.data_json) { try { docJson = JSON.parse(doc.data_json); } catch { /* ignore */ } }
+    if (!docJson) {
+      docJson = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text || '' }] }] };
+    }
+
+    const { doc: annotated } = ensureTopLevelBlockIds(docJson);
+    const parsed = parseMarkdownFragment(content_markdown);
+    const newNodes = (Array.isArray(parsed) ? parsed : [parsed]).map(n => n.toJSON ? n.toJSON() : n);
+
+    let result;
+    try {
+      result = insertBlocksAfter(annotated, after_block_id ?? null, newNodes);
+    } catch (e) {
+      if (e.code === 'BLOCK_NOT_FOUND') {
+        return res.status(404).json({ error: 'BLOCK_NOT_FOUND', message: `block ${after_block_id} not found` });
+      }
+      throw e;
+    }
+
+    const now = new Date().toISOString();
+    const agentName = actorName(req);
+
+    if (isAgentRequest(req)) {
+      createSnapshot(db, { genId }, { contentType: 'doc', contentId: req.params.doc_id, data: annotated, triggerType: 'pre_agent_edit', actorId: agentName, title: doc.title });
+    }
+
+    db.prepare('UPDATE documents SET data_json = ?, updated_at = ?, updated_by = ? WHERE id = ?')
+      .run(JSON.stringify(result.doc), now, agentName, req.params.doc_id);
+
+    if (isAgentRequest(req)) {
+      createSnapshot(db, { genId }, { contentType: 'doc', contentId: req.params.doc_id, data: result.doc, triggerType: 'post_agent_edit', actorId: agentName, title: doc.title, description: req.body.revision_description || null });
+    }
+
+    if (humanClients && pushHumanEvent) {
+      try {
+        const humans = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+        for (const h of humans) {
+          pushHumanEvent(h.id, { event: 'content.changed', data: { action: 'updated', type: 'doc', id: req.params.doc_id, title: doc.title } });
+        }
+      } catch (e) { console.error(`[docs] pushHumanEvent error: ${e.message}`); }
+    }
+
+    res.status(201).json({
+      doc_id: req.params.doc_id,
+      inserted: result.inserted.map(n => ({ block_id: n.attrs?.blockId, type: n.type })),
+      at_index: result.at_index,
+      updated_at: new Date(now).getTime(),
+    });
+  });
+
+  // POST /api/docs/:doc_id/blocks/append — append block(s) at end of document
+  app.post('/api/docs/:doc_id/blocks/append', authenticateAgent, (req, res) => {
+    const { content_markdown } = req.body;
+    if (!content_markdown) {
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'content_markdown required' });
+    }
+
+    const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.doc_id);
+    if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    let docJson = null;
+    if (doc.data_json) { try { docJson = JSON.parse(doc.data_json); } catch { /* ignore */ } }
+    if (!docJson) {
+      docJson = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text || '' }] }] };
+    }
+
+    const { doc: annotated } = ensureTopLevelBlockIds(docJson);
+    const parsed = parseMarkdownFragment(content_markdown);
+    const newNodes = (Array.isArray(parsed) ? parsed : [parsed]).map(n => n.toJSON ? n.toJSON() : n);
+    const result = appendBlocks(annotated, newNodes);
+
+    const now = new Date().toISOString();
+    const agentName = actorName(req);
+
+    if (isAgentRequest(req)) {
+      createSnapshot(db, { genId }, { contentType: 'doc', contentId: req.params.doc_id, data: annotated, triggerType: 'pre_agent_edit', actorId: agentName, title: doc.title });
+    }
+
+    db.prepare('UPDATE documents SET data_json = ?, updated_at = ?, updated_by = ? WHERE id = ?')
+      .run(JSON.stringify(result.doc), now, agentName, req.params.doc_id);
+
+    if (isAgentRequest(req)) {
+      createSnapshot(db, { genId }, { contentType: 'doc', contentId: req.params.doc_id, data: result.doc, triggerType: 'post_agent_edit', actorId: agentName, title: doc.title, description: req.body.revision_description || null });
+    }
+
+    if (humanClients && pushHumanEvent) {
+      try {
+        const humans = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+        for (const h of humans) {
+          pushHumanEvent(h.id, { event: 'content.changed', data: { action: 'updated', type: 'doc', id: req.params.doc_id, title: doc.title } });
+        }
+      } catch (e) { console.error(`[docs] pushHumanEvent error: ${e.message}`); }
+    }
+
+    res.status(201).json({
+      doc_id: req.params.doc_id,
+      inserted: result.inserted.map(n => ({ block_id: n.attrs?.blockId, type: n.type })),
+      at_index: result.at_index,
+      updated_at: new Date(now).getTime(),
+    });
+  });
+
+  // DELETE /api/docs/:doc_id/blocks/:block_id — delete a single block
+  app.delete('/api/docs/:doc_id/blocks/:block_id', authenticateAgent, (req, res) => {
+    const doc = db.prepare('SELECT * FROM documents WHERE id = ? AND deleted_at IS NULL').get(req.params.doc_id);
+    if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    let docJson = null;
+    if (doc.data_json) { try { docJson = JSON.parse(doc.data_json); } catch { /* ignore */ } }
+    if (!docJson) {
+      docJson = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: doc.text || '' }] }] };
+    }
+
+    const { doc: annotated } = ensureTopLevelBlockIds(docJson);
+
+    let result;
+    try {
+      result = deleteTopLevelBlock(annotated, req.params.block_id);
+    } catch (e) {
+      if (e.code === 'BLOCK_NOT_FOUND') {
+        return res.status(404).json({ error: 'BLOCK_NOT_FOUND', message: `block ${req.params.block_id} not found` });
+      }
+      throw e;
+    }
+
+    const now = new Date().toISOString();
+    const agentName = actorName(req);
+
+    if (isAgentRequest(req)) {
+      createSnapshot(db, { genId }, { contentType: 'doc', contentId: req.params.doc_id, data: annotated, triggerType: 'pre_agent_edit', actorId: agentName, title: doc.title });
+    }
+
+    db.prepare('UPDATE documents SET data_json = ?, updated_at = ?, updated_by = ? WHERE id = ?')
+      .run(JSON.stringify(result.doc), now, agentName, req.params.doc_id);
+
+    if (isAgentRequest(req)) {
+      createSnapshot(db, { genId }, { contentType: 'doc', contentId: req.params.doc_id, data: result.doc, triggerType: 'post_agent_edit', actorId: agentName, title: doc.title });
+    }
+
+    if (humanClients && pushHumanEvent) {
+      try {
+        const humans = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+        for (const h of humans) {
+          pushHumanEvent(h.id, { event: 'content.changed', data: { action: 'updated', type: 'doc', id: req.params.doc_id, title: doc.title } });
+        }
+      } catch (e) { console.error(`[docs] pushHumanEvent error: ${e.message}`); }
+    }
+
+    res.json({
+      doc_id: req.params.doc_id,
+      deleted_block_id: req.params.block_id,
       updated_at: new Date(now).getTime(),
     });
   });

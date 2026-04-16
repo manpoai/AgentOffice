@@ -220,6 +220,156 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
     res.json({ index: idx, slide: data.slides[idx], updated_at: now });
   });
 
+  // GET /api/presentations/:id/slides — list all slides (id + index + notes preview)
+  app.get('/api/presentations/:id/slides', authenticateAgent, (req, res) => {
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const slides = (data.slides || []).map((s, idx) => ({
+      index: idx,
+      slide_id: s.id || null,
+      background: s.background || '#ffffff',
+      element_count: Array.isArray(s.elements) ? s.elements.length : 0,
+      notes_preview: (s.notes || '').slice(0, 80),
+      thumbnail: s.thumbnail || null,
+    }));
+    res.json({ presentation_id: req.params.id, slides });
+  });
+
+  // GET /api/presentations/:id/slides/:slide_id — read a single slide by its id field
+  app.get('/api/presentations/:id/slides/by-id/:slide_id', authenticateAgent, (req, res) => {
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const idx = (data.slides || []).findIndex(s => s.id === req.params.slide_id);
+    if (idx === -1) return res.status(404).json({ error: 'SLIDE_NOT_FOUND' });
+    res.json({ index: idx, slide: data.slides[idx] });
+  });
+
+  // PATCH /api/presentations/:id/slides/by-id/:slide_id — update slide by id
+  app.patch('/api/presentations/:id/slides/by-id/:slide_id', authenticateAgent, (req, res) => {
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const idx = (data.slides || []).findIndex(s => s.id === req.params.slide_id);
+    if (idx === -1) return res.status(404).json({ error: 'SLIDE_NOT_FOUND' });
+
+    const { layout, ...opts } = req.body;
+    if (layout && SLIDE_LAYOUTS[layout]) {
+      data.slides[idx] = { ...SLIDE_LAYOUTS[layout](opts), id: req.params.slide_id };
+    } else {
+      Object.assign(data.slides[idx], req.body);
+      data.slides[idx].id = req.params.slide_id; // preserve id
+    }
+
+    const now = Date.now();
+    const agentName = actorName(req);
+    db.prepare('UPDATE presentations SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(data), agentName, now, req.params.id);
+    res.json({ index: idx, slide: data.slides[idx], updated_at: now });
+  });
+
+  // DELETE /api/presentations/:id/slides/by-id/:slide_id — delete slide by id
+  app.delete('/api/presentations/:id/slides/by-id/:slide_id', authenticateAgent, (req, res) => {
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const idx = (data.slides || []).findIndex(s => s.id === req.params.slide_id);
+    if (idx === -1) return res.status(404).json({ error: 'SLIDE_NOT_FOUND' });
+    data.slides.splice(idx, 1);
+    const now = Date.now();
+    const agentName = actorName(req);
+    db.prepare('UPDATE presentations SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(data), agentName, now, req.params.id);
+    res.json({ deleted: true, remaining: data.slides.length, updated_at: now });
+  });
+
+  // PUT /api/presentations/:id/slides/reorder — reorder slides by slide_id array
+  app.put('/api/presentations/:id/slides/reorder', authenticateAgent, (req, res) => {
+    const { slide_id_order } = req.body;
+    if (!Array.isArray(slide_id_order)) {
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'slide_id_order must be an array' });
+    }
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const slideMap = new Map((data.slides || []).map(s => [s.id, s]));
+    const reordered = slide_id_order.map(sid => slideMap.get(sid)).filter(Boolean);
+    // Append any slides not in the order list at the end
+    const mentioned = new Set(slide_id_order);
+    for (const s of (data.slides || [])) {
+      if (!mentioned.has(s.id)) reordered.push(s);
+    }
+    data.slides = reordered;
+    const now = Date.now();
+    const agentName = actorName(req);
+    db.prepare('UPDATE presentations SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(data), agentName, now, req.params.id);
+    res.json({ presentation_id: req.params.id, slide_count: data.slides.length, updated_at: now });
+  });
+
+  // Slide element operations (by slide_id + element index)
+  // PATCH /api/presentations/:id/slides/by-id/:slide_id/elements/:element_index
+  app.patch('/api/presentations/:id/slides/by-id/:slide_id/elements/:element_index', authenticateAgent, (req, res) => {
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const slideIdx = (data.slides || []).findIndex(s => s.id === req.params.slide_id);
+    if (slideIdx === -1) return res.status(404).json({ error: 'SLIDE_NOT_FOUND' });
+    const slide = data.slides[slideIdx];
+    const elIdx = parseInt(req.params.element_index, 10);
+    if (!Array.isArray(slide.elements) || elIdx < 0 || elIdx >= slide.elements.length) {
+      return res.status(404).json({ error: 'ELEMENT_NOT_FOUND' });
+    }
+    Object.assign(slide.elements[elIdx], req.body);
+    const now = Date.now();
+    const agentName = actorName(req);
+    db.prepare('UPDATE presentations SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(data), agentName, now, req.params.id);
+    res.json({ slide_id: req.params.slide_id, element_index: elIdx, element: slide.elements[elIdx], updated_at: now });
+  });
+
+  // POST /api/presentations/:id/slides/by-id/:slide_id/elements — insert new element
+  app.post('/api/presentations/:id/slides/by-id/:slide_id/elements', authenticateAgent, (req, res) => {
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const slideIdx = (data.slides || []).findIndex(s => s.id === req.params.slide_id);
+    if (slideIdx === -1) return res.status(404).json({ error: 'SLIDE_NOT_FOUND' });
+    const slide = data.slides[slideIdx];
+    if (!Array.isArray(slide.elements)) slide.elements = [];
+    const { after_index, ...element } = req.body;
+    const insertAt = (after_index !== undefined && after_index !== null)
+      ? Math.min(after_index + 1, slide.elements.length)
+      : slide.elements.length;
+    slide.elements.splice(insertAt, 0, element);
+    const now = Date.now();
+    const agentName = actorName(req);
+    db.prepare('UPDATE presentations SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(data), agentName, now, req.params.id);
+    res.status(201).json({ slide_id: req.params.slide_id, element_index: insertAt, element, updated_at: now });
+  });
+
+  // DELETE /api/presentations/:id/slides/by-id/:slide_id/elements/:element_index
+  app.delete('/api/presentations/:id/slides/by-id/:slide_id/elements/:element_index', authenticateAgent, (req, res) => {
+    const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
+    if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+    const slideIdx = (data.slides || []).findIndex(s => s.id === req.params.slide_id);
+    if (slideIdx === -1) return res.status(404).json({ error: 'SLIDE_NOT_FOUND' });
+    const slide = data.slides[slideIdx];
+    const elIdx = parseInt(req.params.element_index, 10);
+    if (!Array.isArray(slide.elements) || elIdx < 0 || elIdx >= slide.elements.length) {
+      return res.status(404).json({ error: 'ELEMENT_NOT_FOUND' });
+    }
+    slide.elements.splice(elIdx, 1);
+    const now = Date.now();
+    const agentName = actorName(req);
+    db.prepare('UPDATE presentations SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(data), agentName, now, req.params.id);
+    res.json({ deleted: true, slide_id: req.params.slide_id, remaining_elements: slide.elements.length, updated_at: now });
+  });
+
   app.delete('/api/presentations/:id/slides/:index', authenticateAgent, (req, res) => {
     const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
     if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
@@ -296,6 +446,97 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
     }
 
     res.json({ saved: true, updated_at: now });
+  });
+
+  // ─── Diagram node/edge mutations ────────────────
+  // POST /api/diagrams/:id/nodes — add a node
+  app.post('/api/diagrams/:id/nodes', authenticateAgent, (req, res) => {
+    const row = db.prepare('SELECT * FROM diagrams WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
+    let data; try { data = JSON.parse(row.data_json); } catch { data = { cells: [], viewport: { x:0,y:0,zoom:1 } }; }
+    if (!Array.isArray(data.cells)) data.cells = [];
+    const { id, label, shape = 'rounded-rect', bgColor = '#ffffff', borderColor = '#374151', textColor = '#1f2937', x = 80, y = 80, width = 160, height = 60 } = req.body;
+    if (!id) return res.status(400).json({ error: 'MISSING_ID', message: 'id is required' });
+    if (data.cells.find(c => c.id === id)) return res.status(400).json({ error: 'DUPLICATE_ID', message: `node id ${id} already exists` });
+    const node = { id, shape: 'flowchart-node', geometry: { x, y, width, height }, data: { label: label || '', flowchartShape: shape, bgColor, borderColor, textColor, fontSize: 14, fontWeight: 'normal', fontStyle: 'normal' } };
+    data.cells.push(node);
+    db.prepare('UPDATE diagrams SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), actorName(req) || 'unknown', Date.now(), req.params.id);
+    res.status(201).json({ node });
+  });
+
+  // PATCH /api/diagrams/:id/nodes/:node_id — update a node
+  app.patch('/api/diagrams/:id/nodes/:node_id', authenticateAgent, (req, res) => {
+    const row = db.prepare('SELECT * FROM diagrams WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
+    let data; try { data = JSON.parse(row.data_json); } catch { data = { cells: [] }; }
+    const idx = (data.cells || []).findIndex(c => c.id === req.params.node_id && c.shape !== 'edge');
+    if (idx === -1) return res.status(404).json({ error: 'NODE_NOT_FOUND' });
+    const node = data.cells[idx];
+    const { label, shape, bgColor, borderColor, textColor, x, y, width, height } = req.body;
+    if (label !== undefined) node.data = { ...(node.data || {}), label };
+    if (shape !== undefined) node.data = { ...(node.data || {}), flowchartShape: shape };
+    if (bgColor !== undefined) node.data = { ...(node.data || {}), bgColor };
+    if (borderColor !== undefined) node.data = { ...(node.data || {}), borderColor };
+    if (textColor !== undefined) node.data = { ...(node.data || {}), textColor };
+    if (x !== undefined || y !== undefined || width !== undefined || height !== undefined) {
+      node.geometry = { ...(node.geometry || {}), ...(x !== undefined ? {x} : {}), ...(y !== undefined ? {y} : {}), ...(width !== undefined ? {width} : {}), ...(height !== undefined ? {height} : {}) };
+    }
+    db.prepare('UPDATE diagrams SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), actorName(req) || 'unknown', Date.now(), req.params.id);
+    res.json({ node });
+  });
+
+  // DELETE /api/diagrams/:id/nodes/:node_id — delete node and its connected edges
+  app.delete('/api/diagrams/:id/nodes/:node_id', authenticateAgent, (req, res) => {
+    const row = db.prepare('SELECT * FROM diagrams WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
+    let data; try { data = JSON.parse(row.data_json); } catch { data = { cells: [] }; }
+    const nodeId = req.params.node_id;
+    const before = (data.cells || []).length;
+    data.cells = (data.cells || []).filter(c => c.id !== nodeId && !(c.shape === 'edge' && (c.source === nodeId || c.target === nodeId)));
+    if (data.cells.length === before) return res.status(404).json({ error: 'NODE_NOT_FOUND' });
+    db.prepare('UPDATE diagrams SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), actorName(req) || 'unknown', Date.now(), req.params.id);
+    res.json({ deleted: true, remaining_cells: data.cells.length });
+  });
+
+  // POST /api/diagrams/:id/edges — add an edge
+  app.post('/api/diagrams/:id/edges', authenticateAgent, (req, res) => {
+    const row = db.prepare('SELECT * FROM diagrams WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
+    let data; try { data = JSON.parse(row.data_json); } catch { data = { cells: [] }; }
+    const { id, source, target, label } = req.body;
+    if (!id || !source || !target) return res.status(400).json({ error: 'MISSING_FIELDS', message: 'id, source, target are required' });
+    if (data.cells.find(c => c.id === id)) return res.status(400).json({ error: 'DUPLICATE_ID', message: `edge id ${id} already exists` });
+    const edge = { id, shape: 'edge', source, target, ...(label ? { labels: [{ attrs: { label: { text: label } } }] } : {}) };
+    data.cells.push(edge);
+    db.prepare('UPDATE diagrams SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), actorName(req) || 'unknown', Date.now(), req.params.id);
+    res.status(201).json({ edge });
+  });
+
+  // PATCH /api/diagrams/:id/edges/:edge_id — update an edge
+  app.patch('/api/diagrams/:id/edges/:edge_id', authenticateAgent, (req, res) => {
+    const row = db.prepare('SELECT * FROM diagrams WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
+    let data; try { data = JSON.parse(row.data_json); } catch { data = { cells: [] }; }
+    const idx = (data.cells || []).findIndex(c => c.id === req.params.edge_id && c.shape === 'edge');
+    if (idx === -1) return res.status(404).json({ error: 'EDGE_NOT_FOUND' });
+    const edge = data.cells[idx];
+    if (req.body.source !== undefined) edge.source = req.body.source;
+    if (req.body.target !== undefined) edge.target = req.body.target;
+    if (req.body.label !== undefined) edge.labels = [{ attrs: { label: { text: req.body.label } } }];
+    db.prepare('UPDATE diagrams SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), actorName(req) || 'unknown', Date.now(), req.params.id);
+    res.json({ edge });
+  });
+
+  // DELETE /api/diagrams/:id/edges/:edge_id — delete an edge
+  app.delete('/api/diagrams/:id/edges/:edge_id', authenticateAgent, (req, res) => {
+    const row = db.prepare('SELECT * FROM diagrams WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
+    let data; try { data = JSON.parse(row.data_json); } catch { data = { cells: [] }; }
+    const before = (data.cells || []).length;
+    data.cells = (data.cells || []).filter(c => c.id !== req.params.edge_id);
+    if (data.cells.length === before) return res.status(404).json({ error: 'EDGE_NOT_FOUND' });
+    db.prepare('UPDATE diagrams SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(data), actorName(req) || 'unknown', Date.now(), req.params.id);
+    res.json({ deleted: true });
   });
 
   // ─── Content Items ─────────────────────────────
