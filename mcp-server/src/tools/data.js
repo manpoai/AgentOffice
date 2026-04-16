@@ -1,6 +1,110 @@
 import { z } from 'zod';
 
 export function registerDataTools(server, gw) {
+  // ─── Table object-level tools ───────────────────────────────────────────────
+
+  server.tool(
+    'create_table',
+    'Create a new database table with optional initial columns. Returns the table_id and created columns.',
+    {
+      title: z.string().describe('Table title'),
+      columns: z.array(z.object({
+        title: z.string().describe('Column name'),
+        uidt: z.enum([
+          'SingleLineText', 'LongText', 'Number', 'Decimal', 'Checkbox',
+          'Date', 'DateTime', 'SingleSelect', 'MultiSelect',
+          'PhoneNumber', 'Email', 'URL', 'Attachment',
+        ]).optional().default('SingleLineText').describe('Column type'),
+        options: z.array(z.string()).optional().describe('Options for SingleSelect/MultiSelect columns'),
+      })).optional().default([]).describe('Initial columns (a row-id column is always auto-created)'),
+    },
+    async ({ title, columns }) => {
+      const result = await gw.post('/data/tables', { title, columns });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'update_table_meta',
+    'Rename a database table.',
+    {
+      table_id: z.string().describe('Table ID to rename'),
+      title: z.string().describe('New table title'),
+    },
+    async ({ table_id, title }) => {
+      const result = await gw.patch(`/data/tables/${table_id}`, { title });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'delete_table',
+    'Permanently delete a database table and all its rows. This cannot be undone.',
+    {
+      table_id: z.string().describe('Table ID to delete'),
+    },
+    async ({ table_id }) => {
+      const result = await gw.del(`/data/tables/${table_id}`);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  // ─── Column schema tools ─────────────────────────────────────────────────────
+
+  server.tool(
+    'add_column',
+    'Add a new column to an existing table.',
+    {
+      table_id: z.string().describe('Table ID'),
+      title: z.string().describe('Column name'),
+      uidt: z.enum([
+        'SingleLineText', 'LongText', 'Number', 'Decimal', 'Checkbox',
+        'Date', 'DateTime', 'SingleSelect', 'MultiSelect',
+        'PhoneNumber', 'Email', 'URL', 'Attachment',
+      ]).optional().default('SingleLineText').describe('Column type'),
+      options: z.array(z.string()).optional().describe('Options for SingleSelect/MultiSelect columns'),
+    },
+    async ({ table_id, title, uidt, options }) => {
+      const body = { title, uidt };
+      if (options) body.options = options;
+      const result = await gw.post(`/data/tables/${table_id}/columns`, body);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'update_column',
+    'Rename a column or update its select options. Column type (uidt) cannot be changed — delete and recreate if needed.',
+    {
+      table_id: z.string().describe('Table ID'),
+      column_id: z.string().describe('Column ID (from describe_table)'),
+      title: z.string().optional().describe('New column name'),
+      options: z.array(z.string()).optional().describe('New full options list for SingleSelect/MultiSelect (replaces existing)'),
+    },
+    async ({ table_id, column_id, title, options }) => {
+      const body = {};
+      if (title) body.title = title;
+      if (options) body.options = options;
+      const result = await gw.patch(`/data/tables/${table_id}/columns/${column_id}`, body);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  server.tool(
+    'delete_column',
+    'Delete a column from a table. All data in that column will be lost.',
+    {
+      table_id: z.string().describe('Table ID'),
+      column_id: z.string().describe('Column ID to delete (from describe_table)'),
+    },
+    async ({ table_id, column_id }) => {
+      const result = await gw.del(`/data/tables/${table_id}/columns/${column_id}`);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    }
+  );
+
+  // ─── Row-level tools ─────────────────────────────────────────────────────────
+
   server.tool(
     'list_tables',
     'List all database tables in the AOSE workspace. Returns table IDs and titles.',
