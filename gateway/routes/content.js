@@ -19,6 +19,19 @@ function normalizeDiagramCells(cells) {
   if (!Array.isArray(cells)) return cells;
   return cells.map(cell => {
     if (cell.shape === 'edge') return cell;
+
+    // Convert geometry:{x,y,width,height} to top-level props (X6 native format)
+    if (cell.geometry && typeof cell.geometry === 'object') {
+      const { geometry, ...rest } = cell;
+      cell = {
+        ...rest,
+        x: cell.x ?? geometry.x,
+        y: cell.y ?? geometry.y,
+        width: cell.width ?? geometry.width,
+        height: cell.height ?? geometry.height,
+      };
+    }
+
     if (cell.shape === 'flowchart-node' && cell.data?.flowchartShape) return cell;
     const label = cell.attrs?.label?.text || cell.data?.label || '';
     const bodyFill = cell.attrs?.body?.fill || '#ffffff';
