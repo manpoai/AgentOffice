@@ -10,6 +10,7 @@
  */
 
 import React, { useState } from 'react';
+import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIsMobile } from '@/lib/hooks/use-mobile';
@@ -105,6 +106,7 @@ export function RevisionHistory({
 }: RevisionHistoryProps) {
   const { t } = useT();
   const queryClient = useQueryClient();
+  const { actor } = useAuth();
   const isMobile = useIsMobile();
   // Use internal selection state if parent doesn't control it
   const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
@@ -159,6 +161,7 @@ export function RevisionHistory({
       trigger_type: 'manual',
       created_at: new Date().toISOString(),
       description: null,
+      created_by: actor?.display_name ?? null,
     };
     queryClient.setQueryData<RevisionItem[]>(queryKey, (old = []) => [optimisticRevision, ...old]);
     try {

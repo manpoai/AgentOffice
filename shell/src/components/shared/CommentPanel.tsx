@@ -7,6 +7,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth';
 import { useOptimisticMutation } from '@/lib/hooks/use-optimistic-mutation';
 import { useT } from '@/lib/i18n';
 import {
@@ -21,6 +22,7 @@ import {
   X,
   Bot,
   AtSign,
+  Reply,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatRelativeTime } from '@/lib/utils/time';
@@ -51,6 +53,8 @@ export interface CommentPanelProps {
   autoFocus?: boolean;
   onNavigateToAnchor?: (anchor: { type: string; id: string; meta?: Record<string, unknown> }) => void;
   focusAnchor?: { type: string; id: string } | null;
+  /** Agent ID of the content creator (e.g. agt_xxx). Used to show typing indicator when content author is an agent. */
+  contentCreatorAgentId?: string | null;
 }
 
 // ── Avatar ───────────────────────────────────────────────────────────────────
@@ -78,6 +82,17 @@ function Avatar({ actor, actorId, avatarUrl, size = 32 }: { actor: string; actor
       >
         <Bot className="w-4 h-4" />
       </div>
+    );
+  }
+  if (!avatarUrl && !isAgent) {
+    // Human without avatar: use default admin avatar
+    return (
+      <img
+        src="/icons/avatar-default.jpg"
+        alt={actor}
+        className="rounded-full object-cover shrink-0"
+        style={style}
+      />
     );
   }
   return (
@@ -109,17 +124,35 @@ function QuoteBlock({ text, anchor }: { text?: string; anchor?: { label?: string
 
 // ── @mention text highlight ───────────────────────────────────────────────────
 
-function CommentText({ text }: { text: string }) {
+function CommentText({ text, agents = [] }: { text: string; agents?: Agent[] }) {
   const parts = text.split(/(@\S+)/g);
   return (
     <p className="text-sm leading-[22px] whitespace-pre-wrap break-words">
-      {parts.map((part, i) =>
-        /^@\S+/.test(part) ? (
-          <span key={i} className="text-blue-500 dark:text-blue-400 font-medium">{part}</span>
-        ) : (
-          part
-        )
-      )}
+      {parts.map((part, i) => {
+        if (/^@\S+/.test(part)) {
+          const name = part.slice(1); // remove @
+          const agent = agents.find(a => a.name === name);
+          if (agent) {
+            const avatarSrc = agent.avatar_url
+              ? resolveAvatarUrl(agent.avatar_url)
+              : agent.platform
+                ? `/icons/platform-${agent.platform}.png`
+                : null;
+            return (
+              <span key={i} className="inline-flex items-center gap-0.5 text-blue-500 dark:text-blue-400 font-medium align-middle">
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt="" className="w-4 h-4 rounded-full object-cover inline-block" />
+                ) : (
+                  <Bot className="w-3.5 h-3.5 inline-block" />
+                )}
+                {part}
+              </span>
+            );
+          }
+          return <span key={i} className="text-blue-500 dark:text-blue-400 font-medium">{part}</span>;
+        }
+        return part;
+      })}
     </p>
   );
 }
@@ -171,6 +204,8 @@ function MentionMenu({ agents, query, onSelect, anchorRef }: MentionMenuProps) {
             <div className="w-6 h-6 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0 overflow-hidden">
               {agent.avatar_url ? (
                 <img src={resolveAvatarUrl(agent.avatar_url) ?? ''} alt="" className="w-full h-full object-cover" />
+              ) : agent.platform ? (
+                <img src={`/icons/platform-${agent.platform}.png`} alt="" className="w-full h-full object-cover" />
               ) : (
                 <Bot className="w-3.5 h-3.5" />
               )}
@@ -202,6 +237,7 @@ function CommentItem({
   isHighlighted,
   replyToName,
   focusRef,
+  agents,
 }: {
   comment: Comment;
   isEditing: boolean;
@@ -218,6 +254,7 @@ function CommentItem({
   isHighlighted?: boolean;
   replyToName?: string;
   focusRef?: React.RefObject<HTMLDivElement | null>;
+  agents?: Agent[];
 }) {
   const { t } = useT();
   const [showMenu, setShowMenu] = useState(false);
@@ -235,7 +272,7 @@ function CommentItem({
     <div
       ref={focusRef as React.RefObject<HTMLDivElement>}
       className={cn(
-        'flex gap-2 pt-2',
+        'flex gap-2 pt-2 group/comment',
         isReply && 'pt-3',
       )}
     >
@@ -323,7 +360,16 @@ function CommentItem({
                 ? <QuoteBlock text={quoteText} />
                 : null
             )}
-            <CommentText text={comment.text || ''} />
+            <CommentText text={comment.text || ''} agents={agents} />
+            {onReply && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onReply(); }}
+                className="flex items-center gap-1 mt-1 text-xs text-muted-foreground/60 opacity-0 group-hover/comment:opacity-100 hover:text-sidebar-primary transition-all"
+              >
+                <Reply className="w-3 h-3" />
+                {t('comments.reply')}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -351,6 +397,8 @@ function CommentThread({
   focusCommentId,
   focusRefs,
   onNavigateToAnchor,
+  agents,
+  typingAgentsForThread,
 }: {
   comment: Comment;
   replies: Comment[];
@@ -369,6 +417,8 @@ function CommentThread({
   focusCommentId?: string;
   focusRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   onNavigateToAnchor?: (anchor: { type: string; id: string; meta?: Record<string, unknown> }) => void;
+  agents?: Agent[];
+  typingAgentsForThread?: Agent[];
 }) {
   const anchor = comment.context_payload?.anchor;
   return (
@@ -398,6 +448,7 @@ function CommentThread({
         onUnresolve={isResolved ? () => onUnresolve(comment.id) : undefined}
         isHighlighted={focusCommentId === comment.id}
         focusRef={focusRefs ? { get current() { return focusRefs.current[comment.id] ?? null; }, set current(el: HTMLDivElement | null) { focusRefs.current[comment.id] = el; } } as React.RefObject<HTMLDivElement | null> : undefined}
+        agents={agents}
       />
 
       {replies.length > 0 && (
@@ -422,10 +473,47 @@ function CommentThread({
               isReply
               isHighlighted={focusCommentId === reply.id}
               focusRef={focusRefs ? { get current() { return focusRefs.current[reply.id] ?? null; }, set current(el: HTMLDivElement | null) { focusRefs.current[reply.id] = el; } } as React.RefObject<HTMLDivElement | null> : undefined}
+              agents={agents}
             />
           ))}
         </div>
       )}
+
+      {/* Typing indicators for agents expected to reply */}
+      {typingAgentsForThread && typingAgentsForThread.length > 0 && (
+        <div>
+          {typingAgentsForThread.map(agent => (
+            <TypingIndicator key={agent.agent_id} agent={agent} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Typing indicator ─────────────────────────────────────────────────────────
+
+function TypingIndicator({ agent }: { agent: Agent }) {
+  const avatarSrc = agent.avatar_url
+    ? resolveAvatarUrl(agent.avatar_url)
+    : agent.platform
+      ? `/icons/platform-${agent.platform}.png`
+      : null;
+  return (
+    <div className="flex items-center gap-2 pt-2 pl-10">
+      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-violet-100 dark:bg-violet-900/30">
+        {avatarSrc ? (
+          <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <Bot className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+        )}
+      </div>
+      <span className="text-xs text-muted-foreground">{agent.display_name || agent.name}</span>
+      <div className="flex items-center gap-0.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
     </div>
   );
 }
@@ -470,9 +558,20 @@ export function CommentPanel({
   autoFocus,
   onNavigateToAnchor,
   focusAnchor,
+  contentCreatorAgentId: contentCreatorAgentIdProp,
 }: CommentPanelProps) {
   const { t } = useT();
+  const { actor } = useAuth();
   const queryClient = useQueryClient();
+
+  // Derive content creator agent ID from cache if not passed as prop
+  const contentCreatorAgentId = contentCreatorAgentIdProp ?? (() => {
+    const contentItems = queryClient.getQueryData<{ id: string; created_by: string | null }[]>(['content-items']);
+    const rawId = targetId.includes(':') ? targetId.split(':')[1] : targetId;
+    const item = contentItems?.find(i => i.id === rawId);
+    const createdBy = item?.created_by;
+    return createdBy && (createdBy.startsWith('agt_') || createdBy.startsWith('agent_')) ? createdBy : null;
+  })();
   const [newComment, setNewComment] = useState('');
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -480,6 +579,8 @@ export function CommentPanel({
   const [showResolved, setShowResolved] = useState(false);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
+  // Typing indicator: agents expected to reply, with timestamp of when we started waiting
+  const [typingAgents, setTypingAgents] = useState<{ agent: Agent; since: number; threadKey: string; visible: boolean }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const queryKey = ['comments', targetType, targetId, rowId];
@@ -534,12 +635,27 @@ export function CommentPanel({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [focusAnchor, comments]);
 
-  // Auto focus input when opened via MobileCommentBar or when anchor is set
+  // Auto focus input when panel opens
   useEffect(() => {
-    if (!autoFocus && !anchorType) return;
     const timer = setTimeout(() => inputRef.current?.focus(), 300);
     return () => clearTimeout(timer);
-  }, [autoFocus, anchorType]);
+  }, []);
+
+  // Clear typing indicators when agent replies arrive
+  useEffect(() => {
+    if (typingAgents.length === 0) return;
+    setTypingAgents(prev => {
+      const remaining = prev.filter(entry => {
+        // Check if this agent posted a comment after the typing started
+        return !comments.some(c =>
+          !c.id.startsWith('temp-') &&
+          (c.actor_id === entry.agent.agent_id || c.actor === entry.agent.name) &&
+          new Date(c.created_at).getTime() > entry.since - 5000 // 5s tolerance
+        );
+      });
+      return remaining.length !== prev.length ? remaining : prev;
+    });
+  }, [comments, typingAgents]);
 
   const createMut = useOptimisticMutation<Comment[], { text: string; parentId?: string }>({
     mutationFn: (vars) => {
@@ -554,7 +670,10 @@ export function CommentPanel({
       {
         id: `temp-${Date.now()}`,
         text: vars.text,
-        actor: 'You',
+        actor: actor?.display_name ?? 'You',
+        actor_id: actor?.id ?? null,
+        actor_avatar_url: actor?.avatar_url ?? null,
+        actor_platform: 'human',
         created_at: new Date().toISOString(),
         parent_id: vars.parentId ?? null,
         resolved_by: null,
@@ -596,7 +715,7 @@ export function CommentPanel({
     mutationFn: (id) => resolveContentComment(id),
     queryKey,
     optimisticUpdate: (old = [], id) =>
-      old.map((c) => (c.id === id ? { ...c, resolved_at: new Date().toISOString(), resolved_by: 'You' } : c)),
+      old.map((c) => (c.id === id ? { ...c, resolved_at: new Date().toISOString(), resolved_by: { id: actor?.id ?? '', name: actor?.display_name ?? 'You' } } : c)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
@@ -619,8 +738,44 @@ export function CommentPanel({
   const handleSubmit = useCallback(() => {
     const text = newComment.trim();
     if (!text) return;
+    // Detect agents that should show typing indicator
+    if (agents.length > 0) {
+      const pending: Agent[] = [];
+      // 1. @mentioned agents that are online
+      const mentions = text.match(/@(\S+)/g);
+      if (mentions) {
+        for (const m of mentions) {
+          const name = m.slice(1);
+          const agent = agents.find(a => a.name === name);
+          if (agent?.online) pending.push(agent);
+        }
+      }
+      // 2. Content creator agent (notified on all comments)
+      if (contentCreatorAgentId) {
+        const creatorAgent = agents.find(a => a.agent_id === contentCreatorAgentId);
+        if (creatorAgent?.online && !pending.some(a => a.agent_id === creatorAgent.agent_id)) {
+          pending.push(creatorAgent);
+        }
+      }
+      if (pending.length > 0) {
+        const threadKey = replyTo
+          ? (comments.find(c => c.id === replyTo)?.parent_id || replyTo)
+          : `new-${Date.now()}`;
+        const now = Date.now();
+        const newEntries = pending.map(agent => ({ agent, since: now, threadKey, visible: false }));
+        setTypingAgents(prev => [...prev, ...newEntries]);
+        // Show after 300ms delay
+        setTimeout(() => {
+          setTypingAgents(prev => prev.map(e => e.since === now ? { ...e, visible: true } : e));
+        }, 300);
+        // Auto-clear after 3 min
+        setTimeout(() => {
+          setTypingAgents(prev => prev.filter(e => e.since !== now));
+        }, 180_000);
+      }
+    }
     createMut.mutate({ text, parentId: replyTo ?? undefined });
-  }, [newComment, replyTo, createMut]);
+  }, [newComment, replyTo, createMut, agents, comments, contentCreatorAgentId]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -747,9 +902,25 @@ export function CommentPanel({
               focusCommentId={focusCommentId}
               focusRefs={focusRefs}
               onNavigateToAnchor={onNavigateToAnchor}
+              agents={agents}
+              typingAgentsForThread={
+                typingAgents
+                  .filter(e => e.threadKey === comment.id)
+                  .map(e => e.agent)
+              }
             />
           ));
         })()}
+
+        {/* Typing indicators for new top-level comments (not in any thread yet) */}
+        {typingAgents
+          .filter(e => e.threadKey.startsWith('new-'))
+          .map(e => (
+            <div key={`typing-${e.agent.agent_id}-${e.since}`} className="bg-card rounded-lg border border-border px-3 pb-3">
+              <TypingIndicator agent={e.agent} />
+            </div>
+          ))
+        }
       </div>
 
       {/* Input bar */}
@@ -789,7 +960,7 @@ export function CommentPanel({
               anchorRef={inputContainerRef}
             />
           )}
-          <div className="flex items-center bg-card rounded-lg border border-border h-12 px-2 gap-1">
+          <div className="flex items-center bg-card rounded-lg border border-border h-12 px-2 gap-1 has-[:focus]:border-sidebar-primary transition-colors">
             <button
               onClick={handleAtButtonClick}
               title={t('comments.mentionUser')}
