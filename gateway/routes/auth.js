@@ -31,6 +31,7 @@ function buildOnboardingPrompt(platform, aoseUrl) {
   if (platform === 'zylos') return buildZylosOnboardingPrompt(aoseUrl);
   if (platform === 'claude-code') return buildClaudeCodeOnboardingPrompt(aoseUrl);
   if (platform === 'codex') return buildCodexOnboardingPrompt(aoseUrl);
+  if (platform === 'gemini-cli') return buildGeminiCliOnboardingPrompt(aoseUrl);
   return buildGenericOnboardingPrompt(platform, aoseUrl);
 }
 
@@ -46,6 +47,7 @@ function buildOffboardingPrompt(platform, agentName) {
   if (platform === 'zylos') return buildZylosOffboardingPrompt(name);
   if (platform === 'claude-code') return buildClaudeCodeOffboardingPrompt(name);
   if (platform === 'codex') return buildCodexOffboardingPrompt(name);
+  if (platform === 'gemini-cli') return buildGeminiCliOffboardingPrompt(name);
   return buildGenericOffboardingPrompt(platform, name);
 }
 
@@ -253,6 +255,52 @@ The output should be empty (no pm2 processes for "${name}" remaining).
 You should NOT see adapter-${name}.json. Other adapter-*.json files belong to other agents and are expected.
 
 Cleanup is complete. If you are re-invited to the workspace later, run the codex onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
+}
+
+function buildGeminiCliOffboardingPrompt(name) {
+  return `You have been removed from an aose workspace as the agent named "${name}". Your agent token is already revoked server-side, so any further AOSE API call from your sidecar or aose-mcp will return 403 AGENT_DELETED. This prompt walks you through cleaning up only the host-side state that belongs to "${name}". The same host may run other AOSE agents — never touch files, processes, or MCP entries that do not provably belong to you.
+
+Step 1 — Stop your adapter sidecar
+  pm2 delete aose-adapter-${name} 2>/dev/null || true
+  pm2 save 2>/dev/null || true
+  pgrep -fla "adapter-${name}.json"
+  pkill -f "adapter-${name}.json" 2>/dev/null || true
+DO NOT run a broad pkill like \`pkill -f aose-adapter\`. That would kill sidecars belonging to other agents.
+Gemini CLI does not need a dedicated persistent session (no tmux, no pm2-managed agent process). Only the adapter sidecar needs to be stopped.
+
+Step 2 — Delete only your own files
+  rm -f ~/.aose/adapter-${name}.json
+  rm -f ~/.aose/adapter-${name}.log
+  rm -f ~/.aose/adapter-state/${name}.last-event-ts
+  rm -f ~/.aose/inbox/${name}.jsonl
+The directory ~/.aose/ is shared across all agents. Do NOT \`rm -rf\` any directory.
+
+Step 3 — Remove the AfterAgent hook
+Check <your-cwd>/.gemini/settings.json for the AfterAgent hook entry pointing to after-agent-aose.sh. Remove only that hook entry from the "AfterAgent" array. Preserve all other hooks and settings.
+Then delete the hook script: rm -f <your-cwd>/.gemini/hooks/after-agent-aose.sh
+
+Step 4 — Remove the aose MCP server entry
+Check <your-cwd>/.gemini/settings.json for the "mcpServers" section with an "aose" entry. If its AOSE_TOKEN matches your token (MY_TOKEN), remove the entire "aose" entry. Preserve all other MCP servers.
+
+Also check these fallback locations (skip if they don't exist):
+  - ~/.mcp.json (mcpServers.aose.env.AOSE_TOKEN)
+  - <your-cwd>/.mcp.json
+
+Same rule: only delete if token matches MY_TOKEN.
+
+Step 5 — Do not touch the shared skills cache
+~/.aose-mcp/skills/ is shared across every AOSE agent that runs aose-mcp on this host. Leave it in place.
+
+Step 6 — Archive your local AOSE references
+If you keep notes or memory referencing AOSE document IDs, comment IDs, or other agents from the workspace you were removed from, mark those references as archived/inactive.
+
+Step 7 — Verify
+  pm2 list | grep -E "aose-adapter-${name}"
+The output should be empty (no pm2 processes for "${name}" remaining).
+  ls -la ~/.aose/ 2>/dev/null
+You should NOT see adapter-${name}.json. Other adapter-*.json files belong to other agents and are expected.
+
+Cleanup is complete. If you are re-invited to the workspace later, run the gemini-cli onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
 }
 
 function buildZylosOffboardingPrompt(name) {
@@ -839,6 +887,168 @@ Once whoami succeeds AND you have read all skills, registration is complete.
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
 
+function buildGeminiCliOnboardingPrompt(aoseUrl) {
+  const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
+  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+
+You are running on Gemini CLI. AOSE supports Gemini CLI via a local sidecar ("aose-adapter") that pushes AOSE events into a file-based inbox. An AfterAgent hook checks this inbox after each turn — if a message is waiting, the hook uses exit-code 2 + stderr to inject the event as a retry prompt. Unlike Claude Code and Codex, Gemini CLI does not need a persistent tmux session: the sidecar is the only long-running process. Events are processed via \`gemini -p --resume\` calls that maintain session context across invocations.
+
+IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
+
+Step 1 — Confirm your agent directory
+Your agent directory (AGENT_DIR) is the working directory where this Gemini CLI session is running — it defines your AOSE identity on this host. Save the absolute path of your current working directory as AGENT_DIR. Different agents on the same host MUST use different AGENT_DIRs.
+
+Step 2 — Register with AOSE
+Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g. "my-gemini-agent"). This name is BOTH your @-mention handle and your display label in AOSE — there is no separate "display name" field. You can refine the display name later via the profile API if you want something prettier; the registration form takes one identifier on purpose so two slightly-different values cannot end up confusing humans. Then run:
+
+  curl -sS -X POST ${aoseUrl}/agents/self-register \\
+    -H "Content-Type: application/json" \\
+    -d '{"name":"<your-agent-name>","platform":"gemini-cli"}'
+
+Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
+
+Step 3 — Wait for approval
+The workspace admin will review and approve your registration in aose. STOP HERE and return control to the human. You have no way to auto-detect approval at this point — the adapter sidecar is not running yet, so there is no event stream you can watch. The human will come back and tell you "approved — continue" once they've clicked approve in the aose admin UI. Do not poll, do not guess, do not proceed until the human tells you.
+
+Step 4 — Write the adapter config file
+Create the directory ~/.aose if it does not exist. Write the following JSON to ~/.aose/adapter-<your-agent-name>.json:
+
+{
+  "agent_name": "<your-agent-name>",
+  "platform": "gemini-cli",
+  "gateway_url": "${aoseBase}",
+  "agent_token": "<AOSE_TOKEN from Step 2>",
+  "agent_dir": "<AGENT_DIR from Step 1>"
+}
+
+Set the file permissions to 600 (chmod 600 ~/.aose/adapter-<your-agent-name>.json) so only you can read it — it contains secrets.
+
+Step 5 — Install the AfterAgent hook
+The AfterAgent hook is a shell script that checks your inbox file for pending AOSE events after each turn. When a message is waiting, it uses exit-code 2 + stderr to inject the event content as a retry prompt, so you process the event immediately.
+
+Create the directory <AGENT_DIR>/.gemini/hooks/ if it does not exist. Write the following script to <AGENT_DIR>/.gemini/hooks/after-agent-aose.sh:
+
+\`\`\`bash
+#!/bin/bash
+INBOX_FILE="$HOME/.aose/inbox/<your-agent-name>.jsonl"
+
+# Read stdin (Gemini CLI passes hook context as JSON on stdin)
+cat > /dev/null
+
+if [ ! -f "$INBOX_FILE" ]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+
+LINE=$(head -1 "$INBOX_FILE" 2>/dev/null)
+if [ -z "$LINE" ]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+
+# Consume the first line from inbox
+tail -n +2 "$INBOX_FILE" > "$INBOX_FILE.tmp" && mv "$INBOX_FILE.tmp" "$INBOX_FILE"
+
+CONTENT=$(echo "$LINE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" 2>/dev/null)
+if [ -z "$CONTENT" ]; then
+  CONTENT="$LINE"
+fi
+
+# Exit code 2 + stderr = Gemini CLI treats this as a retry with the stderr content as feedback
+echo "$CONTENT" >&2
+exit 2
+\`\`\`
+
+Make it executable: chmod +x <AGENT_DIR>/.gemini/hooks/after-agent-aose.sh
+
+Then register it in <AGENT_DIR>/.gemini/settings.json. Read the file first if it exists, then add the hook under the "hooks" key. The AfterAgent hook format for Gemini CLI:
+
+{
+  "hooks": {
+    "AfterAgent": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<AGENT_DIR>/.gemini/hooks/after-agent-aose.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
+
+If the file already has other hooks or settings, merge carefully — preserve everything else.
+
+Step 6 — Start the adapter sidecar under pm2
+Start the adapter sidecar as a managed process:
+
+  pm2 start "npx -y aose-adapter --config ~/.aose/adapter-<your-agent-name>.json" --name aose-adapter-<your-agent-name>
+  pm2 save
+
+Wait 5 seconds, then check logs:
+  pm2 logs aose-adapter-<your-agent-name> --lines 15 --nostream
+
+You should see lines like:
+  [adapter] Starting — agent: ..., platform: gemini-cli, gateway: ...
+  [adapter] SSE connected
+
+If you see errors, check the config file from Step 4.
+
+Step 7 — Configure the MCP server
+Gemini CLI reads MCP server config from \`<AGENT_DIR>/.gemini/settings.json\` (the same file where hooks are defined). Add the aose MCP server to the "mcpServers" section.
+
+TARGET_FILE = \`<AGENT_DIR>/.gemini/settings.json\`
+
+**Pre-check (mandatory)**: before writing, read TARGET_FILE if it exists and look for an existing \`mcpServers.aose\` entry. There are three cases:
+  1. No aose entry → add it.
+  2. An aose entry exists with a different token → STOP. Report to human: "settings.json already has an aose entry belonging to another agent."
+  3. An aose entry exists with the same token → it is already configured (from a previous attempt); verify it matches the format below and continue.
+
+The entry to add (merge into the existing settings.json — do NOT overwrite hooks or other settings):
+{
+  "mcpServers": {
+    "aose": {
+      "command": "npx",
+      "args": ["-y", "aose-mcp"],
+      "env": {
+        "AOSE_TOKEN": "<AOSE_TOKEN from Step 2>",
+        "AOSE_URL": "${aoseUrl}"
+      }
+    }
+  }
+}
+
+Note: Gemini CLI prefixes MCP tool names with \`mcp_<server-name>_\` — so aose tools will appear as \`mcp_aose_whoami\`, \`mcp_aose_create_doc\`, etc. (single underscores, not double). This is automatic; you do not need to rename anything.
+
+Restart Gemini CLI (exit and relaunch from inside AGENT_DIR) so the new MCP server is loaded.
+
+Step 8 — Verify end-to-end
+Call the aose "whoami" tool (it will appear as \`mcp_aose_whoami\` in your tool list). It should return your agent_id and name confirming AOSE sees you. If not, check that AOSE_TOKEN matches the token from Step 2 and that you have been approved.
+
+Step 9 — Read your operating manual (REQUIRED before doing any work)
+The aose-mcp server cached your operating skills to ~/.aose-mcp/skills/ when it started. These files are not optional reading — they describe how to behave as an AOSE agent: role and principles, typical tasks, platform overview, event handling, lifecycle, troubleshooting, output standards, and per-content-type guides (docs, comments, database, slides, flowcharts). The MCP host does not surface them automatically; you must read them yourself before responding to any AOSE event.
+
+Run:
+  ls ~/.aose-mcp/skills/
+
+You should see numbered files (00-role-and-principles.md, 01-typical-tasks.md, ..., 06-output-standards.md) plus content-*.md guides. Read every file in order. If the directory is empty or missing, your aose-mcp server failed to fetch them — check its stderr output via your MCP host's logs and report the error; do not proceed.
+
+These skills override any default assumptions you have about how to interact with documents, comments, or other agents. When in doubt during real work, re-read the relevant content-*.md file rather than guessing.
+
+**IRON RULE — event handling**: when the AfterAgent hook wakes this agent with a message, that message is a **doorbell**, not the event data. It contains no ids and no comment body — those live in the MCP mailbox. Your only correct response is:
+
+  1. Call the aose \`mcp_aose_get_unread_events\` MCP tool to pull the full events (with their \`context_payload\`).
+  2. Act on the structured payload — use \`context_payload.write_back_target.anchor_id\`, \`minimal_required_context.content_snippet\`, \`thread\`, etc.
+  3. Reply with \`mcp_aose_reply_to_comment(comment_id, text)\` or other MCP tools. NEVER curl the gateway directly, even though you saw an AOSE_TOKEN during Step 2 — the MCP server holds it for you and the MCP surface is the only supported write path.
+  4. Call \`mcp_aose_ack_events([event_ids])\` on the events you handled.
+
+Once whoami succeeds AND you have read all skills, registration is complete.
+
+If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
+}
+
 function buildZylosOnboardingPrompt(aoseUrl) {
   const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
   return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
@@ -1296,7 +1506,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
   // Admin: list available platforms (data-driven)
   app.get('/api/admin/platforms', authenticateAdmin, (req, res) => {
     const rows = db.prepare("SELECT DISTINCT platform FROM actors WHERE type = 'agent' AND platform IS NOT NULL AND deleted_at IS NULL").all();
-    const knownPlatforms = ['zylos', 'openclaw', 'claude-code', 'codex'];
+    const knownPlatforms = ['zylos', 'openclaw', 'claude-code', 'codex', 'gemini-cli'];
     const activePlatforms = rows.map(r => r.platform);
     const platforms = [...new Set([...knownPlatforms, ...activePlatforms])];
     res.json({ platforms });

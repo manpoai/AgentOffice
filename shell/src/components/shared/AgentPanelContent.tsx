@@ -14,6 +14,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   openclaw: 'OpenClaw',
   'claude-code': 'Claude Code',
   codex: 'Codex CLI',
+  'gemini-cli': 'Gemini CLI',
 };
 
 function platformLabel(name: string) {
