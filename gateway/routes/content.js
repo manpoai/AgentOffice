@@ -83,9 +83,21 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
   app.get('/api/presentations/:id', authenticateAgent, (req, res) => {
     const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
     if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
+    const data = JSON.parse(pres.data_json);
+
+    // Lazy migration: ensure all slides have stable IDs
+    let needsSave = false;
+    (data.slides || []).forEach(s => {
+      if (!s.id) { s.id = crypto.randomUUID(); needsSave = true; }
+    });
+    if (needsSave) {
+      db.prepare('UPDATE presentations SET data_json = ? WHERE id = ?')
+        .run(JSON.stringify(data), req.params.id);
+    }
+
     res.json({
       id: pres.id,
-      data: JSON.parse(pres.data_json),
+      data,
       created_by: pres.created_by,
       updated_by: pres.updated_by,
       created_at: pres.created_at,
@@ -188,13 +200,16 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
       slide = SLIDE_LAYOUTS.blank(opts);
     }
 
+    // Assign stable slide_id so element-level operations (update_slide_element etc.) work immediately
+    if (!slide.id) slide.id = crypto.randomUUID();
+
     data.slides.push(slide);
     const now = Date.now();
     const agentName = actorName(req);
     db.prepare('UPDATE presentations SET data_json = ?, updated_by = ?, updated_at = ? WHERE id = ?')
       .run(JSON.stringify(data), agentName, now, req.params.id);
 
-    res.status(201).json({ index: data.slides.length - 1, slide, updated_at: now });
+    res.status(201).json({ index: data.slides.length - 1, slide_id: slide.id, slide, updated_at: now });
   });
 
   app.patch('/api/presentations/:id/slides/:index', authenticateAgent, (req, res) => {
@@ -225,9 +240,20 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
     const pres = db.prepare('SELECT * FROM presentations WHERE id = ?').get(req.params.id);
     if (!pres) return res.status(404).json({ error: 'NOT_FOUND' });
     const data = JSON.parse(pres.data_json);
+
+    // Lazy migration: assign stable slide_id to any slide that lacks one
+    let needsSave = false;
+    (data.slides || []).forEach(s => {
+      if (!s.id) { s.id = crypto.randomUUID(); needsSave = true; }
+    });
+    if (needsSave) {
+      db.prepare('UPDATE presentations SET data_json = ? WHERE id = ?')
+        .run(JSON.stringify(data), req.params.id);
+    }
+
     const slides = (data.slides || []).map((s, idx) => ({
       index: idx,
-      slide_id: s.id || null,
+      slide_id: s.id,
       background: s.background || '#ffffff',
       element_count: Array.isArray(s.elements) ? s.elements.length : 0,
       notes_preview: (s.notes || '').slice(0, 80),
