@@ -8,14 +8,18 @@
     "prestart": "node scripts/sync-locales.js",
     "predev": "node scripts/sync-locales.js",
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --test 'lib/__tests__/*.test.mjs' 'lib/table-engine/__tests__/*.test.mjs'"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",
     "cors": "^2.8.6",
     "express": "^4.21.0",
     "jsonwebtoken": "^9.0.3",
+    "markdown-it": "^14.1.1",
     "multer": "^2.1.1",
+    "prosemirror-markdown": "^1.13.4",
+    "prosemirror-model": "^1.25.4",
     "ws": "^8.18.0"
   }
 }

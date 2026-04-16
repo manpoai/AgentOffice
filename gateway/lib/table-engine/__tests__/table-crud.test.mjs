@@ -1,39 +1,13 @@
 /**
  * Tests for database object layer + schema layer MCP tools (4.3D)
- * Covers: create_table, add_column, update_column, delete_column, reorder_columns
- * Also regression: row-level operations (insert/query/update/delete) unaffected by schema changes
- * Run from gateway/ dir: node lib/table-engine/__tests__/table-crud.test.mjs
+ * Run: node --test gateway/lib/table-engine/__tests__/table-crud.test.mjs
  */
 
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { runTableEngineMigrations } from '../migrations.js';
 import { createSchema } from '../schema.js';
-
-let pass = 0, fail = 0;
-function test(name, fn) {
-  try {
-    fn();
-    pass++;
-    console.log(`  ✓ ${name}`);
-  } catch (err) {
-    fail++;
-    console.error(`  ✗ ${name}\n      ${err.message}`);
-  }
-}
-function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
-function assertEq(a, b, msg) {
-  if (a !== b) throw new Error(`${msg || 'expected'}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
-}
-function assertNotNull(v, msg) { if (v == null) throw new Error(msg || 'expected non-null'); }
-function assertThrows(fn, msgFragment) {
-  try { fn(); } catch (err) {
-    if (msgFragment && !err.message.includes(msgFragment) && err.code !== msgFragment) {
-      throw new Error(`expected error containing "${msgFragment}", got "${err.message}"`);
-    }
-    return;
-  }
-  throw new Error('expected an error but none was thrown');
-}
 
 function setup() {
   const db = new Database(':memory:');
@@ -42,13 +16,13 @@ function setup() {
   return { db, schema };
 }
 
-// ── P0-2A: create_table ──
+// ── create_table ──
 
 test('create_table: creates empty table with id and title', () => {
   const { schema } = setup();
   const t = schema.createTable({ title: 'My Table' });
-  assertNotNull(t.id, 'table has id');
-  assertEq(t.title, 'My Table', 'table title matches');
+  assert.ok(t.id);
+  assert.equal(t.title, 'My Table');
 });
 
 test('create_table: creates table with initial columns', () => {
@@ -60,31 +34,29 @@ test('create_table: creates table with initial columns', () => {
       { title: 'Score', uidt: 'Number' },
     ],
   });
-  const fields = schema.listFields(t.id);
-  // System primary key + 2 user columns
-  const userFields = fields.filter(f => !f.is_primary);
-  assertEq(userFields.length, 2, 'two user columns created');
-  assert(userFields.some(f => f.title === 'Name'), 'Name column exists');
-  assert(userFields.some(f => f.title === 'Score'), 'Score column exists');
+  const fields = schema.listFields(t.id).filter(f => !f.is_primary);
+  assert.equal(fields.length, 2);
+  assert.ok(fields.some(f => f.title === 'Name'));
+  assert.ok(fields.some(f => f.title === 'Score'));
 });
 
 test('create_table: describe_table consistency after creation', () => {
   const { schema } = setup();
   const t = schema.createTable({ title: 'Describe Me', columns: [{ title: 'Field1', uidt: 'SingleLineText' }] });
   const fields = schema.listFields(t.id);
-  assert(fields.length > 0, 'listFields returns fields');
-  assert(fields.some(f => f.title === 'Field1'), 'Field1 listed');
+  assert.ok(fields.length > 0);
+  assert.ok(fields.some(f => f.title === 'Field1'));
 });
 
-// ── P0-2B: add_column / update_column / delete_column / reorder_columns ──
+// ── add_column / update_column / delete_column / reorder_columns ──
 
 test('add_column: adds new column to existing table', () => {
   const { schema } = setup();
   const t = schema.createTable({ title: 'Cols Test' });
   const f = schema.addField(t.id, { title: 'Email', uidt: 'Email' });
-  assertNotNull(f, 'addField returns field id');
+  assert.ok(f);
   const fields = schema.listFields(t.id);
-  assert(fields.some(ff => ff.title === 'Email'), 'Email column found after add');
+  assert.ok(fields.some(ff => ff.title === 'Email'));
 });
 
 test('add_column: multiple columns retain independent physical columns', () => {
@@ -93,9 +65,9 @@ test('add_column: multiple columns retain independent physical columns', () => {
   schema.addField(t.id, { title: 'A', uidt: 'SingleLineText' });
   schema.addField(t.id, { title: 'B', uidt: 'Number' });
   const fields = schema.listFields(t.id).filter(f => !f.is_primary);
-  assertEq(fields.length, 2, 'two non-primary fields');
+  assert.equal(fields.length, 2);
   const physCols = fields.map(f => f.physical_column);
-  assert(new Set(physCols).size === 2, 'distinct physical columns');
+  assert.equal(new Set(physCols).size, 2, 'distinct physical columns');
 });
 
 test('update_column: renames a column', () => {
@@ -104,15 +76,15 @@ test('update_column: renames a column', () => {
   const field = schema.addField(t.id, { title: 'OldName', uidt: 'SingleLineText' });
   schema.updateField(field.id, { title: 'NewName' });
   const fields = schema.listFields(t.id);
-  assert(fields.some(f => f.title === 'NewName'), 'NewName found after rename');
-  assert(!fields.some(f => f.title === 'OldName'), 'OldName no longer present');
+  assert.ok(fields.some(f => f.title === 'NewName'));
+  assert.ok(!fields.some(f => f.title === 'OldName'));
 });
 
 test('update_column: rejects physical_column patch (immutable)', () => {
   const { schema } = setup();
   const t = schema.createTable({ title: 'Immutable' });
   const field = schema.addField(t.id, { title: 'F', uidt: 'SingleLineText' });
-  assertThrows(() => schema.updateField(field.id, { physical_column: 'f_hax' }), 'immutable');
+  assert.throws(() => schema.updateField(field.id, { physical_column: 'f_hax' }), /immutable/);
 });
 
 test('delete_column: removes column from listFields', () => {
@@ -121,7 +93,7 @@ test('delete_column: removes column from listFields', () => {
   const field = schema.addField(t.id, { title: 'Temp', uidt: 'SingleLineText' });
   schema.dropField(field.id);
   const fields = schema.listFields(t.id);
-  assert(!fields.some(f => f.id === field.id), 'deleted column not found');
+  assert.ok(!fields.some(f => f.id === field.id));
 });
 
 test('delete_column: other columns survive deletion', () => {
@@ -131,8 +103,8 @@ test('delete_column: other columns survive deletion', () => {
   const toDelete = schema.addField(t.id, { title: 'Drop', uidt: 'Number' });
   schema.dropField(toDelete.id);
   const fields = schema.listFields(t.id);
-  assert(fields.some(f => f.title === 'Keep'), 'Keep column survives');
-  assert(!fields.some(f => f.title === 'Drop'), 'Drop column gone');
+  assert.ok(fields.some(f => f.title === 'Keep'));
+  assert.ok(!fields.some(f => f.title === 'Drop'));
 });
 
 test('reorder_columns: updates position of columns', () => {
@@ -140,16 +112,15 @@ test('reorder_columns: updates position of columns', () => {
   const t = schema.createTable({ title: 'Reorder' });
   const f1 = schema.addField(t.id, { title: 'First', uidt: 'SingleLineText' });
   const f2 = schema.addField(t.id, { title: 'Second', uidt: 'Number' });
-  // Reverse order: put f2 first
   schema.updateField(f2.id, { position: 0 });
   schema.updateField(f1.id, { position: 1 });
   const fields = schema.listFields(t.id).filter(f => !f.is_primary);
   const sorted = [...fields].sort((a, b) => a.position - b.position);
-  assertEq(sorted[0].title, 'Second', 'Second is now first after reorder');
-  assertEq(sorted[1].title, 'First', 'First is now second after reorder');
+  assert.equal(sorted[0].title, 'Second');
+  assert.equal(sorted[1].title, 'First');
 });
 
-// ── P0-2D: describe_table + query_rows consistency after schema changes ──
+// ── describe_table consistency ──
 
 test('describe_table consistency: listFields after add + delete returns only live columns', () => {
   const { schema } = setup();
@@ -158,21 +129,20 @@ test('describe_table consistency: listFields after add + delete returns only liv
   const deleted = schema.addField(t.id, { title: 'Dead', uidt: 'Number' });
   schema.dropField(deleted.id);
   const fields = schema.listFields(t.id);
-  assert(fields.some(f => f.title === 'Alive'), 'Alive column present');
-  assert(!fields.some(f => f.title === 'Dead'), 'Dead column not present');
+  assert.ok(fields.some(f => f.title === 'Alive'));
+  assert.ok(!fields.some(f => f.title === 'Dead'));
 });
 
-// ── Row-level regression: insert/update/delete after schema changes ──
+// ── Row-level regression ──
 
 test('row regression: physical column present in DB after adding a column', () => {
   const { db, schema } = setup();
   const t = schema.createTable({ title: 'RowReg', columns: [{ title: 'Val', uidt: 'SingleLineText' }] });
   const field = schema.listFields(t.id).find(f => f.title === 'Val');
-  assertNotNull(field, 'Val field found');
-  // Validate schema is intact at the DB level
+  assert.ok(field, 'Val field found');
   const physTable = `utbl_${t.id}_rows`;
   const tableInfo = db.prepare(`PRAGMA table_info("${physTable}")`).all();
-  assert(tableInfo.some(c => c.name === field.physical_column), 'physical column exists in DB');
+  assert.ok(tableInfo.some(c => c.name === field.physical_column));
 });
 
 test('row regression: physical column removed from DB after dropField', () => {
@@ -180,13 +150,9 @@ test('row regression: physical column removed from DB after dropField', () => {
   const t = schema.createTable({ title: 'PhysReg' });
   const field = schema.addField(t.id, { title: 'X', uidt: 'SingleLineText' });
   const physTable = `utbl_${t.id}_rows`;
-  // Confirm column exists before drop
   let tableInfo = db.prepare(`PRAGMA table_info("${physTable}")`).all();
-  assert(tableInfo.some(c => c.name === field.physical_column), 'column exists before drop');
+  assert.ok(tableInfo.some(c => c.name === field.physical_column));
   schema.dropField(field.id);
   tableInfo = db.prepare(`PRAGMA table_info("${physTable}")`).all();
-  assert(!tableInfo.some(c => c.name === field.physical_column), 'column removed after drop');
+  assert.ok(!tableInfo.some(c => c.name === field.physical_column));
 });
-
-console.log(`\n[table-crud] ${pass} passed, ${fail} failed`);
-process.exit(fail > 0 ? 1 : 0);

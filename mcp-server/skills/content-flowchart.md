@@ -40,7 +40,7 @@ The human describes a process: "create a flowchart for the order approval workfl
 
 The human says "change the 'Reject' step to 'Request Changes'" or comments on a specific node.
 
-1. Call `read_diagram(diagram_id)` to get the current cells (or use the event payload's anchor if it already contains the node ID).
+1. Call `get_diagram(diagram_id)` to get the current cells (or use the event payload's anchor if it already contains the node ID).
 2. Identify the target cell by its `id`.
 3. Call `update_node(diagram_id, node_id, patch)` or `update_edge(diagram_id, edge_id, patch)` — only the target cell changes.
 4. Report what changed.
@@ -51,7 +51,7 @@ Do **not** write back the entire cells array to change one node. The dedicated t
 
 The human says "add an error handling branch after the validation step."
 
-1. Call `read_diagram(diagram_id)` to understand the current structure and existing node positions.
+1. Call `get_diagram(diagram_id)` to understand the current structure and existing node positions.
 2. Compute coordinates for new nodes that fit the layout (leave enough gap, don't overlap).
 3. Call `add_node(diagram_id, spec)` for each new node.
 4. Call `add_edge(diagram_id, spec)` for each new edge.
