@@ -322,6 +322,8 @@ export default function ContentPage() {
       if (targetId) {
         const sel = parseContentId(targetId);
         if (sel) {
+          window.dispatchEvent(new CustomEvent('flush-diagram-save'));
+          window.dispatchEvent(new CustomEvent('flush-doc-save'));
           setSelection(sel);
           syncSelectionToURL(sel);
           setMobileView('detail');
@@ -559,6 +561,7 @@ export default function ContentPage() {
   // Mobile back: clear selection + URL + sessionStorage + switch to list view
   const handleMobileBack = useCallback(() => {
     window.dispatchEvent(new CustomEvent('flush-doc-save'));
+    window.dispatchEvent(new CustomEvent('flush-diagram-save'));
     setSelection(null);
     syncSelectionToURL(null);
     try { sessionStorage.removeItem('aose-content-selection'); } catch {}
@@ -597,6 +600,7 @@ export default function ContentPage() {
 
   const handleSelect = (nodeId: string) => {
     window.dispatchEvent(new CustomEvent('flush-doc-save'));
+    window.dispatchEvent(new CustomEvent('flush-diagram-save'));
     const node = effectiveNodes.get(nodeId);
     if (!node) return;
     const sel = { type: node.type, id: node.rawId };
@@ -621,6 +625,8 @@ export default function ContentPage() {
 
   // Navigate to a breadcrumb item by rawId — resolves type from the content tree
   const navigateToBreadcrumb = (rawId: string) => {
+    window.dispatchEvent(new CustomEvent('flush-diagram-save'));
+    window.dispatchEvent(new CustomEvent('flush-doc-save'));
     // Try all possible node types
     for (const prefix of ['doc', 'table', 'presentation', 'diagram']) {
       const nodeId = `${prefix}:${rawId}`;
@@ -723,6 +729,8 @@ export default function ContentPage() {
 
   const handleCreateDoc = async (parentNodeId?: string) => {
     if (creating) return;
+    window.dispatchEvent(new CustomEvent('flush-diagram-save'));
+    window.dispatchEvent(new CustomEvent('flush-doc-save'));
     setCreating(true);
     try {
       const item = await gw.createContentItem({
@@ -747,6 +755,8 @@ export default function ContentPage() {
 
   const handleCreateTable = async (parentNodeId?: string) => {
     if (creating) return;
+    window.dispatchEvent(new CustomEvent('flush-diagram-save'));
+    window.dispatchEvent(new CustomEvent('flush-doc-save'));
     setCreating(true);
     try {
       const item = await gw.createContentItem({
@@ -771,6 +781,8 @@ export default function ContentPage() {
 
   const handleCreatePresentation = async (parentNodeId?: string) => {
     if (creating) return;
+    window.dispatchEvent(new CustomEvent('flush-diagram-save'));
+    window.dispatchEvent(new CustomEvent('flush-doc-save'));
     setCreating(true);
     try {
       const item = await gw.createContentItem({
@@ -795,6 +807,8 @@ export default function ContentPage() {
 
   const handleCreateDiagram = async (parentNodeId?: string) => {
     if (creating) return;
+    window.dispatchEvent(new CustomEvent('flush-diagram-save'));
+    window.dispatchEvent(new CustomEvent('flush-doc-save'));
     setCreating(true);
     try {
       const item = await gw.createContentItem({

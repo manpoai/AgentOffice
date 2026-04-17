@@ -217,6 +217,8 @@
   },
   "editor": {
     "outline": "목차",
+    "outlineNoHeadings": "제목 없음",
+    "outlineEmptyText": "(텍스트 없음)",
     "heading1": "제목 1",
     "heading1Desc": "큰 제목",
     "heading2": "제목 2",

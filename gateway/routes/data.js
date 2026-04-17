@@ -8,10 +8,17 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createUnifiedComment } from '../lib/comment-service.js';
 import { isAgentRequest } from '../lib/snapshot-helper.js';
+import { insertNotification } from '../lib/notifications.js';
 import multer from 'multer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GATEWAY_DIR = path.dirname(__dirname);
+
+// Color palette matching the frontend's SELECT_COLORS for consistent chip rendering
+const SELECT_COLORS = [
+  '#d4e5ff', '#d1f0e0', '#fde2cc', '#fdd8d8', '#e8d5f5',
+  '#d5e8f5', '#fff3bf', '#f0d5e8', '#d5f5e8', '#e8e8d5',
+];
 
 // Get display name for the authenticated actor (human or agent)
 function actorName(req) {
@@ -166,11 +173,11 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
         const f = fieldByTitle.get(colTitle);
         if (!f) continue;
         if ((f.uidt === 'SingleSelect' || f.uidt === 'MultiSelect') && Array.isArray(col.options)) {
-          for (const o of col.options) {
+          col.options.forEach((o, idx) => {
             const optTitle = typeof o === 'string' ? o : (o.title || o.value || '');
-            if (!optTitle) continue;
-            tableEngine.addOption(f.id, { value: optTitle, color: o.color || 'light-blue' });
-          }
+            if (!optTitle) return;
+            tableEngine.addOption(f.id, { value: optTitle, color: o.color || SELECT_COLORS[idx % SELECT_COLORS.length] });
+          });
         }
       }
 
@@ -180,10 +187,33 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
       } catch (e) { console.error('[gateway] default view create failed:', e.message); }
 
       const fields = tableEngine.listFields(t.id);
-      const responseCols = fields.map(f => mapFieldToColumn(f));
+      const selectOptionsByField = new Map();
+      for (const f of fields) {
+        if (f.uidt === 'SingleSelect' || f.uidt === 'MultiSelect') {
+          selectOptionsByField.set(f.id, tableEngine.listOptions(f.id));
+        }
+      }
+      const responseCols = fields.map(f => mapFieldToColumn(f, selectOptionsByField));
 
       const nodeId = `table:${t.id}`;
       contentItemsUpsert.run(nodeId, t.id, 'table', title, null, null, null, createdBy, null, new Date().toISOString(), null, null, req.actor?.id || req.agent?.id || null, Date.now());
+
+      // Notify human users when agent creates content
+      if (isAgentRequest(req)) {
+        try {
+          const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+          for (const actor of humanActors) {
+            const { id: notifId } = insertNotification(db, { genId }, {
+              actorId: createdBy, targetActorId: actor.id, type: 'content_created',
+              titleKey: 'serverNotifications.content_created.title', titleParams: { title: title || '' },
+              bodyKey: 'serverNotifications.content_created.body', bodyParams: { agent: createdBy, kind: '@:serverNotifications.kinds.table', title: title || nodeId },
+              link: `/content?id=${nodeId}`, meta: { content_id: nodeId, type: 'table' },
+            });
+            pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'content_created', content_id: nodeId, title } });
+            pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type: 'table', id: nodeId, title } });
+          }
+        } catch (e) { console.warn('[data] table notification failed:', e.message); }
+      }
 
       res.status(201).json({ table_id: t.id, title, columns: responseCols });
     } catch (e) {
@@ -259,11 +289,11 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
 
       // Initial select options for SingleSelect/MultiSelect, if provided.
       if ((rawUidt === 'SingleSelect' || rawUidt === 'MultiSelect') && Array.isArray(options)) {
-        for (const o of options) {
+        options.forEach((o, idx) => {
           const optTitle = typeof o === 'string' ? o : (o.title || o.value || '');
-          if (!optTitle) continue;
-          tableEngine.addOption(f.id, { value: optTitle, color: o.color || 'light-blue' });
-        }
+          if (!optTitle) return;
+          tableEngine.addOption(f.id, { value: optTitle, color: o.color || SELECT_COLORS[idx % SELECT_COLORS.length] });
+        });
       }
 
       // Reciprocal Link field: when a Link is added on A→B, create the mirror on B→A
@@ -334,6 +364,8 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
         const existing = tableEngine.listOptions(columnId);
         const existingByValue = new Map(existing.map(o => [o.value, o]));
         const seenValues = new Set();
+        const existingCount = existing.length;
+        let newIdx = 0;
         for (const o of req.body.options) {
           const v = typeof o === 'string' ? o : (o.title || o.value || '');
           if (!v) continue;
@@ -343,7 +375,7 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
             const newColor = (typeof o === 'object' && o.color) || ex.color;
             if (newColor !== ex.color) tableEngine.updateOption(ex.id, { color: newColor });
           } else {
-            tableEngine.addOption(columnId, { value: v, color: (typeof o === 'object' && o.color) || 'light-blue' });
+            tableEngine.addOption(columnId, { value: v, color: (typeof o === 'object' && o.color) || SELECT_COLORS[(existingCount + newIdx++) % SELECT_COLORS.length] });
           }
         }
         for (const ex of existing) {
@@ -454,6 +486,7 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
     is: 'eq', isnot: 'neq',
     null: 'is_empty', notnull: 'is_not_empty',
     in: 'in', notin: 'not_in',
+    has_any: 'has_any', has_all: 'has_all',
   };
   // Reverse for GET responses — pick the canonical name.
   const ENGINE_TO_FILTER_OP = {
@@ -462,6 +495,7 @@ export default function dataRoutes(app, { db, authenticateAgent, genId, contentI
     gt: 'gt', gte: 'gte', lt: 'lt', lte: 'lte',
     is_empty: 'null', is_not_empty: 'notnull',
     in: 'in', not_in: 'notin',
+    has_any: 'has_any', has_all: 'has_all',
   };
 
   function mapViewToWire(v) {

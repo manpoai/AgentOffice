@@ -28,6 +28,15 @@ import { SELECT_COLORS, getOptionColor } from './types';
 
 const READONLY_TYPES = new Set(['ID', 'AutoNumber', 'CreatedTime', 'LastModifiedTime', 'CreatedBy', 'LastModifiedBy', 'Formula', 'Rollup', 'Lookup', 'Count']);
 
+/** Parse a MultiSelect value — backend returns JSON array; legacy data may be comma string. */
+function parseMultiSelect(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === 'string' && value.startsWith('[')) {
+    try { const parsed = JSON.parse(value); if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean); } catch {}
+  }
+  return typeof value === 'string' ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+
 /** Resolve attachment path to a proxied URL */
 function attachmentUrl(a: { signedPath?: string; path?: string }): string {
   const p = a.signedPath || a.path || '';
@@ -320,11 +329,10 @@ function FieldRow({ col, value, rowId, tableId, onSaved }: {
   };
 
   const toggleMulti = async (option: string) => {
-    const currentStr = value ? String(value) : '';
-    const items = currentStr ? currentStr.split(',').map(s => s.trim()) : [];
+    const items = parseMultiSelect(value);
     const newItems = items.includes(option) ? items.filter(i => i !== option) : [...items, option];
     try {
-      await br.updateRow(tableId, rowId, { [col.column_id]: newItems.join(',') });
+      await br.updateRow(tableId, rowId, { [col.column_id]: newItems });
       onSaved();
     } catch (e) {
       showError(t('errors.toggleMultiSelectFailed'), e);
@@ -474,7 +482,7 @@ function FieldDisplay({ value, col }: { value: unknown; col: br.BRColumn }) {
     );
   }
   if (type === 'MultiSelect') {
-    const items = str.split(',').map(s => s.trim()).filter(Boolean);
+    const items = parseMultiSelect(value);
     return (
       <div className="flex flex-wrap gap-1">
         {items.map((item, i) => {
@@ -499,7 +507,7 @@ function FieldDisplay({ value, col }: { value: unknown; col: br.BRColumn }) {
   }
   // Date / DateTime / CreatedTime / LastModifiedTime — aligned with grid (use meta.date_format)
   if (type === 'Date' || type === 'DateTime' || type === 'CreatedTime' || type === 'LastModifiedTime') {
-    const d = new Date(str);
+    const d = /^\d{10,}$/.test(str) ? new Date(Number(str)) : new Date(str);
     if (isNaN(d.getTime())) return <span className="text-foreground/70">{str}</span>;
     const fmt = (meta?.date_format as string) || 'YYYY-MM-DD';
     const y = d.getFullYear();
@@ -685,7 +693,7 @@ function DateField({ value, col, rowId, tableId, onSaved }: {
 
   const formatDisplay = (dateStr: string) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
+    const d = /^\d{10,}$/.test(dateStr) ? new Date(Number(dateStr)) : new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
     const hh = String(d.getHours()).padStart(2, '0'), mm = String(d.getMinutes()).padStart(2, '0');
@@ -721,16 +729,17 @@ function DatePickerInline({ value, showTime, onSelect, onClose }: {
   value: string; showTime: boolean; onSelect: (dateStr: string) => void; onClose: () => void;
 }) {
   const { t } = useT();
-  const initDate = value ? new Date(value) : new Date();
+  const parseDate = (v: string) => /^\d{10,}$/.test(v) ? new Date(Number(v)) : new Date(v);
+  const initDate = value ? parseDate(value) : new Date();
   const validInit = isNaN(initDate.getTime()) ? new Date() : initDate;
   const [viewYear, setViewYear] = useState(validInit.getFullYear());
   const [viewMonth, setViewMonth] = useState(validInit.getMonth());
   const [timeStr, setTimeStr] = useState(
-    value && !isNaN(new Date(value).getTime())
-      ? `${String(new Date(value).getHours()).padStart(2, '0')}:${String(new Date(value).getMinutes()).padStart(2, '0')}`
+    value && !isNaN(parseDate(value).getTime())
+      ? `${String(parseDate(value).getHours()).padStart(2, '0')}:${String(parseDate(value).getMinutes()).padStart(2, '0')}`
       : '00:00'
   );
-  const selectedDate = value && !isNaN(new Date(value).getTime()) ? new Date(value) : null;
+  const selectedDate = value && !isNaN(parseDate(value).getTime()) ? parseDate(value) : null;
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDow = new Date(viewYear, viewMonth, 1).getDay();
   const weeks: (number | null)[][] = [];
@@ -1004,8 +1013,7 @@ function SelectField({ value, col, onSelect }: { value: unknown; col: br.BRColum
 function MultiSelectField({ value, col, onToggle }: { value: unknown; col: br.BRColumn; onToggle: (option: string) => void }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
-  const currentStr = value ? String(value) : '';
-  const currentItems = currentStr ? currentStr.split(',').map(s => s.trim()) : [];
+  const currentItems = parseMultiSelect(value);
 
   return (
     <div className="relative">

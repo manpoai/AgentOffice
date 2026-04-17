@@ -46,8 +46,9 @@ interface DocOutlineListProps {
 }
 
 export function DocOutlineList({ headings, onSelect }: DocOutlineListProps) {
+  const t = useT();
   if (headings.length === 0) {
-    return <p className="text-sm text-muted-foreground px-3 py-4 text-center">暂无标题</p>;
+    return <p className="text-sm text-muted-foreground px-3 py-4 text-center">{t('editor.outlineNoHeadings')}</p>;
   }
   return (
     <div className="py-1">
@@ -60,7 +61,7 @@ export function DocOutlineList({ headings, onSelect }: DocOutlineListProps) {
           title={h.text}
         >
           <span className="text-muted-foreground text-xs mr-1.5">H{h.level}</span>
-          <span className="text-foreground">{h.text || <em className="text-muted-foreground">（无文字）</em>}</span>
+          <span className="text-foreground">{h.text || <em className="text-muted-foreground">{t('editor.outlineEmptyText')}</em>}</span>
         </button>
       ))}
     </div>

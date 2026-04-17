@@ -21,9 +21,14 @@ export function registerDiagramTools(server, gw) {
   server.tool(
     'create_diagram',
     'Create a new flowchart/diagram canvas. Returns the diagram_id.',
-    { title: z.string().describe('Diagram title') },
-    async ({ title }) => {
-      const result = await gw.post('/diagrams', { title });
+    {
+      title: z.string().describe('Diagram title'),
+      parent_id: z.string().optional().describe('Parent content item ID to nest under (omit for root level)'),
+    },
+    async ({ title, parent_id }) => {
+      const body = { title };
+      if (parent_id) body.parent_id = parent_id;
+      const result = await gw.post('/diagrams', body);
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

@@ -117,9 +117,28 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
       document.addEventListener('mousedown', onMouseDown);
       document.addEventListener('mouseup', onMouseUp);
 
+      // Touch event handling for mobile — mirrors mouse handlers with longer debounce
+      const onTouchStart = () => {
+        if (toolbarInteracting) return;
+        isMouseDown = true;
+        if (showTimeout) { clearTimeout(showTimeout); showTimeout = null; }
+      };
+      const onTouchEnd = () => {
+        if (toolbarInteracting) return;
+        isMouseDown = false;
+        showTimeout = setTimeout(() => {
+          showTimeout = null;
+          if (shouldShow(editorView)) showAt(editorView, true);
+          else scheduleHide();
+        }, 300); // Longer delay on touch to let OS selection settle
+      };
+      document.addEventListener('touchstart', onTouchStart);
+      document.addEventListener('touchend', onTouchEnd);
+
       return {
         update(view) {
           if (toolbarInteracting) return; // Skip updates during toolbar interaction
+          if (view.composing) return; // Skip during IME composition (prevents CJK input flicker)
           if (isMouseDown) { onSelection(null); isShown = false; lastFrom = -1; lastTo = -1; return; }
           if (shouldShow(view)) showAt(view, false);
           else scheduleHide();
@@ -129,6 +148,8 @@ export function floatingToolbarPlugin(onSelection: SelectionCallback): Plugin {
           if (showTimeout) clearTimeout(showTimeout);
           document.removeEventListener('mousedown', onMouseDown);
           document.removeEventListener('mouseup', onMouseUp);
+          document.removeEventListener('touchstart', onTouchStart);
+          document.removeEventListener('touchend', onTouchEnd);
           onSelection(null);
         },
       };

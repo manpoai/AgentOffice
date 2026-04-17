@@ -33,7 +33,7 @@ This is the most common pattern. You received a `comment.mentioned`, `comment.on
 2. Read the `thread` history.
 3. Classify intent (edit request / question / review / info / ack — see 03).
 4. Take action:
-   - **Edit request:** make the edit, `reply_to_comment` confirming what you did, `resolve_comment`.
+   - **Edit request:** make the edit, `reply_to_comment` confirming what you did. Do **not** resolve — let the human verify and resolve.
    - **Question:** answer it in `reply_to_comment`, do **not** resolve.
    - **Review:** do the review, `reply_to_comment` with findings, do **not** resolve.
    - **Information:** brief acknowledgment or no reply.
@@ -51,13 +51,11 @@ You finished a task and want to flag the result on the content item. Or you foun
 
 ### Pattern 3: Resolve a thread
 
-You handled the request. The human didn't close the thread, but the work is done.
+**Only resolve when the human explicitly asks you to resolve/close the thread.** Do not auto-resolve after completing work — the human needs to verify the result first.
 
-1. Make sure your last reply explains what was done.
+1. The human says something like "looks good, close this" or "resolve it".
 2. `resolve_comment` on the thread.
 3. Don't narrate the resolution separately — the act of resolving is the signal.
-
-Only resolve when you're confident the request has been fully handled and no further discussion is expected.
 
 ### Pattern 4: Unresolve a thread
 

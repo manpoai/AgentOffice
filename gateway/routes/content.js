@@ -18,7 +18,8 @@ import { insertNotification } from '../lib/notifications.js';
 function normalizeDiagramCells(cells) {
   if (!Array.isArray(cells)) return cells;
   return cells.map(cell => {
-    if (cell.shape === 'edge') return cell;
+    // Skip edge cells — X6 serializes edges as 'edge' or registered shapes like 'flowchart-edge'
+    if (cell.shape === 'edge' || cell.shape?.includes('edge') || cell.source || cell.target) return cell;
 
     // Convert geometry:{x,y,width,height} to top-level props (X6 native format)
     if (cell.geometry && typeof cell.geometry === 'object') {
@@ -90,6 +91,24 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
     );
 
     const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+
+    // Notify human users when agent creates content
+    if (isAgentRequest(req)) {
+      try {
+        const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+        for (const actor of humanActors) {
+          const { id: notifId } = insertNotification(db, { genId }, {
+            actorId: agentName, targetActorId: actor.id, type: 'content_created',
+            titleKey: 'serverNotifications.content_created.title', titleParams: { title: title || '' },
+            bodyKey: 'serverNotifications.content_created.body', bodyParams: { agent: agentName, kind: '@:serverNotifications.kinds.presentation', title: title || nodeId },
+            link: `/content?id=${nodeId}`, meta: { content_id: nodeId, type: 'presentation' },
+          });
+          pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'content_created', content_id: nodeId, title } });
+          pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type: 'presentation', id: nodeId, title } });
+        }
+      } catch (e) { console.warn('[content] presentation notification failed:', e.message); }
+    }
+
     res.status(201).json({ presentation_id: id, item });
   });
 
@@ -446,6 +465,24 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
     );
 
     const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
+
+    // Notify human users when agent creates content
+    if (isAgentRequest(req)) {
+      try {
+        const humanActors = db.prepare("SELECT id FROM actors WHERE type = 'human'").all();
+        for (const actor of humanActors) {
+          const { id: notifId } = insertNotification(db, { genId }, {
+            actorId: agentName, targetActorId: actor.id, type: 'content_created',
+            titleKey: 'serverNotifications.content_created.title', titleParams: { title: title || '' },
+            bodyKey: 'serverNotifications.content_created.body', bodyParams: { agent: agentName, kind: '@:serverNotifications.kinds.diagram', title: title || nodeId },
+            link: `/content?id=${nodeId}`, meta: { content_id: nodeId, type: 'diagram' },
+          });
+          pushHumanEvent(actor.id, { event: 'notification.created', data: { id: notifId, type: 'content_created', content_id: nodeId, title } });
+          pushHumanEvent(actor.id, { event: 'content.changed', data: { action: 'created', type: 'diagram', id: nodeId, title } });
+        }
+      } catch (e) { console.warn('[content] diagram notification failed:', e.message); }
+    }
+
     res.status(201).json({ diagram_id: id, item });
   });
 
@@ -518,7 +555,19 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
     if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
     let data; try { data = JSON.parse(row.data_json); } catch { data = { cells: [], viewport: { x:0,y:0,zoom:1 } }; }
     if (!Array.isArray(data.cells)) data.cells = [];
-    const { id, label, shape = 'rounded-rect', bgColor = '#ffffff', borderColor = '#374151', textColor = '#1f2937', x = 80, y = 80, width = 160, height = 60 } = req.body;
+    const { id, label, shape = 'rounded-rect', bgColor = '#ffffff', borderColor = '#374151', textColor = '#1f2937', width = 160, height = 60 } = req.body;
+    let { x, y } = req.body;
+    // Auto-place: if no position given, place below the lowest existing node
+    if (x == null || y == null) {
+      const existingNodes = data.cells.filter(c => c.shape !== 'edge');
+      if (existingNodes.length === 0) {
+        x = x ?? 80; y = y ?? 80;
+      } else {
+        const maxY = Math.max(...existingNodes.map(n => (n.position?.y ?? n.y ?? 0) + (n.size?.height ?? n.height ?? 60)));
+        x = x ?? (existingNodes[0].position?.x ?? existingNodes[0].x ?? 80);
+        y = y ?? (maxY + 80); // 80px gap below lowest node
+      }
+    }
     if (!id) return res.status(400).json({ error: 'MISSING_ID', message: 'id is required' });
     if (data.cells.find(c => c.id === id)) return res.status(400).json({ error: 'DUPLICATE_ID', message: `node id ${id} already exists` });
     const node = { id, shape: 'flowchart-node', x, y, width, height, data: { label: label || '', flowchartShape: shape, bgColor, borderColor, textColor, fontSize: 14, fontWeight: 'normal', fontStyle: 'normal' } };
@@ -739,7 +788,7 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
           for (const o of col.options) {
             const optTitle = typeof o === 'string' ? o : (o.title || o.value || '');
             if (!optTitle) continue;
-            tableEngine.addOption(f.id, { value: optTitle, color: o.color || 'light-blue' });
+            tableEngine.addOption(f.id, { value: optTitle, color: o.color || '#d4e5ff' });
           }
         }
       }

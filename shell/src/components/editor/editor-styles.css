@@ -41,6 +41,28 @@
   color: hsl(var(--foreground, 0 0% 9%));
 }
 
+/* Prevent iOS Safari auto-zoom on input focus (requires font-size >= 16px) */
+@media (max-width: 640px) {
+  .doc-editor-content {
+    font-size: 1rem;
+  }
+  .doc-editor-content th,
+  .doc-editor-content td {
+    font-size: 1rem;
+  }
+  .tm-menu-item,
+  .tm-toolbar-btn {
+    font-size: 1rem;
+  }
+  .doc-editor-content code {
+    font-size: 1rem;
+  }
+  .doc-editor-content pre,
+  .doc-editor-content pre code {
+    font-size: 1rem;
+  }
+}
+
 /* Empty document placeholder (full text hint) */
 .doc-editor-content p.is-empty-placeholder::before {
   content: attr(data-placeholder);

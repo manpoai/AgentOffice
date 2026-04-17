@@ -46,7 +46,7 @@ A human commented on a specific passage asking for a change. The event gave you 
 1. Read the `content_snippet` to confirm you understand the passage.
 2. Call `read_doc_outline` to find the block containing the passage.
 3. Call `doc_replace_block` with the updated content to replace only that block.
-4. Reply to the comment confirming what changed, then `resolve_comment`.
+4. Reply to the comment confirming what changed. Do **not** resolve — let the human verify and resolve.
 
 You do **not** need to call `read_doc` for a targeted edit. The snippet + outline is enough.
 

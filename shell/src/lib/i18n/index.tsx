@@ -93,7 +93,7 @@ export function useT() {
  * Reads the current locale from localStorage and returns translated strings.
  */
 export function getT(): (key: string, params?: Record<string, string | number>) => string {
-  let locale: Locale = 'zh';
+  let locale: Locale = 'en';
   try {
     const saved = localStorage.getItem(STORAGE_KEY) as Locale | null;
     if (saved && saved in LOCALES) locale = saved;

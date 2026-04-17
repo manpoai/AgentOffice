@@ -29,12 +29,12 @@ Don't create a flowchart when:
 
 The human describes a process: "create a flowchart for the order approval workflow."
 
-1. Identify the nodes: start, each step, decisions, end.
-2. Lay them out in a consistent direction (top-to-bottom or left-to-right).
-3. Assign coordinates so nodes at the same level share an axis.
-4. Build the edges connecting ports.
-5. Create the diagram with the cells array.
-6. Report: the diagram title, number of nodes/edges, overall shape.
+1. Call `create_diagram(title)` to get a `diagram_id`.
+2. Identify the nodes (start, each step, decisions, end) and edges.
+3. Call `build_diagram(diagram_id, nodes, edges)` — pass all nodes and edges at once. The tool automatically computes a top-down topological layout. **Do not compute coordinates yourself.**
+4. Report: the diagram title, number of nodes/edges, overall shape.
+
+**Always use `build_diagram` when creating a flowchart from scratch.** Do not use `add_node` in a loop to build a new diagram — `build_diagram` handles layout automatically and produces a properly spaced diagram in one call.
 
 ### Pattern 2: Update a single node or edge
 
@@ -226,6 +226,7 @@ Start → Fork ──→ Task A ──→ Join → End
 ## Anti-Patterns
 
 - **Don't reach for a flowchart when prose or a list will do.** A straight sequence of 5 steps is a list.
+- **Don't use `add_node` in a loop to create a new diagram.** Use `build_diagram` — it computes layout automatically. `add_node` is for adding one or two nodes to an existing diagram, not for building from scratch.
 - **Don't rebuild the diagram to change one node.** Use `update_node` or `update_edge` — not a full `update_diagram`. The targeted tools leave all other cells untouched.
 - **Don't call `auto_layout` silently.** It overwrites every human-set position in the diagram. Only call it when explicitly requested or when creating a fresh diagram.
 - **Don't delete a node without considering its edges.** Deleting a node via `delete_node` removes connected edges automatically — don't manually remove the edges first or you'll get a double-operation error.

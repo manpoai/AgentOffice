@@ -429,7 +429,7 @@ function X6DiagramEditorInner({
   const justFinishedEditRef = useRef(0); // timestamp — used to debounce Enter after edit commit
 
   // Auto-save
-  const { save, lastSaved, reliabilityStatus, flushRetryCount, flushSave } = useAutoSave(graph, diagramId);
+  const { save, lastSaved, reliabilityStatus, flushRetryCount, flushSave, beginSuppressDirty, endSuppressDirty } = useAutoSave(graph, diagramId);
 
   // Notify parent of save status changes
   useEffect(() => {
@@ -583,7 +583,9 @@ function X6DiagramEditorInner({
   // ─── Normalize agent-created cells to flowchart-node format ──
   function normalizeDiagramCells(cells: any[]): any[] {
     return cells.map(cell => {
-      if (cell.shape === 'edge') return cell;
+      // Skip edge cells — X6 serializes edges as 'edge' or registered edge shapes
+      // like 'flowchart-edge'. Also check for source/target which are edge-only props.
+      if (cell.shape === 'edge' || cell.shape?.includes('edge') || cell.source || cell.target) return cell;
 
       // Convert geometry:{x,y,width,height} to top-level props (X6 native format)
       if (cell.geometry && typeof cell.geometry === 'object') {
@@ -642,11 +644,16 @@ function X6DiagramEditorInner({
     if (!rawData) return;
 
     if (rawData?.cells) {
+      // Suppress dirty-marking during initial load — fromJSON fires cell:added
+      // for every cell, which would falsely mark the graph as dirty.
+      beginSuppressDirty();
       loadDataToGraph(graph, rawData);
       if (rawData.viewport) {
         graph.translate(rawData.viewport.x || 0, rawData.viewport.y || 0);
         graph.zoomTo(rawData.viewport.zoom || 1);
       }
+      // Re-enable dirty tracking after a tick (events may be batched)
+      requestAnimationFrame(() => endSuppressDirty());
     } else {
       console.warn('[diagram] Invalid diagram data: missing cells');
     }
@@ -729,7 +736,7 @@ function X6DiagramEditorInner({
       }
       setTableNodes([...tableNodesAfterLoad]);
     }
-  }, [graph, ready, diagram]);
+  }, [graph, ready, diagram, beginSuppressDirty, endSuppressDirty]);
 
   // ─── Mindmap keyboard handlers ──
   // (must be declared before the keyboard useEffect that references them)
@@ -1313,10 +1320,13 @@ function X6DiagramEditorInner({
   useEffect(() => {
     if (!graph) return;
 
+    const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
     const onSelectionChanged = () => {
       graph.getEdges().forEach(e => {
         if (e.hasTools()) e.removeTools();
       });
+      // Skip vertex handles on touch devices — pinch gesture lands on handles and causes vertex drag
+      if (isTouchDevice) return;
       const cells = graph.getSelectedCells();
       if (cells.length === 1 && cells[0].isEdge()) {
         const edge = cells[0] as Edge;
@@ -1591,7 +1601,7 @@ function X6DiagramEditorInner({
       showPreview(screenX, screenY, screenW, screenH, previewBorder, previewBg, portSX, portSY, tSX, tSY);
     };
 
-    const handlePortLeave = () => {
+    const handlePortLeave = ({ node, port }: any = {}) => {
       restorePortStyle();
       hidePreview();
     };
@@ -1602,7 +1612,7 @@ function X6DiagramEditorInner({
     };
 
     // When edge drag starts, immediately hide the preview
-    const handleEdgeAdded = ({ isNew }: any) => {
+    const handleEdgeAdded = ({ edge, isNew }: any) => {
       if (isNew) {
         hidePreview();
         restorePortStyle();
@@ -1836,6 +1846,7 @@ function X6DiagramEditorInner({
           <div
             ref={containerRef}
             className={cn('w-full h-full', activeTool !== 'select' && 'cursor-crosshair')}
+            style={{ touchAction: 'none' }}
           />
 
           {/* Mobile node overlays — workaround for Safari foreignObject bug */}

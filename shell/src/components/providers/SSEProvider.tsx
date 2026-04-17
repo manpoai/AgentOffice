@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth';
+import * as gw from '@/lib/api/gateway';
 
 const SSEContext = createContext<EventSource | null>(null);
 
@@ -45,7 +46,27 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
       // EventSource auto-reconnects
     };
 
-    return () => { es.close(); esRef.current = null; };
+    // Reconnect SSE and refetch key queries when page becomes visible again
+    // (mobile browsers often kill SSE connections when backgrounded)
+    const onVisibilityChange = () => {
+      if (document.hidden) return;
+      if (esRef.current?.readyState === EventSource.CLOSED) {
+        esRef.current?.close();
+        const newEs = new EventSource(`/api/gateway/notifications/stream?token=${token}`);
+        newEs.onmessage = es.onmessage;
+        newEs.onerror = es.onerror;
+        esRef.current = newEs;
+      }
+      // Refetch key data on resume (including any document the user may have open)
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] });
+      queryClient.invalidateQueries({ queryKey: ['comments'] });
+      queryClient.invalidateQueries({ queryKey: ['content-items'] });
+      queryClient.invalidateQueries({ queryKey: ['document'] });
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => { es.close(); esRef.current = null; document.removeEventListener('visibilitychange', onVisibilityChange); };
   }, [token, queryClient]);
 
   return <SSEContext.Provider value={esRef.current}>{children}</SSEContext.Provider>;

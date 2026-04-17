@@ -69,10 +69,9 @@ export function useX6Graph(
               : ['rightMouseDown'],
           },
           mousewheel: {
-            enabled: true,
-            modifiers: typeof window !== 'undefined' && 'ontouchstart' in window
-              ? []           // Allow pinch-zoom on mobile without modifier keys
-              : ['ctrl', 'meta'],
+            // Touch devices: disable X6 built-in mousewheel, usePinchZoom handles pinch gestures
+            enabled: typeof window === 'undefined' || !('ontouchstart' in window),
+            modifiers: ['ctrl', 'meta'],
             zoomAtMousePosition: true,
             minScale: 0.2,
             maxScale: 3,
@@ -145,7 +144,7 @@ export function useX6Graph(
         graph.use(new History({ enabled: true }));
         graph.use(new Transform({
           resizing: {
-            enabled: true,
+            enabled: !isTouchDevice,
             minWidth: 40,
             minHeight: 30,
             orthogonal: true,
@@ -208,7 +207,7 @@ export function useX6Graph(
           // Cancel hide timer when hovering a port
           if (hidePortsTimer) { clearTimeout(hidePortsTimer); hidePortsTimer = null; }
         };
-        const onPortLeave = () => {
+        const onPortLeave = (e: any) => {
           // Don't hide ports while user is dragging a connection
           if (isConnectingRef.current) return;
           // Start hide timer again when leaving a port
@@ -250,10 +249,10 @@ export function useX6Graph(
             if (hidePortsTimer) { clearTimeout(hidePortsTimer); hidePortsTimer = null; }
           }
         };
-        const onEdgeConnected = () => {
+        const onEdgeConnected = ({ edge }: any) => {
           isConnectingRef.current = false;
         };
-        const onEdgeRemoved = () => {
+        const onEdgeRemoved = ({ edge }: any) => {
           // Also clear connecting state when edge is cancelled/removed mid-drag
           isConnectingRef.current = false;
         };

@@ -216,6 +216,8 @@
   },
   "editor": {
     "outline": "Outline",
+    "outlineNoHeadings": "No headings",
+    "outlineEmptyText": "(no text)",
     "error": "Editor error",
     "insertDiagramEmbedFailed": "Failed to insert diagram embed",
     "emptyMathBlock": "Empty math block",

@@ -29,9 +29,14 @@ export function registerPresentationTools(server, gw) {
   server.tool(
     'create_presentation',
     'Create a new presentation (slide deck). Returns the presentation_id.',
-    { title: z.string().describe('Presentation title') },
-    async ({ title }) => {
-      const result = await gw.post('/presentations', { title });
+    {
+      title: z.string().describe('Presentation title'),
+      parent_id: z.string().optional().describe('Parent content item ID to nest under (omit for root level)'),
+    },
+    async ({ title, parent_id }) => {
+      const body = { title };
+      if (parent_id) body.parent_id = parent_id;
+      const result = await gw.post('/presentations', body);
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

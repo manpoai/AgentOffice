@@ -721,7 +721,11 @@ class MermaidBlockView implements NodeView {
       });
       const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const { svg } = await mermaid.render(id, code);
-      this.preview.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
+      this.preview.innerHTML = DOMPurify.sanitize(svg, {
+        USE_PROFILES: { svg: true, svgFilters: true },
+        ADD_TAGS: ['foreignObject'],
+        ADD_ATTR: ['xmlns'],
+      });
       // Constrain SVG to its natural size — don't stretch to fill container
       const svgEl = this.preview.querySelector('svg');
       if (svgEl) {

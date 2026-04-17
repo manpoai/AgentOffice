@@ -17,9 +17,12 @@ export function registerDataTools(server, gw) {
         ]).optional().default('SingleLineText').describe('Column type'),
         options: z.array(z.string()).optional().describe('Options for SingleSelect/MultiSelect columns'),
       })).optional().default([]).describe('Initial columns (a row-id column is always auto-created)'),
+      parent_id: z.string().optional().describe('Parent content item ID to nest under (omit for root level)'),
     },
-    async ({ title, columns }) => {
-      const result = await gw.post('/data/tables', { title, columns });
+    async ({ title, columns, parent_id }) => {
+      const body = { title, columns };
+      if (parent_id) body.parent_id = parent_id;
+      const result = await gw.post('/data/tables', body);
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     }
   );

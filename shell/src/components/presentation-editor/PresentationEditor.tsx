@@ -144,6 +144,7 @@ export function PresentationEditor({
 
   // State
   const [ready, setReady] = useState(fabricLoaded);
+  const [canvasReady, setCanvasReady] = useState(false);
   // Title editing now handled by ContentTopBar
   const [slides, setSlides] = useState<SlideData[]>([]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -399,6 +400,7 @@ export function PresentationEditor({
       selection: true,
     });
     canvasRef.current = canvas;
+    setCanvasReady(true);
 
     requestAnimationFrame(() => {
       fitCanvasToContainer(canvas, canvasContainerRef.current);
@@ -504,6 +506,7 @@ export function PresentationEditor({
       observer?.disconnect();
       canvas.dispose();
       canvasRef.current = null;
+      setCanvasReady(false);
     };
   }, [ready, isLoading]);
 
@@ -1030,12 +1033,12 @@ export function PresentationEditor({
   const slidesRef = useRef<SlideData[]>(slides);
   slidesRef.current = slides;
 
-  // Load current slide when index changes
+  // Load current slide when index changes or canvas becomes ready
   useEffect(() => {
     if (slidesRef.current.length > 0 && canvasRef.current) {
       loadSlideToCanvas(slidesRef.current[currentSlideIndex] || DEFAULT_SLIDE);
     }
-  }, [currentSlideIndex, loadSlideToCanvas, slides.length]);
+  }, [currentSlideIndex, loadSlideToCanvas, slides.length, canvasReady]);
 
   // ─── Save canvas state back to slides ─────────────
   const serializeCanvas = useCallback((): SlideData | null => {

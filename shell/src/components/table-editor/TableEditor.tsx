@@ -20,7 +20,7 @@ import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { ActorInlineAvatar } from '@/components/shared/ActorInlineAvatar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
-import { DndContext, closestCenter, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
+import { DndContext, closestCenter, closestCorners, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors, useDroppable } from '@dnd-kit/core';
 import { restrictToParentElement, restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { SortableContext, useSortable, verticalListSortingStrategy, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -5286,7 +5286,7 @@ function KanbanView({ rows, columns, activeView, isLoading, onUpdateRow, onAddRo
   }
   // Build ordered group keys: select options first (in defined order), then dynamic values
   const groupKeys: string[] = isSelectCol
-    ? [...options.map(o => o.title).filter(t => groups[t]?.length > 0), ...Object.keys(groups).filter(k => !options.some(o => o.title === k))]
+    ? [...options.map(o => o.title), ...Object.keys(groups).filter(k => !options.some(o => o.title === k))]
     : Object.keys(groups).sort();
 
   if (isLoading) {
@@ -5381,7 +5381,7 @@ function KanbanView({ rows, columns, activeView, isLoading, onUpdateRow, onAddRo
   };
 
   return (
-    <DndContext sensors={kanbanSensors} onDragStart={handleKanbanDragStart} onDragOver={handleKanbanDragOver} onDragEnd={handleKanbanDragEnd}>
+    <DndContext sensors={kanbanSensors} collisionDetection={closestCorners} onDragStart={handleKanbanDragStart} onDragOver={handleKanbanDragOver} onDragEnd={handleKanbanDragEnd}>
     <div className="flex-1 flex gap-3 p-3 overflow-x-auto">
       {allGroupKeys.map((groupKey, gIdx) => {
         const isUncat = groupKey === '__uncategorized__';

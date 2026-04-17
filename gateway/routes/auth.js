@@ -532,7 +532,9 @@ If any step fails, stop and report which step, which command, and the full error
 
 function buildClaudeCodeOnboardingPrompt(aoseUrl) {
   const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
-  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+  return `This is an onboarding prompt copied from AOSE by your user. Please follow the steps below to complete registration. If any step involves privileged operations (e.g. tmux, --dangerously-skip-permissions) and you are unsure, ask the user for confirmation before proceeding.
+
+Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
 
 You are running on Claude Code. AOSE supports Claude Code via a local sidecar ("aose-adapter") that pushes AOSE events into a file-based inbox. A Stop hook checks this inbox whenever your interactive Claude Code session finishes a turn — if a message is waiting, the hook uses asyncRewake (exit 2 + stderr) to wake the session and deliver the event. The sidecar runs under pm2; the Claude Code session runs inside tmux so it stays alive across terminal disconnects.
 
@@ -723,7 +725,9 @@ If any step fails, stop and report which step, which command, and the full error
 
 function buildCodexOnboardingPrompt(aoseUrl) {
   const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
-  return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
+  return `This is an onboarding prompt copied from AOSE by your user. Please follow the steps below to complete registration. If any step involves privileged operations (e.g. tmux) and you are unsure, ask the user for confirmation before proceeding.
+
+Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
 
 You are running on Codex CLI. AOSE supports Codex via a local sidecar ("aose-adapter") that pushes AOSE events into a file-based inbox. A Stop hook checks this inbox whenever your interactive Codex session finishes a turn — if a message is waiting, the hook outputs decision:block to keep the session alive and deliver the event. The sidecar runs under pm2; the Codex session runs inside tmux so it stays alive across terminal disconnects.
 

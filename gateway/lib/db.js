@@ -430,6 +430,31 @@ function runMigrations(db) {
   try {
     runTableEngineMigrations(db);
   } catch (e) { console.error('[gateway] table-engine migrations failed:', e.message); throw e; }
+
+  // Migrate: unique index on select options to prevent duplicate option titles per field
+  try {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_select_options_unique_value ON user_select_options(field_id, value)');
+    console.log('[gateway] DB migrated: added unique index on user_select_options(field_id, value)');
+  } catch (e) { console.warn('[gateway] user_select_options unique index (may already exist or have duplicates):', e.message); }
+
+  // Backfill description_key on old snapshots that have hardcoded Chinese description text
+  try {
+    const triggerKeyMap = {
+      pre_agent_edit:  'serverSnapshots.pre_agent_edit',
+      post_agent_edit: 'serverSnapshots.post_agent_edit',
+      pre_restore:     'serverSnapshots.pre_restore',
+      auto:            'serverSnapshots.auto_initial',
+    };
+    const updateStmt = db.prepare(
+      'UPDATE content_snapshots SET description_key = ?, description = NULL WHERE trigger_type = ? AND description_key IS NULL'
+    );
+    let backfilled = 0;
+    for (const [triggerType, key] of Object.entries(triggerKeyMap)) {
+      const result = updateStmt.run(key, triggerType);
+      backfilled += result.changes;
+    }
+    if (backfilled > 0) console.log(`[gateway] DB migrated: backfilled description_key on ${backfilled} content_snapshots`);
+  } catch (e) { console.warn('[gateway] snapshot description_key backfill:', e.message); }
 }
 
 function migrateTableComments(db) {

@@ -11,6 +11,14 @@ import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
 import { READONLY_TYPES, SELECT_COLORS } from './types';
 
+function parseMultiSelect(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === 'string' && value.startsWith('[')) {
+    try { const parsed = JSON.parse(value); if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean); } catch {}
+  }
+  return typeof value === 'string' ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+
 export function useTableData(tableId: string, pageSize: number = 50) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -405,20 +413,18 @@ export function useTableData(tableId: string, pageSize: number = 50) {
   }, [tableId, queryClient, ensureSelectOption, refreshMeta, refresh]);
 
   const toggleMultiSelect = useCallback(async (rowId: number, col: string, current: unknown, option: string) => {
-    const currentStr = current ? String(current) : '';
-    const currentItems = currentStr ? currentStr.split(',').map(s => s.trim()) : [];
+    const currentItems = parseMultiSelect(current);
     const newItems = currentItems.includes(option)
       ? currentItems.filter(i => i !== option)
       : [...currentItems, option];
-    const newValue = newItems.join(',');
     queryClient.setQueriesData({ queryKey: ['nc-rows', tableId] }, (old: unknown) => {
       const data = old as { list: Record<string, unknown>[]; pageInfo?: unknown } | undefined;
       if (!data) return old;
-      return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col]: newValue } : r) };
+      return { ...data, list: data.list.map(r => (r.Id as number) === rowId ? { ...r, [col]: newItems.join(',') } : r) };
     });
     try {
       if (!currentItems.includes(option)) await ensureSelectOption(col, option);
-      await br.updateRow(tableId, rowId, { [col]: newValue });
+      await br.updateRow(tableId, rowId, { [col]: newItems });
       refresh();
       refreshMeta();
     } catch (e) {

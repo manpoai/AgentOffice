@@ -52,6 +52,15 @@ export function renderTextWithContentLinks(text: string, className: string): Rea
   return <>{parts}</>;
 }
 
+/** Parse a MultiSelect value — backend returns JSON array; legacy data may be comma string. */
+function parseMultiSelect(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === 'string' && value.startsWith('[')) {
+    try { const parsed = JSON.parse(value); if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean); } catch {}
+  }
+  return typeof value === 'string' ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+
 // ── Compact cell display for kanban/gallery views ──
 
 export function CompactCellDisplay({ value, col }: { value: unknown; col: br.BRColumn }) {
@@ -95,7 +104,7 @@ export function CompactCellDisplay({ value, col }: { value: unknown; col: br.BRC
   }
 
   if (colType === 'MultiSelect') {
-    const items = String(value).split(',').map(s => s.trim()).filter(Boolean);
+    const items = parseMultiSelect(value);
     return (
       <div className="flex flex-wrap gap-0.5">
         {items.map((item, i) => {
@@ -131,7 +140,7 @@ export function SnapshotCellValue({ value, colType }: { value: unknown; colType:
   }
 
   if (colType === 'MultiSelect') {
-    const items = String(value).split(',').map(s => s.trim()).filter(Boolean);
+    const items = parseMultiSelect(value);
     return (
       <span className="flex flex-wrap gap-0.5">
         {items.map((item, i) => (
@@ -480,7 +489,7 @@ export function CellDisplay({ value, col, onDeleteAttachment }: { value: unknown
   }
 
   if (colType === 'MultiSelect') {
-    const items = str.split(',').map(s => s.trim()).filter(Boolean);
+    const items = parseMultiSelect(value);
     return (
       <div className="flex flex-wrap gap-0.5 py-1">
         {items.map((item, i) => {
@@ -524,6 +533,11 @@ export function CellDisplay({ value, col, onDeleteAttachment }: { value: unknown
   }
 
   if (colType === 'Date' || colType === 'DateTime' || colType === 'CreatedTime' || colType === 'LastModifiedTime') {
+    if (typeof value === 'number' || /^\d{10,}$/.test(str)) {
+      const ms = typeof value === 'number' ? value : parseInt(str, 10);
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) str = d.toISOString();
+    }
     const dateMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
     if (!dateMatch) return <span className="text-xs py-1.5 block text-foreground/70">{str}</span>;
     const meta = col.meta as Record<string, unknown> | undefined;
@@ -1118,6 +1132,27 @@ export function FormView({ columns, tableId, onSubmit }: {
                   <option value="">{t('dataTable.selectPlaceholder')}</option>
                   {col.options.map(o => <option key={o.title} value={o.title}>{o.title}</option>)}
                 </select>
+              ) : col.type === 'MultiSelect' && col.options?.length ? (
+                <div className="flex flex-wrap gap-1.5 p-2 bg-muted rounded-lg min-h-[40px]">
+                  {col.options.map(o => {
+                    const selected = (formData[col.title] || '').split(',').map((s: string) => s.trim()).filter(Boolean).includes(o.title);
+                    return (
+                      <button
+                        key={o.title}
+                        type="button"
+                        onClick={() => {
+                          const current = (formData[col.title] || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+                          const next = selected ? current.filter(v => v !== o.title) : [...current, o.title];
+                          setFormData(d => ({ ...d, [col.title]: next.join(',') }));
+                        }}
+                        className={`px-2 py-0.5 rounded text-xs border transition-colors ${selected ? 'border-transparent text-foreground' : 'border-border bg-background text-muted-foreground'}`}
+                        style={selected ? { backgroundColor: o.color || '#d4e5ff' } : undefined}
+                      >
+                        {o.title}
+                      </button>
+                    );
+                  })}
+                </div>
               ) : (
                 <input
                   value={formData[col.title] || ''}
