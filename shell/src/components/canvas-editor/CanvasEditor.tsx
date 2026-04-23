@@ -6,7 +6,7 @@ import * as gw from '@/lib/api/gateway';
 import {
   Plus, Minus, Trash2,
   Lock, Unlock,
-  Type, Hexagon, Frame,
+  Type, Hexagon, Frame, ImagePlus,
   AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   AlignStartHorizontal, AlignEndHorizontal, AlignStartVertical, AlignEndVertical,
   PanelRight, PanelRightClose, Copy, ArrowUp, ArrowDown,
@@ -33,6 +33,7 @@ import { CanvasElementView, EditingOverlay, getClientPos } from './CanvasElement
 import { CanvasPropertyPanel } from './CanvasPropertyPanel';
 import { extractDesignTokens, updateDesignToken } from './projection';
 import { useUndoRedo } from './use-undo-redo';
+import { readFileAsDataUrl, createImageHtml, extractDroppedImageFiles } from '@/components/shared/image-upload';
 import type { CanvasData, CanvasPage, CanvasElement } from './types';
 import { createEmptyPage, DEFAULT_PAGE_WIDTH, DEFAULT_PAGE_HEIGHT } from './types';
 
@@ -113,10 +114,11 @@ function createShapeElement(shapeType: ShapeType, pageW: number, pageH: number):
   };
 }
 
-function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, showPropertyPanel, onTogglePropertyPanel, canUndo, canRedo, onUndo, onRedo }: {
+function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, showPropertyPanel, onTogglePropertyPanel, canUndo, canRedo, onUndo, onRedo }: {
   pendingInsert: PendingInsert | null;
   onSetPending: (p: PendingInsert | null) => void;
   onAddShape: (shapeType: ShapeType) => void;
+  onAddImage: () => void;
   showPropertyPanel: boolean;
   onTogglePropertyPanel: () => void;
   canUndo: boolean;
@@ -147,6 +149,7 @@ function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, showPropertyPa
       </div>
       <ToolBtn icon={Minus} onClick={() => onSetPending(isLinePending ? null : { type: 'line' })} active={isLinePending} title="Line (click frame to place)" />
       <ToolBtn icon={Type} onClick={() => onSetPending(isTextPending ? null : { type: 'text' })} active={isTextPending} title="Text (click frame to place)" />
+      <ToolBtn icon={ImagePlus} onClick={onAddImage} title="Image" />
       <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-0.5" />
       <button onClick={onUndo} disabled={!canUndo}
         className="p-1.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors" title="Undo (⌘Z)">
@@ -1055,6 +1058,49 @@ export function CanvasEditor({
     setSelectedIds(new Set([newEl.id]));
   };
 
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const insertImageElement = useCallback((dataUrl: string, name?: string) => {
+    const target = getTargetFrame();
+    if (!target) return;
+    const newEl: CanvasElement = {
+      id: `el-${crypto.randomUUID().slice(0, 8)}`,
+      x: target.frame.width / 2 - 150, y: target.frame.height / 2 - 100,
+      w: 300, h: 200,
+      html: createImageHtml(dataUrl),
+      locked: false, z_index: target.frame.elements.length + 1,
+      name: name ?? 'Image',
+    };
+    updateFrame(target.frameId, page => ({ ...page, elements: [...page.elements, newEl] }));
+    setSelectedIds(new Set([newEl.id]));
+  }, [getTargetFrame, updateFrame]);
+
+  const handleAddImage = useCallback(() => {
+    imageInputRef.current?.click();
+  }, []);
+
+  const handleImageFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await readFileAsDataUrl(file);
+    insertImageElement(dataUrl, file.name.replace(/\.[^.]+$/, ''));
+    e.target.value = '';
+  }, [insertImageElement]);
+
+  const handleCanvasDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = extractDroppedImageFiles(e.nativeEvent);
+    for (const file of files) {
+      const dataUrl = await readFileAsDataUrl(file);
+      insertImageElement(dataUrl, file.name.replace(/\.[^.]+$/, ''));
+    }
+  }, [insertImageElement]);
+
+  const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
   const bringForward = (id: string) => {
     const el = activeFrameId ? activeFrame?.elements.find(e => e.id === id) : data?.elements?.find(e => e.id === id);
     updateElement(id, { z_index: (el?.z_index ?? 0) + 1 });
@@ -1171,17 +1217,20 @@ export function CanvasEditor({
           {/* Infinite canvas viewport */}
           <div className="flex-1 min-w-0 overflow-hidden bg-[#e8e8e8] dark:bg-zinc-900 relative"
             ref={containerRef} onMouseDown={handleCanvasPointerDown}
+            onDrop={handleCanvasDrop} onDragOver={handleCanvasDragOver}
             style={{ touchAction: 'none', cursor: isPanning ? 'grabbing' : pendingInsert ? 'crosshair' : 'default' }}>
 
             <CanvasToolbar
               pendingInsert={pendingInsert}
               onSetPending={setPendingInsert}
               onAddShape={addShapeFromPicker}
+              onAddImage={handleAddImage}
               showPropertyPanel={showPropertyPanel}
               onTogglePropertyPanel={togglePropertyPanel}
               canUndo={undoRedo.canUndo} canRedo={undoRedo.canRedo}
               onUndo={handleUndo} onRedo={handleRedo}
             />
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFileSelected} />
 
             {firstSelected && selectedIds.size > 0 && !editingElementId && (
               <ElementToolbar

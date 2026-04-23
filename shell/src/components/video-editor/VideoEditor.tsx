@@ -12,6 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
+import { readFileAsDataUrl, extractDroppedImageFiles } from '@/components/shared/image-upload';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
@@ -330,25 +331,37 @@ export function VideoEditor({
     setSelectedElementId(newEl.id);
   }, [data, currentTime, updateData]);
 
+  const insertImageFromFile = useCallback(async (file: File) => {
+    if (!data) return;
+    const dataUrl = await readFileAsDataUrl(file);
+    const newEl: VideoElement = {
+      id: crypto.randomUUID(), type: 'image',
+      x: data.settings.width / 2 - 150, y: data.settings.height / 2 - 100, w: 300, h: 200,
+      html: `<div style="width:100%;height:100%;border-radius:0;overflow:hidden;"><img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" /></div>`,
+      start: currentTime, duration: 3, keyframes: [],
+      z_index: data.elements.length + 1, name: file.name.replace(/\.[^.]+$/, ''),
+    };
+    updateData(d => ({ ...d, elements: [...d.elements, newEl] }));
+    setSelectedElementId(newEl.id);
+  }, [data, currentTime, updateData]);
+
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !data) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const newEl: VideoElement = {
-        id: crypto.randomUUID(), type: 'image',
-        x: data.settings.width / 2 - 150, y: data.settings.height / 2 - 100, w: 300, h: 200,
-        html: `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;" />`,
-        start: currentTime, duration: 3, keyframes: [],
-        z_index: data.elements.length + 1, name: file.name.replace(/\.[^.]+$/, ''),
-      };
-      updateData(d => ({ ...d, elements: [...d.elements, newEl] }));
-      setSelectedElementId(newEl.id);
-    };
-    reader.readAsDataURL(file);
+    if (!file) return;
+    insertImageFromFile(file);
     e.target.value = '';
-  }, [data, currentTime, updateData]);
+  }, [insertImageFromFile]);
+
+  const handleVideoDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = extractDroppedImageFiles(e.nativeEvent);
+    for (const file of files) await insertImageFromFile(file);
+  }, [insertImageFromFile]);
+
+  const handleVideoDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
 
   const deleteElement = useCallback((elementId: string) => {
     updateData(d => ({ ...d, elements: d.elements.filter(el => el.id !== elementId) }));
@@ -745,7 +758,8 @@ export function VideoEditor({
                 width: data.settings.width * zoom,
                 height: data.settings.height * zoom,
                 position: 'relative',
-              }} className="shadow-2xl overflow-hidden">
+              }} className="shadow-2xl overflow-hidden"
+                onDrop={handleVideoDrop} onDragOver={handleVideoDragOver}>
                 <div style={{
                   width: data.settings.width,
                   height: data.settings.height,
