@@ -12,7 +12,8 @@ import {
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
-import { readFileAsDataUrl, extractDroppedImageFiles } from '@/components/shared/image-upload';
+import { readFileAsDataUrl, extractDroppedImageFiles, isSvgFile } from '@/components/shared/image-upload';
+import { parseSvgFileContent } from '@/components/shared/svg-import';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
@@ -333,12 +334,19 @@ export function VideoEditor({
 
   const insertImageFromFile = useCallback(async (file: File) => {
     if (!data) return;
-    const dataUrl = await readFileAsDataUrl(file);
+    let html: string, w = 300, h = 200, elType: 'image' | 'shape' = 'image';
+    if (isSvgFile(file)) {
+      const text = await file.text();
+      const parsed = parseSvgFileContent(text);
+      html = parsed.html; w = parsed.w; h = parsed.h; elType = 'shape';
+    } else {
+      const dataUrl = await readFileAsDataUrl(file);
+      html = `<div style="width:100%;height:100%;border-radius:0;overflow:hidden;"><img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" /></div>`;
+    }
     const newEl: VideoElement = {
-      id: crypto.randomUUID(), type: 'image',
-      x: data.settings.width / 2 - 150, y: data.settings.height / 2 - 100, w: 300, h: 200,
-      html: `<div style="width:100%;height:100%;border-radius:0;overflow:hidden;"><img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" /></div>`,
-      start: currentTime, duration: 3, keyframes: [],
+      id: crypto.randomUUID(), type: elType,
+      x: data.settings.width / 2 - w / 2, y: data.settings.height / 2 - h / 2, w, h,
+      html, start: currentTime, duration: 3, keyframes: [],
       z_index: data.elements.length + 1, name: file.name.replace(/\.[^.]+$/, ''),
     };
     updateData(d => ({ ...d, elements: [...d.elements, newEl] }));

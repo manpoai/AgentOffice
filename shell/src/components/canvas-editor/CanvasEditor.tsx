@@ -33,7 +33,8 @@ import { CanvasElementView, EditingOverlay, getClientPos } from './CanvasElement
 import { CanvasPropertyPanel } from './CanvasPropertyPanel';
 import { extractDesignTokens, updateDesignToken } from './projection';
 import { useUndoRedo } from './use-undo-redo';
-import { readFileAsDataUrl, createImageHtml, extractDroppedImageFiles } from '@/components/shared/image-upload';
+import { readFileAsDataUrl, createImageHtml, extractDroppedImageFiles, isSvgFile } from '@/components/shared/image-upload';
+import { parseSvgFileContent } from '@/components/shared/svg-import';
 import type { CanvasData, CanvasPage, CanvasElement } from './types';
 import { createEmptyPage, DEFAULT_PAGE_WIDTH, DEFAULT_PAGE_HEIGHT } from './types';
 
@@ -1082,19 +1083,46 @@ export function CanvasEditor({
   const handleImageFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    insertImageElement(dataUrl, file.name.replace(/\.[^.]+$/, ''));
+    if (isSvgFile(file)) {
+      const text = await file.text();
+      const parsed = parseSvgFileContent(text);
+      insertSvgElement(parsed, file.name.replace(/\.[^.]+$/, ''));
+    } else {
+      const dataUrl = await readFileAsDataUrl(file);
+      insertImageElement(dataUrl, file.name.replace(/\.[^.]+$/, ''));
+    }
     e.target.value = '';
-  }, [insertImageElement]);
+  }, [insertImageElement, insertSvgElement]);
+
+  const insertSvgElement = useCallback((parsed: { html: string; w: number; h: number }, name?: string) => {
+    const target = getTargetFrame();
+    if (!target) return;
+    const newEl: CanvasElement = {
+      id: `el-${crypto.randomUUID().slice(0, 8)}`,
+      x: target.frame.width / 2 - parsed.w / 2, y: target.frame.height / 2 - parsed.h / 2,
+      w: parsed.w, h: parsed.h,
+      html: parsed.html,
+      locked: false, z_index: target.frame.elements.length + 1,
+      name: name ?? 'SVG',
+    };
+    updateFrame(target.frameId, page => ({ ...page, elements: [...page.elements, newEl] }));
+    setSelectedIds(new Set([newEl.id]));
+  }, [getTargetFrame, updateFrame]);
 
   const handleCanvasDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     const files = extractDroppedImageFiles(e.nativeEvent);
     for (const file of files) {
-      const dataUrl = await readFileAsDataUrl(file);
-      insertImageElement(dataUrl, file.name.replace(/\.[^.]+$/, ''));
+      if (isSvgFile(file)) {
+        const text = await file.text();
+        const parsed = parseSvgFileContent(text);
+        insertSvgElement(parsed, file.name.replace(/\.[^.]+$/, ''));
+      } else {
+        const dataUrl = await readFileAsDataUrl(file);
+        insertImageElement(dataUrl, file.name.replace(/\.[^.]+$/, ''));
+      }
     }
-  }, [insertImageElement]);
+  }, [insertImageElement, insertSvgElement]);
 
   const handleCanvasDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1230,7 +1258,7 @@ export function CanvasEditor({
               canUndo={undoRedo.canUndo} canRedo={undoRedo.canRedo}
               onUndo={handleUndo} onRedo={handleRedo}
             />
-            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFileSelected} />
+            <input ref={imageInputRef} type="file" accept="image/*,.svg" className="hidden" onChange={handleImageFileSelected} />
 
             {firstSelected && selectedIds.size > 0 && !editingElementId && (
               <ElementToolbar
