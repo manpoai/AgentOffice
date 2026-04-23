@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as gw from '@/lib/api/gateway';
 import {
   Plus, Minus, Trash2,
-  Lock, Unlock,
+  Lock, Unlock, Grid3X3,
   Type, Hexagon, Frame, ImagePlus,
   AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   AlignStartHorizontal, AlignEndHorizontal, AlignStartVertical, AlignEndVertical,
@@ -35,6 +35,7 @@ import { extractDesignTokens, updateDesignToken } from './projection';
 import { useUndoRedo } from './use-undo-redo';
 import { readFileAsDataUrl, createImageHtml, extractDroppedImageFiles, isSvgFile } from '@/components/shared/image-upload';
 import { parseSvgFileContent } from '@/components/shared/svg-import';
+import { DEFAULT_GRID, snapToGrid, renderGridPattern, type GridConfig } from '@/components/shared/grid-renderer';
 import type { CanvasData, CanvasPage, CanvasElement } from './types';
 import { createEmptyPage, DEFAULT_PAGE_WIDTH, DEFAULT_PAGE_HEIGHT } from './types';
 
@@ -115,11 +116,13 @@ function createShapeElement(shapeType: ShapeType, pageW: number, pageH: number):
   };
 }
 
-function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, showPropertyPanel, onTogglePropertyPanel, canUndo, canRedo, onUndo, onRedo }: {
+function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, gridEnabled, onToggleGrid, showPropertyPanel, onTogglePropertyPanel, canUndo, canRedo, onUndo, onRedo }: {
   pendingInsert: PendingInsert | null;
   onSetPending: (p: PendingInsert | null) => void;
   onAddShape: (shapeType: ShapeType) => void;
   onAddImage: () => void;
+  gridEnabled: boolean;
+  onToggleGrid: () => void;
   showPropertyPanel: boolean;
   onTogglePropertyPanel: () => void;
   canUndo: boolean;
@@ -151,6 +154,8 @@ function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, sh
       <ToolBtn icon={Minus} onClick={() => onSetPending(isLinePending ? null : { type: 'line' })} active={isLinePending} title="Line (click frame to place)" />
       <ToolBtn icon={Type} onClick={() => onSetPending(isTextPending ? null : { type: 'text' })} active={isTextPending} title="Text (click frame to place)" />
       <ToolBtn icon={ImagePlus} onClick={onAddImage} title="Image" />
+      <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-0.5" />
+      <ToolBtn icon={Grid3X3} onClick={onToggleGrid} active={gridEnabled} title="Grid" />
       <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-0.5" />
       <button onClick={onUndo} disabled={!canUndo}
         className="p-1.5 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors" title="Undo (⌘Z)">
@@ -396,6 +401,7 @@ export function CanvasEditor({
   const [showRevisions, setShowRevisions] = useState(false);
   const [showPropertyPanel, setShowPropertyPanel] = useState(false);
   const [showLayers, setShowLayers] = useState(true);
+  const [gridConfig, setGridConfig] = useState<GridConfig>(DEFAULT_GRID);
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
   const [isPanning, setIsPanning] = useState(false);
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
@@ -594,8 +600,12 @@ export function CanvasEditor({
 
       if (d.type === 'move' && d.elementId && frame) {
         let newX = Math.round(d.origX + dx), newY = Math.round(d.origY + dy);
+        if (gridConfig.enabled && gridConfig.snap) {
+          newX = snapToGrid(newX, gridConfig.size);
+          newY = snapToGrid(newY, gridConfig.size);
+        }
         const movingEl = frame.elements.find(el => el.id === d.elementId);
-        if (movingEl) {
+        if (movingEl && !(gridConfig.enabled && gridConfig.snap)) {
           const snap = findSnapLines({ x: newX, y: newY, w: movingEl.w, h: movingEl.h },
             frame.elements.filter(el => el.id !== d.elementId), SNAP_THRESHOLD / scale);
           if (snap.snapX !== null) newX = snap.snapX;
@@ -1253,6 +1263,8 @@ export function CanvasEditor({
               onSetPending={setPendingInsert}
               onAddShape={addShapeFromPicker}
               onAddImage={handleAddImage}
+              gridEnabled={gridConfig.enabled}
+              onToggleGrid={() => setGridConfig(g => ({ ...g, enabled: !g.enabled }))}
               showPropertyPanel={showPropertyPanel}
               onTogglePropertyPanel={togglePropertyPanel}
               canUndo={undoRedo.canUndo} canRedo={undoRedo.canRedo}
@@ -1351,9 +1363,11 @@ export function CanvasEditor({
                       height: frame.height,
                       transform: `scale(${scale})`,
                       transformOrigin: '0 0',
-                      background: frame.background_color || '#ffffff',
+                      background: gridConfig.enabled
+                        ? `${renderGridPattern(gridConfig.size, gridConfig.color)}, ${frame.background_color || '#ffffff'}`
+                        : frame.background_color || '#ffffff',
                       backgroundImage: frame.background_image ? `url(${frame.background_image})` : undefined,
-                      backgroundSize: 'cover',
+                      backgroundSize: frame.background_image ? 'cover' : undefined,
                       boxShadow: isActive ? '0 0 0 2px #3b82f6, 0 2px 20px rgba(0,0,0,0.1)' : '0 2px 20px rgba(0,0,0,0.1)',
                       borderRadius: frame.border_radius ?? 2,
                       overflow: 'hidden',
