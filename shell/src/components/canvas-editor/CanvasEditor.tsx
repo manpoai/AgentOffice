@@ -30,6 +30,8 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers';
 import { CanvasElementView, EditingOverlay, getClientPos } from './CanvasElement';
+import { VectorEditor } from './VectorEditor';
+import { extractPathD } from '@/components/shared/svg-path-utils';
 import { CanvasPropertyPanel } from './CanvasPropertyPanel';
 import { extractDesignTokens, updateDesignToken } from './projection';
 import { useUndoRedo } from './use-undo-redo';
@@ -405,6 +407,7 @@ export function CanvasEditor({
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
   const [isPanning, setIsPanning] = useState(false);
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
+  const [vectorEditId, setVectorEditId] = useState<string | null>(null);
   const [editingFrameName, setEditingFrameName] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [pendingInsert, setPendingInsert] = useState<PendingInsert | null>(null);
@@ -913,9 +916,15 @@ export function CanvasEditor({
     }
   }, []);
 
-  const handleDoubleClick = useCallback((_frameId: string, id: string) => {
-    setEditingElementId(id);
-  }, []);
+  const handleDoubleClick = useCallback((frameId: string, id: string) => {
+    const frame = data?.pages.find(p => p.page_id === frameId);
+    const el = frame?.elements.find(e => e.id === id);
+    if (el && extractPathD(el.html)) {
+      setVectorEditId(id);
+    } else {
+      setEditingElementId(id);
+    }
+  }, [data]);
 
   const handleDragStart = useCallback((frameId: string, id: string, e: React.MouseEvent | React.TouchEvent) => {
     if (editingElementId === id) return;
@@ -1412,7 +1421,12 @@ export function CanvasEditor({
                       onSelect={(id, e) => handleSelectCanvasElement(id, e)}
                       onDragStart={(id, e) => handleCanvasElDragStart(id, e)}
                       onResizeStart={(id, handle, e) => handleCanvasElResizeStart(id, handle, e)}
-                      onDoubleClick={(id) => { setActiveFrameId(null); setEditingElementId(id); }} />
+                      onDoubleClick={(id) => {
+                        setActiveFrameId(null);
+                        const el = data.elements?.find(e => e.id === id);
+                        if (el && extractPathD(el.html)) setVectorEditId(id);
+                        else setEditingElementId(id);
+                      }} />
                   </div>
                 </div>
               );
@@ -1440,6 +1454,31 @@ export function CanvasEditor({
                     else updateCanvasElement(el.id, { html });
                   }}
                   onDone={() => setEditingElementId(null)}
+                />
+              );
+            })()}
+
+            {/* Vector editing overlay */}
+            {vectorEditId && (() => {
+              const frameEl = activeFrame?.elements.find(e => e.id === vectorEditId);
+              const canvasEl = data.elements?.find(e => e.id === vectorEditId);
+              const el = frameEl || canvasEl;
+              if (!el) return null;
+              const fx = frameEl ? (activeFrame?.frame_x ?? 0) : 0;
+              const fy = frameEl ? (activeFrame?.frame_y ?? 0) : 0;
+              return (
+                <VectorEditor
+                  elementHtml={el.html}
+                  elementX={el.x + fx}
+                  elementY={el.y + fy}
+                  elementW={el.w}
+                  elementH={el.h}
+                  scale={scale}
+                  onUpdateHtml={(html) => {
+                    if (frameEl) updateElement(el.id, { html });
+                    else updateCanvasElement(el.id, { html });
+                  }}
+                  onExit={() => setVectorEditId(null)}
                 />
               );
             })()}
