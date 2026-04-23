@@ -237,3 +237,21 @@ export function removePoint(parsed: ParsedPath, index: number): ParsedPath {
   const points = parsed.points.filter((_, i) => i !== index);
   return { ...parsed, points };
 }
+
+export type BooleanOp = 'union' | 'difference' | 'intersection' | 'exclusion';
+
+export async function booleanPathOp(d1: string, d2: string, op: BooleanOp): Promise<string> {
+  const { pathFromPathData, pathToPathData, pathBoolean, FillRule, PathBooleanOperation } = await import('path-bool');
+
+  const ops = {
+    union: PathBooleanOperation.Union,
+    difference: PathBooleanOperation.Difference,
+    intersection: PathBooleanOperation.Intersection,
+    exclusion: PathBooleanOperation.Exclusion,
+  } as const;
+
+  const p1 = pathFromPathData(d1);
+  const p2 = pathFromPathData(d2);
+  const result = pathBoolean(p1, FillRule.EvenOdd, p2, FillRule.EvenOdd, ops[op]);
+  return result.map(p => pathToPathData(p)).join(' ');
+}

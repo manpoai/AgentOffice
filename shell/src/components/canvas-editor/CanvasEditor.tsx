@@ -13,6 +13,7 @@ import {
   Undo2, Redo2, X,
   Layers, ChevronDown, ChevronRight,
   Pen, Spline,
+  Combine, Scissors, XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
@@ -34,7 +35,7 @@ import { CanvasElementView, EditingOverlay, getClientPos } from './CanvasElement
 import { VectorEditor } from './VectorEditor';
 import { PenTool } from './PenTool';
 import { LineDrawTool } from './LineDrawTool';
-import { extractPathD } from '@/components/shared/svg-path-utils';
+import { extractPathD, parsePath, serializePath, booleanPathOp, type BooleanOp } from '@/components/shared/svg-path-utils';
 import { CanvasPropertyPanel } from './CanvasPropertyPanel';
 import { extractDesignTokens, updateDesignToken } from './projection';
 import { useUndoRedo } from './use-undo-redo';
@@ -184,7 +185,7 @@ function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, gr
   );
 }
 
-function ElementToolbar({ element, scale, pan, frameOffset, onDelete, onDuplicate, onLock, onBringForward, onSendBackward, onAlign, selectedCount, onTogglePropertyPanel }: {
+function ElementToolbar({ element, scale, pan, frameOffset, onDelete, onDuplicate, onLock, onBringForward, onSendBackward, onAlign, selectedCount, onTogglePropertyPanel, canBooleanOp, onBooleanOp }: {
   element: CanvasElement;
   scale: number;
   pan: { x: number; y: number };
@@ -197,6 +198,8 @@ function ElementToolbar({ element, scale, pan, frameOffset, onDelete, onDuplicat
   onAlign: (a: string) => void;
   selectedCount: number;
   onTogglePropertyPanel: () => void;
+  canBooleanOp?: boolean;
+  onBooleanOp?: (op: BooleanOp) => void;
 }) {
   const x = pan.x + (frameOffset.x + element.x) * scale;
   const y = pan.y + (frameOffset.y + element.y) * scale - 44;
@@ -213,6 +216,15 @@ function ElementToolbar({ element, scale, pan, frameOffset, onDelete, onDuplicat
           <ToolBtnSm icon={AlignStartVertical} onClick={() => onAlign('top')} title="Align top" />
           <ToolBtnSm icon={AlignVerticalJustifyCenter} onClick={() => onAlign('center-v')} title="Center V" />
           <ToolBtnSm icon={AlignEndVertical} onClick={() => onAlign('bottom')} title="Align bottom" />
+          <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />
+        </>
+      )}
+      {canBooleanOp && onBooleanOp && (
+        <>
+          <ToolBtnSm icon={Combine} onClick={() => onBooleanOp('union')} title="Union" />
+          <ToolBtnSm icon={Minus} onClick={() => onBooleanOp('difference')} title="Subtract" />
+          <ToolBtnSm icon={Scissors} onClick={() => onBooleanOp('intersection')} title="Intersect" />
+          <ToolBtnSm icon={XCircle} onClick={() => onBooleanOp('exclusion')} title="Exclude" />
           <div className="w-px h-4 bg-black/10 dark:bg-white/10 mx-0.5" />
         </>
       )}
@@ -1185,6 +1197,86 @@ export function CanvasEditor({
     }));
   };
 
+  const handleBooleanOp = useCallback(async (op: BooleanOp) => {
+    if (selectedIds.size !== 2) return;
+    const elements = activeFrameId
+      ? (activeFrame?.elements.filter(el => selectedIds.has(el.id)) ?? [])
+      : (data?.elements ?? []).filter(el => selectedIds.has(el.id));
+    if (elements.length !== 2) return;
+    const [a, b] = elements;
+    const dA = extractPathD(a.html);
+    const dB = extractPathD(b.html);
+    if (!dA || !dB) return;
+
+    const viewBoxA = a.html.match(/viewBox="([^"]*)"/)?.[1]?.split(/[\s,]+/).map(Number);
+    const viewBoxB = b.html.match(/viewBox="([^"]*)"/)?.[1]?.split(/[\s,]+/).map(Number);
+    const vbAx = viewBoxA?.[0] ?? 0, vbAy = viewBoxA?.[1] ?? 0;
+    const vbBx = viewBoxB?.[0] ?? 0, vbBy = viewBoxB?.[1] ?? 0;
+    const vbAw = viewBoxA?.[2] ?? a.w, vbAh = viewBoxA?.[3] ?? a.h;
+    const vbBw = viewBoxB?.[2] ?? b.w, vbBh = viewBoxB?.[3] ?? b.h;
+
+    const scaleAx = a.w / vbAw, scaleAy = a.h / vbAh;
+    const scaleBx = b.w / vbBw, scaleBy = b.h / vbBh;
+
+    const transformD = (d: string, ox: number, oy: number, sx: number, sy: number, vbx: number, vby: number) => {
+      const parsed = parsePath(d);
+      parsed.points = parsed.points.map(pt => ({
+        ...pt,
+        x: ox + (pt.x - vbx) * sx,
+        y: oy + (pt.y - vby) * sy,
+        handleIn: pt.handleIn ? { x: pt.handleIn.x * sx, y: pt.handleIn.y * sy } : undefined,
+        handleOut: pt.handleOut ? { x: pt.handleOut.x * sx, y: pt.handleOut.y * sy } : undefined,
+      }));
+      return serializePath(parsed);
+    };
+
+    const worldDA = transformD(dA, a.x, a.y, scaleAx, scaleAy, vbAx, vbAy);
+    const worldDB = transformD(dB, b.x, b.y, scaleBx, scaleBy, vbBx, vbBy);
+
+    try {
+      const resultD = await booleanPathOp(worldDA, worldDB, op);
+      if (!resultD) return;
+
+      const resultParsed = parsePath(resultD);
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const pt of resultParsed.points) {
+        minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y);
+      }
+      const pad = 2;
+      const rx = Math.round(minX - pad), ry = Math.round(minY - pad);
+      const rw = Math.max(Math.round(maxX - minX + pad * 2), 1);
+      const rh = Math.max(Math.round(maxY - minY + pad * 2), 1);
+
+      const shiftedParsed = { ...resultParsed, points: resultParsed.points.map(pt => ({ ...pt, x: pt.x - rx, y: pt.y - ry })) };
+      const shiftedD = serializePath(shiftedParsed);
+
+      const fillA = a.html.match(/fill="([^"]*)"/)?.[1] ?? '#e0e7ff';
+      const fill = fillA === 'none' ? '#e0e7ff' : fillA;
+      const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${rw} ${rh}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${shiftedD}" fill="${fill}" stroke="#374151" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></div>`;
+
+      const newEl: CanvasElement = {
+        id: `el-${crypto.randomUUID().slice(0, 8)}`,
+        locked: false, z_index: Math.max(a.z_index, b.z_index), x: rx, y: ry, w: rw, h: rh, html,
+      };
+
+      if (activeFrameId) {
+        updateFrame(activeFrameId, page => ({
+          ...page,
+          elements: [...page.elements.filter(el => !selectedIds.has(el.id)), newEl],
+        }));
+      } else {
+        updateData(d => ({
+          ...d,
+          elements: [...(d.elements ?? []).filter(el => !selectedIds.has(el.id)), newEl],
+        }));
+      }
+      setSelectedIds(new Set([newEl.id]));
+    } catch (err) {
+      console.error('Boolean operation failed:', err);
+    }
+  }, [selectedIds, activeFrameId, activeFrame, data, updateFrame, updateData]);
+
   const handleUpdateFrame = useCallback((pageId: string, updates: Partial<CanvasPage>) => {
     updateFrame(pageId, page => ({ ...page, ...updates }));
   }, [updateFrame]);
@@ -1302,6 +1394,8 @@ export function CanvasEditor({
                 onAlign={alignElements}
                 selectedCount={selectedIds.size}
                 onTogglePropertyPanel={() => { setShowPropertyPanel(true); }}
+                canBooleanOp={selectedIds.size === 2 && selectedElements.every(el => !!extractPathD(el.html))}
+                onBooleanOp={handleBooleanOp}
               />
             )}
 

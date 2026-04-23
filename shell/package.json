@@ -60,6 +60,7 @@
     "next": "14.2.29",
     "next-themes": "^0.4.6",
     "pako": "^2.1.0",
+    "path-bool": "^0.0.7",
     "playwright": "^1.58.2",
     "png-chunks-extract": "^1.0.0",
     "polished": "^4.3.1",
