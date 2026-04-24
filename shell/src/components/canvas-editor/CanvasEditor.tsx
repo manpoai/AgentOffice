@@ -1756,11 +1756,11 @@ export function CanvasEditor({
     setSelectedIds(new Set([newEl.id]));
   };
 
-  const deepCloneChildren = (children: CanvasElement[]): CanvasElement[] =>
+  const deepCloneFrameChildren = (children: CanvasElement[]): CanvasElement[] =>
     children.map(c => ({
       ...c,
       id: `el-${crypto.randomUUID().slice(0, 8)}`,
-      children: c.children ? deepCloneChildren(c.children) : undefined,
+      children: c.children ? deepCloneFrameChildren(c.children) : undefined,
     }));
 
   const duplicateFrame = (pageId: string) => {
@@ -1774,11 +1774,10 @@ export function CanvasEditor({
       elements: frame.elements.map(el => ({
         ...el,
         id: `el-${crypto.randomUUID().slice(0, 8)}`,
-        children: el.children ? deepCloneChildren(el.children) : undefined,
+        children: el.children ? deepCloneFrameChildren(el.children) : undefined,
       })),
     };
-    setData(prev => prev ? { ...prev, pages: [...prev.pages, newFrame] } : prev);
-    scheduleSave();
+    updateData(d => ({ ...d, pages: [...d.pages, newFrame] }));
   };
 
   const imageInputRef = useRef<HTMLInputElement>(null);
