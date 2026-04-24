@@ -1879,22 +1879,23 @@ export function CanvasEditor({
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
-  const bringForward = (id: string) => {
+  const bringForward = useCallback((id: string) => {
     const el = activeFrameId ? activeFrame?.elements.find(e => e.id === id) : data?.elements?.find(e => e.id === id);
     updateElement(id, { z_index: (el?.z_index ?? 0) + 1 });
-  };
-  const sendBackward = (id: string) => {
+  }, [activeFrameId, activeFrame, data, updateElement]);
+
+  const sendBackward = useCallback((id: string) => {
     const el = activeFrameId ? activeFrame?.elements.find(e => e.id === id) : data?.elements?.find(e => e.id === id);
     updateElement(id, { z_index: Math.max(0, (el?.z_index ?? 0) - 1) });
-  };
+  }, [activeFrameId, activeFrame, data, updateElement]);
 
-  const bringToFront = (id: string) => {
+  const bringToFront = useCallback((id: string) => {
     const elements = activeFrame?.elements ?? data?.elements ?? [];
     const maxZ = Math.max(0, ...elements.map(e => e.z_index ?? 0));
     updateElement(id, { z_index: maxZ + 1 });
-  };
+  }, [activeFrame, data, updateElement]);
 
-  const sendToBack = (id: string) => {
+  const sendToBack = useCallback((id: string) => {
     const elements = activeFrame?.elements ?? data?.elements ?? [];
     if (!activeFrameId) { updateElement(id, { z_index: 0 }); return; }
     updateFrame(activeFrameId, page => {
@@ -1902,7 +1903,7 @@ export function CanvasEditor({
       const bumped = others.map(e => ({ ...e, z_index: (e.z_index ?? 0) + 1 }));
       return { ...page, elements: [...bumped, { ...page.elements.find(e => e.id === id)!, z_index: 0 }] };
     });
-  };
+  }, [activeFrame, data, activeFrameId, updateElement, updateFrame]);
 
   const toggleLock = useCallback((id: string) => {
     const el = findElementById(id);
@@ -1911,7 +1912,7 @@ export function CanvasEditor({
 
   const renameFrame = useCallback((id: string) => {
     setEditingFrameName(id);
-  }, []);
+  }, [setEditingFrameName]);
 
   const handleExportFramePng = useCallback((_pageId: string) => {
     // Implemented in Task 7
@@ -1922,9 +1923,8 @@ export function CanvasEditor({
   const canvasFrameActionMap = useMemo(() => buildActionMap(canvasFrameActions), []);
 
   const getElementMenuItems = useCallback(() => {
-    const singleSel = Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean).length === 1
-      ? (Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean)[0] ?? null)
-      : null;
+    const resolved = Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean) as CanvasElement[];
+    const singleSel = resolved.length === 1 ? resolved[0] : null;
     const ctx: CanvasElementCtx = {
       selectedIds,
       singleSelected: singleSel,
@@ -2173,7 +2173,6 @@ export function CanvasEditor({
                   {/* Frame name label — drag to reposition, double-click to edit */}
                   <div
                     data-frame-label={frame.page_id}
-                    data-frame-title={frame.page_id}
                     onMouseDown={(e) => { if (editingFrameName !== frame.page_id) handleFrameNameMouseDown(frame.page_id, e); }}
                     onDoubleClick={(e) => { e.stopPropagation(); setEditingFrameName(frame.page_id); }}
                     onContextMenu={(e) => {
