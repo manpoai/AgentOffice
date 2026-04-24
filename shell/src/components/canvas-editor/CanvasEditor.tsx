@@ -821,6 +821,10 @@ export function CanvasEditor({
     if (next) { setData(next); scheduleSave(next); }
   }, [undoRedo, scheduleSave]);
 
+  const handleCreateManualVersion = useCallback(async () => {
+    await gw.createContentManualSnapshot(contentId);
+  }, [contentId]);
+
   useEffect(() => {
     const flush = () => {
       if (saveTimeoutRef.current) { clearTimeout(saveTimeoutRef.current); saveTimeoutRef.current = null; }
@@ -2696,6 +2700,7 @@ export function CanvasEditor({
       {showRevisions && (
         <div className="hidden md:flex w-[304px] bg-sidebar flex-col shrink-0 overflow-hidden h-full">
           <RevisionHistory contentId={contentId} contentType="canvas" onClose={() => setShowRevisions(false)}
+            onCreateManualVersion={handleCreateManualVersion}
             onRestore={(revisionData) => { setData(revisionData as CanvasData); scheduleSave(revisionData as CanvasData); setShowRevisions(false); }} />
         </div>
       )}
