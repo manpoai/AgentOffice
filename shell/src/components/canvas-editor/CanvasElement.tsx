@@ -13,6 +13,7 @@ interface CanvasElementProps {
   onResizeStart: (id: string, handle: string, e: React.MouseEvent | React.TouchEvent) => void;
   onDoubleClick?: (id: string) => void;
   onHtmlChange?: (html: string) => void;
+  onContextMenu?: (id: string, e: React.MouseEvent) => void;
 }
 
 interface EditingOverlayProps {
@@ -130,7 +131,7 @@ export function EditingOverlay({ element, scale, panX, panY, onHtmlChange, onDon
   );
 }
 
-export function CanvasElementView({ element, selected, scale, editing, onSelect, onDragStart, onResizeStart, onDoubleClick }: CanvasElementProps) {
+export function CanvasElementView({ element, selected, scale, editing, onSelect, onDragStart, onResizeStart, onDoubleClick, onContextMenu }: CanvasElementProps) {
   const shadowHostRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
 
@@ -176,6 +177,7 @@ export function CanvasElementView({ element, selected, scale, editing, onSelect,
       onMouseDown={handlePointerDown}
       onTouchStart={handlePointerDown}
       onDoubleClick={handleDblClick}
+      onContextMenu={onContextMenu ? (e) => { e.stopPropagation(); onContextMenu(element.id, e); } : undefined}
     >
       <div ref={shadowHostRef} style={{ width: '100%', height: '100%', pointerEvents: 'none' }} />
       {selected && !editing && (

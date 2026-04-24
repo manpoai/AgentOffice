@@ -46,6 +46,12 @@ import { uploadImageFile, createImageHtml, extractDroppedImageFiles, isSvgFile }
 import { parseSvgFileContent } from '@/components/shared/svg-import';
 import type { CanvasData, CanvasPage, CanvasElement } from './types';
 import { createEmptyPage, DEFAULT_PAGE_WIDTH, DEFAULT_PAGE_HEIGHT } from './types';
+import { useContextMenu } from '@/lib/hooks/use-context-menu';
+import { toContextMenuItems } from '@/surfaces/bridge';
+import { buildActionMap } from '@/actions/types';
+import { canvasElementActions, type CanvasElementCtx } from '@/actions/canvas-element.actions';
+import { canvasFrameActions, type CanvasFrameCtx } from '@/actions/canvas-frame.actions';
+import { canvasSurfaces } from '@/surfaces/canvas.surfaces';
 
 type PendingInsert = { type: 'text' } | { type: 'shape'; shapeType: ShapeType } | { type: 'frame' } | { type: 'pen'; continueElementId?: string; initialPoints?: PathPoint[]; appendEnd?: 'start' | 'end' } | { type: 'line-draw' };
 
@@ -1898,6 +1904,58 @@ export function CanvasEditor({
     });
   };
 
+  const toggleLock = useCallback((id: string) => {
+    const el = findElementById(id);
+    if (el) updateElement(id, { locked: !el.locked });
+  }, [findElementById, updateElement]);
+
+  const renameFrame = useCallback((id: string) => {
+    setEditingFrameName(id);
+  }, []);
+
+  const handleExportFramePng = useCallback((_pageId: string) => {
+    // Implemented in Task 7
+  }, []);
+
+  // ─── Context menus ──────────────────
+  const canvasElementActionMap = useMemo(() => buildActionMap(canvasElementActions), []);
+  const canvasFrameActionMap = useMemo(() => buildActionMap(canvasFrameActions), []);
+
+  const getElementMenuItems = useCallback(() => {
+    const singleSel = Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean).length === 1
+      ? (Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean)[0] ?? null)
+      : null;
+    const ctx: CanvasElementCtx = {
+      selectedIds,
+      singleSelected: singleSel,
+      handleCut, handleCopy, handlePaste,
+      deleteSelected,
+      duplicateElement: (id) => duplicateElement(id),
+      bringToFront, bringForward, sendBackward, sendToBack,
+      groupSelected, ungroupSelected,
+      toggleLock,
+      openAiEdit: () => onShowComments(),
+      openComments: () => onShowComments(),
+    };
+    const surface = selectedIds.size > 1 ? canvasSurfaces.multiMenu : canvasSurfaces.elementMenu;
+    return toContextMenuItems(surface, canvasElementActionMap, ctx, t);
+  }, [selectedIds, findElementById, handleCut, handleCopy, handlePaste, deleteSelected,
+      duplicateElement, bringToFront, bringForward, sendBackward, sendToBack,
+      groupSelected, ungroupSelected, toggleLock, canvasElementActionMap, t, onShowComments]);
+
+  const { onContextMenu: onElementContextMenu } = useContextMenu(getElementMenuItems);
+
+  const getFrameMenuItems = useCallback((frameId: string) => () => {
+    const ctx: CanvasFrameCtx = {
+      frameId,
+      renameFrame,
+      duplicateFrame,
+      deleteFrame,
+      exportFramePng: handleExportFramePng,
+    };
+    return toContextMenuItems(canvasSurfaces.frameMenu, canvasFrameActionMap, ctx, t);
+  }, [renameFrame, duplicateFrame, deleteFrame, handleExportFramePng, canvasFrameActionMap, t]);
+
   const alignElements = (alignment: string) => {
     if (selectedIds.size < 2 || !activeFrame || !activeFrameId) return;
     const selected = activeFrame.elements.filter(el => selectedIds.has(el.id));
@@ -2115,8 +2173,17 @@ export function CanvasEditor({
                   {/* Frame name label — drag to reposition, double-click to edit */}
                   <div
                     data-frame-label={frame.page_id}
+                    data-frame-title={frame.page_id}
                     onMouseDown={(e) => { if (editingFrameName !== frame.page_id) handleFrameNameMouseDown(frame.page_id, e); }}
                     onDoubleClick={(e) => { e.stopPropagation(); setEditingFrameName(frame.page_id); }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const items = getFrameMenuItems(frame.page_id)();
+                      if (items.length > 0) {
+                        window.dispatchEvent(new CustomEvent('show-context-menu', { detail: { items, x: e.clientX, y: e.clientY } }));
+                      }
+                    }}
                     style={{
                       position: 'absolute',
                       left: pan.x + fx * scale,
@@ -2240,6 +2307,13 @@ export function CanvasEditor({
                             if (activeGroupPath.includes(id)) return;
                             handleDoubleClick(frame.page_id, id);
                           }}
+                          onContextMenu={(id, e) => {
+                            if (!selectedIds.has(id)) {
+                              setActiveFrameId(frame.page_id);
+                              setSelectedIds(new Set([id]));
+                            }
+                            onElementContextMenu(e);
+                          }}
                           onShadowRootReady={(id, sr) => shadowRootRefs.current.set(id, sr)}
                           onMouseEnter={(id) => { if (!activeGroupPath.includes(id)) setHoveredId(id); }}
                           onMouseLeave={(id) => { if (hoveredId === id) setHoveredId(null); }} />
@@ -2328,6 +2402,13 @@ export function CanvasEditor({
                       onShadowRootReady={(id, sr) => shadowRootRefs.current.set(id, sr)}
                       onMouseEnter={() => setHoveredId(el.id)}
                       onMouseLeave={() => { if (hoveredId === el.id) setHoveredId(null); }}
+                      onContextMenu={(id, e) => {
+                        if (!selectedIds.has(id)) {
+                          setActiveFrameId(null);
+                          setSelectedIds(new Set([id]));
+                        }
+                        onElementContextMenu(e);
+                      }}
                       onDoubleClick={(id) => {
                         setActiveFrameId(null);
                         const el = data.elements?.find(e => e.id === id);
