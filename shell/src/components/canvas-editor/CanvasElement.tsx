@@ -132,6 +132,9 @@ export function EditingOverlay({ element, scale, panX, panY, onHtmlChange, onDon
 }
 
 export function CanvasElementView({ element, selected, scale, editing, onSelect, onDragStart, onResizeStart, onDoubleClick, onContextMenu }: CanvasElementProps) {
+  // Guard must come BEFORE any hooks
+  if (element.visible === false) return null;
+
   const shadowHostRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
 
@@ -161,8 +164,6 @@ export function CanvasElementView({ element, selected, scale, editing, onSelect,
   };
 
   const handleSize = Math.max(10, 10 / scale);
-
-  if (element.visible === false) return null;
 
   return (
     <div
