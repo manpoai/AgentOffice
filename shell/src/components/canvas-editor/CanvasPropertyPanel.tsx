@@ -21,7 +21,7 @@ import { NumberInput } from './NumberInput';
 import { ColorPicker } from './ColorPicker';
 import type { SubElementSelection } from '@/components/shared/SubElementEditor';
 import { CANVAS_FONTS } from './fonts';
-import { loadGoogleFont } from './useFontLoader';
+import { loadGoogleFont } from './fontLoader';
 
 // ── Section header ────────────────────────────────────────────────────────────
 
