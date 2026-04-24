@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as gw from '@/lib/api/gateway';
 import {
@@ -52,6 +52,8 @@ import { buildActionMap } from '@/actions/types';
 import { canvasElementActions, type CanvasElementCtx } from '@/actions/canvas-element.actions';
 import { canvasFrameActions, type CanvasFrameCtx } from '@/actions/canvas-frame.actions';
 import { canvasSurfaces } from '@/surfaces/canvas.surfaces';
+import { CanvasFrameExportView } from './CanvasFrameExportView';
+import { exportFramePng } from './exportUtils';
 
 type PendingInsert = { type: 'text' } | { type: 'shape'; shapeType: ShapeType } | { type: 'frame' } | { type: 'pen'; continueElementId?: string; initialPoints?: PathPoint[]; appendEnd?: 'start' | 'end' } | { type: 'line-draw' };
 
@@ -1934,9 +1936,33 @@ export function CanvasEditor({
     setEditingFrameName(id);
   }, [setEditingFrameName]);
 
-  const handleExportFramePng = useCallback((_pageId: string) => {
-    // Implemented in Task 7
-  }, []);
+  const handleExportFramePng = useCallback(async (pageId: string) => {
+    const frame = data?.pages.find(p => p.page_id === pageId);
+    if (!frame) return;
+
+    // Mount a hidden export view, capture PNG, unmount
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-99999px;top:0;pointer-events:none;';
+    document.body.appendChild(container);
+
+    const { createRoot } = await import('react-dom/client');
+    const root = createRoot(container);
+    const ref = React.createRef<HTMLDivElement>();
+
+    await new Promise<void>(resolve => {
+      root.render(
+        React.createElement(CanvasFrameExportView, { frame, ref }),
+      );
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
+    if (ref.current) {
+      await exportFramePng(ref.current, frame.title || 'frame');
+    }
+
+    root.unmount();
+    document.body.removeChild(container);
+  }, [data]);
 
   // ─── Context menus ──────────────────
   const canvasElementActionMap = useMemo(() => buildActionMap(canvasElementActions), []);
