@@ -1756,6 +1756,31 @@ export function CanvasEditor({
     setSelectedIds(new Set([newEl.id]));
   };
 
+  const deepCloneChildren = (children: CanvasElement[]): CanvasElement[] =>
+    children.map(c => ({
+      ...c,
+      id: `el-${crypto.randomUUID().slice(0, 8)}`,
+      children: c.children ? deepCloneChildren(c.children) : undefined,
+    }));
+
+  const duplicateFrame = (pageId: string) => {
+    const frame = data?.pages.find(p => p.page_id === pageId);
+    if (!frame) return;
+    const newFrame: CanvasPage = {
+      ...frame,
+      page_id: crypto.randomUUID(),
+      title: (frame.title || 'Frame') + ' Copy',
+      frame_x: (frame.frame_x ?? 0) + frame.width + 40,
+      elements: frame.elements.map(el => ({
+        ...el,
+        id: `el-${crypto.randomUUID().slice(0, 8)}`,
+        children: el.children ? deepCloneChildren(el.children) : undefined,
+      })),
+    };
+    setData(prev => prev ? { ...prev, pages: [...prev.pages, newFrame] } : prev);
+    scheduleSave();
+  };
+
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const insertImageElement = useCallback((url: string, name?: string) => {
@@ -1856,6 +1881,22 @@ export function CanvasEditor({
   const sendBackward = (id: string) => {
     const el = activeFrameId ? activeFrame?.elements.find(e => e.id === id) : data?.elements?.find(e => e.id === id);
     updateElement(id, { z_index: Math.max(0, (el?.z_index ?? 0) - 1) });
+  };
+
+  const bringToFront = (id: string) => {
+    const elements = activeFrame?.elements ?? data?.elements ?? [];
+    const maxZ = Math.max(0, ...elements.map(e => e.z_index ?? 0));
+    updateElement(id, { z_index: maxZ + 1 });
+  };
+
+  const sendToBack = (id: string) => {
+    const elements = activeFrame?.elements ?? data?.elements ?? [];
+    if (!activeFrameId) { updateElement(id, { z_index: 0 }); return; }
+    updateFrame(activeFrameId, page => {
+      const others = page.elements.filter(e => e.id !== id);
+      const bumped = others.map(e => ({ ...e, z_index: (e.z_index ?? 0) + 1 }));
+      return { ...page, elements: [...bumped, { ...page.elements.find(e => e.id === id)!, z_index: 0 }] };
+    });
   };
 
   const alignElements = (alignment: string) => {
