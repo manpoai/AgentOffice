@@ -2847,7 +2847,7 @@ export function CanvasEditor({
             targetId={contentId}
             anchorType={singleSelected ? 'element' : undefined}
             anchorId={singleSelected?.id}
-            anchorMeta={singleSelected ? { name: singleSelected.name || getElementLabel(singleSelected) } : undefined}
+            anchorMeta={singleSelected ? { node_label: singleSelected.name || getElementLabel(singleSelected) } : undefined}
             onNavigateToAnchor={navigateToAnchor}
             onClose={onCloseComments}
             focusCommentId={focusCommentId}
