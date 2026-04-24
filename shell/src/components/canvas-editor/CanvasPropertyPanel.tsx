@@ -1,63 +1,33 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Ban, ChevronDown, ChevronRight, Upload } from 'lucide-react';
+import { useState, useMemo, useCallback } from 'react';
+import {
+  X, Upload, ChevronDown, ChevronRight, Ban, Plus, Trash2,
+  Copy, Trash, Group, Ungroup, Lock, Unlock,
+  AlignStartHorizontal, AlignHorizontalJustifyCenter, AlignEndHorizontal,
+  AlignStartVertical, AlignVerticalJustifyCenter, AlignEndVertical,
+  AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { pickFile } from '@/lib/utils/pick-file';
 import * as gw from '@/lib/api/gateway';
 import type { CanvasElement, CanvasPage, DesignToken } from './types';
-import { projectElement, applyProjection, extractDesignTokens, updateDesignToken } from './projection';
-import type { ProjectedProps } from './projection';
+import { projectElement, applyProjection, extractDesignTokens, updateDesignToken, applySvgDropShadow, applySvgMarker, applyStrokeLinecap, hasGradientFill } from './projection';
+import type { ProjectedProps, SvgDropShadow, MarkerType } from './projection';
+import { flattenToLeaves, computePropertyUnion, aggregateProps, applyToLeaves } from './property-model';
+import type { AggregatedProps } from './property-model';
+import { NumberInput } from './NumberInput';
+import { ColorPicker } from './ColorPicker';
+import type { SubElementSelection } from '@/components/shared/SubElementEditor';
 
-function ColorInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const isNone = !value || value === 'none';
-  return (
-    <div className="flex items-center gap-2">
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
-      <div className="flex items-center gap-1 flex-1">
-        {isNone ? (
-          <button onClick={() => onChange('#000000')}
-            className="w-6 h-6 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center"
-            title="Set color">
-            <Ban className="h-3 w-3 text-muted-foreground/40" />
-          </button>
-        ) : (
-          <input type="color" value={value} onChange={e => onChange(e.target.value)}
-            className="w-6 h-6 rounded border cursor-pointer" />
-        )}
-        <input type="text" value={isNone ? '' : value}
-          onChange={e => onChange(e.target.value || 'none')}
-          className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono" placeholder="none" />
-        {!isNone && (
-          <button onClick={() => onChange('none')}
-            className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground" title="Remove">
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function NumberInput({ label, value, onChange, min, step = 1 }: {
-  label: string; value: number; onChange: (v: number) => void; min?: number; step?: number;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
-      <input type="number" value={Math.round(value * 100) / 100} min={min} step={step}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono" />
-    </div>
-  );
-}
+// ── Section header ────────────────────────────────────────────────────────────
 
 function SectionHeader({ children, collapsed, onToggle }: {
   children: React.ReactNode; collapsed?: boolean; onToggle?: () => void;
 }) {
   return (
-    <div className={cn("px-3 py-1.5 border-b border-border", onToggle && "cursor-pointer hover:bg-accent/50")}
+    <div className={cn('px-3 py-1.5 border-b border-border', onToggle && 'cursor-pointer hover:bg-accent/50')}
       onClick={onToggle}>
       <div className="flex items-center gap-1">
         {onToggle && (collapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />)}
@@ -67,19 +37,122 @@ function SectionHeader({ children, collapsed, onToggle }: {
   );
 }
 
-function ImageFillInput({ element, onUpdateElement }: {
+// ── Small icon button ─────────────────────────────────────────────────────────
+
+function IconBtn({ icon: Icon, onClick, title, active, danger }: {
+  icon: React.ElementType; onClick: () => void; title: string; active?: boolean; danger?: boolean;
+}) {
+  return (
+    <button onClick={onClick} title={title}
+      className={cn(
+        'p-1 rounded transition-colors',
+        danger ? 'text-destructive hover:bg-destructive/10' :
+        active ? 'text-primary bg-primary/10' :
+        'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+      )}>
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+// ── Row label + value ─────────────────────────────────────────────────────────
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
+      <div className="flex-1">{children}</div>
+    </div>
+  );
+}
+
+// ── Color row with ColorPicker ────────────────────────────────────────────────
+
+function ColorRow({ label, value, onChange, allowNone, onClear }: {
+  label: string; value: string; onChange: (v: string) => void;
+  allowNone?: boolean; onClear?: () => void;
+}) {
+  const isNone = !value || value === 'none';
+  return (
+    <Row label={label}>
+      <div className="flex items-center gap-1">
+        {isNone ? (
+          <button onClick={() => onChange('#000000')}
+            className="w-6 h-6 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center shrink-0"
+            title="Set color">
+            <Ban className="h-3 w-3 text-muted-foreground/40" />
+          </button>
+        ) : (
+          <ColorPicker value={value} onChange={onChange} allowNone={allowNone} onClear={onClear} />
+        )}
+        <input type="text" value={isNone ? '' : value}
+          onChange={e => onChange(e.target.value || 'none')}
+          className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono" placeholder="none" />
+        {!isNone && allowNone && onClear && (
+          <button onClick={onClear} className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground" title="Remove">
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    </Row>
+  );
+}
+
+// ── Image fill mode ───────────────────────────────────────────────────────────
+
+type ImageFitMode = 'cover' | 'contain' | 'stretch';
+
+function getImageFitMode(html: string): ImageFitMode {
+  const parMatch = html.match(/preserveAspectRatio="([^"]*)"/);
+  if (parMatch) {
+    if (parMatch[1] === 'none') return 'stretch';
+    if (parMatch[1].includes('meet')) return 'contain';
+    return 'cover';
+  }
+  const bgSizeMatch = html.match(/background-size:\s*([\w%-]+)/);
+  if (bgSizeMatch) {
+    if (bgSizeMatch[1] === 'contain') return 'contain';
+    if (bgSizeMatch[1] === '100%') return 'stretch';
+  }
+  return 'cover';
+}
+
+function applyImageFitMode(html: string, mode: ImageFitMode): string {
+  const isSvg = html.includes('<svg');
+  if (isSvg) {
+    const par = mode === 'stretch' ? 'none' : mode === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice';
+    return html.replace(/preserveAspectRatio="[^"]*"/, `preserveAspectRatio="${par}"`);
+  }
+  const bgSize = mode === 'stretch' ? '100% 100%' : mode === 'contain' ? 'contain' : 'cover';
+  return html.replace(/background-size:[^;]+;?/, `background-size:${bgSize};`);
+}
+
+// ── Fill section (Solid / Image / None) ──────────────────────────────────────
+
+type FillMode = 'solid' | 'image' | 'none';
+
+function FillSection({ element, projected, onApply, onUpdateElement }: {
   element: CanvasElement;
+  projected: ReturnType<typeof projectElement>;
+  onApply: (changes: Partial<ProjectedProps>) => void;
   onUpdateElement: (id: string, updates: Partial<CanvasElement>) => void;
 }) {
-  const isSvg = element.html.includes('<svg');
+  const isSvg = projected.isSvgShape;
+  const currentColor = isSvg ? (projected.svgFill || '') : (projected.backgroundColor || '');
+  const isSvgHtml = element.html.includes('<svg');
   const patternMatch = element.html.match(/href="([^"]+)"/);
   const bgMatch = element.html.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/);
-  const currentUrl = (isSvg ? patternMatch?.[1] : bgMatch?.[1]) || '';
-  const hasImage = !!currentUrl;
+  const currentUrl = (isSvgHtml ? patternMatch?.[1] : bgMatch?.[1]) || '';
 
-  const applyImageFill = (url: string) => {
+  let fillMode: FillMode = currentColor === 'none' ? 'none' : 'solid';
+  if (currentUrl) fillMode = 'image';
+
+  const isGradient = hasGradientFill(element.html);
+  const fitMode = currentUrl ? getImageFitMode(element.html) : 'cover';
+
+  const applyImageFill = async (url: string) => {
     let html = element.html;
-    if (isSvg) {
+    if (isSvgHtml) {
       html = html.replace(/<defs>[\s\S]*?<\/defs>/g, '');
       const pathEl = html.match(/<(path|rect|circle|ellipse|polygon)\s/);
       if (pathEl) {
@@ -99,9 +172,7 @@ function ImageFillInput({ element, onUpdateElement }: {
         style = style.replace(/background-size:[^;]+;?\s*/g, '');
         style = style.replace(/background-position:[^;]+;?\s*/g, '');
         style = style.replace(/background-repeat:[^;]+;?\s*/g, '');
-        if (url) {
-          style += `background-image:url('${url}');background-size:cover;background-position:center;`;
-        }
+        if (url) style += `background-image:url('${url}');background-size:cover;background-position:center;`;
         html = html.replace(wrapperStyleMatch[0], `<div style="${style}"`);
       }
     }
@@ -126,34 +197,209 @@ function ImageFillInput({ element, onUpdateElement }: {
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">Image</label>
-      {hasImage ? (
-        <div className="flex items-center gap-1 flex-1 min-w-0">
-          <div className="w-6 h-6 rounded border bg-cover bg-center shrink-0"
-            style={{ backgroundImage: `url('${currentUrl}')` }} />
-          <span className="flex-1 text-[11px] text-muted-foreground truncate">{currentUrl.split('/').pop()}</span>
-          <button onClick={() => applyImageFill('')}
-            className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground shrink-0" title="Remove image">
-            <X className="h-3 w-3" />
-          </button>
+    <div className="space-y-2">
+      {/* Mode selector */}
+      <Row label="Fill">
+        <div className="flex gap-1">
+          {(['solid', 'image', 'none'] as FillMode[]).map(m => (
+            <button key={m}
+              className={cn('flex-1 text-[11px] px-1.5 py-0.5 rounded border transition-colors',
+                fillMode === m ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-muted-foreground')}
+              onClick={() => {
+                if (m === 'none') {
+                  isSvg ? onApply({ svgFill: 'none' }) : onApply({ backgroundColor: 'none' });
+                } else if (m === 'solid') {
+                  isSvg ? onApply({ svgFill: '#e0e7ff' }) : onApply({ backgroundColor: '#ffffff' });
+                } else {
+                  handleUpload();
+                }
+              }}>
+              {m.charAt(0).toUpperCase() + m.slice(1)}
+            </button>
+          ))}
         </div>
-      ) : (
-        <button onClick={handleUpload}
-          className="flex-1 text-[11px] px-1.5 py-1 rounded border border-dashed border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50 flex items-center gap-1 justify-center">
-          <Upload className="h-3 w-3" /> Upload
-        </button>
+      </Row>
+
+      {fillMode === 'solid' && !isGradient && (
+        <ColorRow label="Color"
+          value={currentColor}
+          onChange={v => isSvg ? onApply({ svgFill: v }) : onApply({ backgroundColor: v })}
+          allowNone onClear={() => isSvg ? onApply({ svgFill: 'none' }) : onApply({ backgroundColor: 'none' })}
+        />
+      )}
+      {fillMode === 'solid' && isGradient && (
+        <Row label="Color">
+          <span className="text-[11px] text-muted-foreground italic">Gradient (edit HTML)</span>
+        </Row>
+      )}
+      {fillMode === 'image' && (
+        <>
+          <Row label="Image">
+            <div className="flex items-center gap-1 min-w-0">
+              <div className="w-6 h-6 rounded border bg-cover bg-center shrink-0"
+                style={{ backgroundImage: `url('${currentUrl}')` }} />
+              <span className="flex-1 text-[11px] text-muted-foreground truncate">{currentUrl.split('/').pop()}</span>
+              <button onClick={() => applyImageFill('')}
+                className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground shrink-0" title="Remove image">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          </Row>
+          <Row label="Fit">
+            <select value={fitMode}
+              onChange={e => {
+                const newHtml = applyImageFitMode(element.html, e.target.value as ImageFitMode);
+                onUpdateElement(element.id, { html: newHtml });
+              }}
+              className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+              <option value="cover">Fill (crop)</option>
+              <option value="contain">Fit (letterbox)</option>
+              <option value="stretch">Stretch</option>
+            </select>
+          </Row>
+        </>
       )}
     </div>
   );
 }
+
+// ── Shadow section ────────────────────────────────────────────────────────────
+
+function ShadowSection({ element, projected, onUpdateElement }: {
+  element: CanvasElement;
+  projected: ReturnType<typeof projectElement>;
+  onUpdateElement: (id: string, updates: Partial<CanvasElement>) => void;
+}) {
+  const isSvg = element.html.includes('<svg');
+
+  const parsedShadow = projected.svgDropShadow;
+  const boxShadow = projected.boxShadow;
+
+  // Parse box-shadow string for HTML elements
+  const parseBoxShadow = (s: string) => {
+    const m = s.match(/(-?[\d.]+)px\s+(-?[\d.]+)px\s+(-?[\d.]+)px(?:\s+(-?[\d.]+)px)?\s+(#[0-9a-fA-F]+|rgba?\([^)]+\))/);
+    if (!m) return { x: 0, y: 4, blur: 4, spread: 0, color: '#000000', opacity: 0.25 };
+    return { x: parseFloat(m[1]), y: parseFloat(m[2]), blur: parseFloat(m[3]), spread: parseFloat(m[4] ?? '0'), color: m[5], opacity: 1 };
+  };
+
+  const hasShadow = isSvg ? parsedShadow !== null : !!boxShadow;
+  const sh = isSvg
+    ? (parsedShadow ?? { dx: 0, dy: 4, stdDeviation: 4, color: '#000000', opacity: 0.25 })
+    : parseBoxShadow(boxShadow ?? '0px 4px 4px #00000040');
+
+  const applyHtmlShadow = (vals: { x: number; y: number; blur: number; spread: number; color: string; opacity: number }) => {
+    const div = document.createElement('div');
+    div.innerHTML = element.html;
+    const el = div.firstElementChild as HTMLElement | null;
+    if (!el) return;
+    el.style.boxShadow = `${vals.x}px ${vals.y}px ${vals.blur}px ${vals.spread}px ${vals.color}`;
+    onUpdateElement(element.id, { html: div.innerHTML });
+  };
+
+  const applySvgShadowChange = (vals: SvgDropShadow) => {
+    const newHtml = applySvgDropShadow(element.html, vals);
+    onUpdateElement(element.id, { html: newHtml });
+  };
+
+  if (!hasShadow) {
+    return (
+      <button onClick={() => {
+        if (isSvg) {
+          const newHtml = applySvgDropShadow(element.html, { dx: 0, dy: 4, stdDeviation: 4, color: '#000000', opacity: 0.25 });
+          onUpdateElement(element.id, { html: newHtml });
+        } else {
+          applyHtmlShadow({ x: 0, y: 4, blur: 4, spread: 0, color: '#000000', opacity: 0.25 });
+        }
+      }}
+        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
+        <Plus className="h-3 w-3" /> Add shadow
+      </button>
+    );
+  }
+
+  const removeShadow = () => {
+    if (isSvg) {
+      onUpdateElement(element.id, { html: applySvgDropShadow(element.html, null) });
+    } else {
+      const div = document.createElement('div');
+      div.innerHTML = element.html;
+      const el = div.firstElementChild as HTMLElement | null;
+      if (el) { el.style.boxShadow = ''; onUpdateElement(element.id, { html: div.innerHTML }); }
+    }
+  };
+
+  if (isSvg && parsedShadow !== null) {
+    const sv = parsedShadow!;
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-muted-foreground">Drop shadow</span>
+          <button onClick={removeShadow} className="p-0.5 text-muted-foreground/50 hover:text-destructive" title="Remove shadow">
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-1">
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground w-4">X</span>
+            <NumberInput value={sv.dx} onChange={v => applySvgShadowChange({ ...sv, dx: v })} step={1} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground w-4">Y</span>
+            <NumberInput value={sv.dy} onChange={v => applySvgShadowChange({ ...sv, dy: v })} step={1} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground w-4">B</span>
+            <NumberInput value={sv.stdDeviation} onChange={v => applySvgShadowChange({ ...sv, stdDeviation: Math.max(0, v) })} min={0} />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground w-4">O</span>
+            <NumberInput value={Math.round(sv.opacity * 100)} onChange={v => applySvgShadowChange({ ...sv, opacity: Math.min(1, Math.max(0, v / 100)) })} min={0} max={100} suffix="%" />
+          </div>
+        </div>
+        <ColorRow label="Color" value={sv.color} onChange={v => applySvgShadowChange({ ...sv, color: v })} />
+      </div>
+    );
+  }
+
+  const hv = parseBoxShadow(boxShadow ?? '0px 4px 4px #00000040');
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-muted-foreground">Drop shadow</span>
+        <button onClick={removeShadow} className="p-0.5 text-muted-foreground/50 hover:text-destructive" title="Remove shadow">
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground w-4">X</span>
+          <NumberInput value={hv.x} onChange={v => applyHtmlShadow({ ...hv, x: v })} step={1} />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground w-4">Y</span>
+          <NumberInput value={hv.y} onChange={v => applyHtmlShadow({ ...hv, y: v })} step={1} />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground w-4">Blur</span>
+          <NumberInput value={hv.blur} onChange={v => applyHtmlShadow({ ...hv, blur: Math.max(0, v) })} min={0} />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground w-4">Spread</span>
+          <NumberInput value={hv.spread} onChange={v => applyHtmlShadow({ ...hv, spread: v })} />
+        </div>
+      </div>
+      <ColorRow label="Color" value={hv.color} onChange={v => applyHtmlShadow({ ...hv, color: v })} />
+    </div>
+  );
+}
+
+// ── Frame image input ─────────────────────────────────────────────────────────
 
 function FrameImageInput({ frame, onUpdateFrame }: {
   frame: CanvasPage;
   onUpdateFrame: (pageId: string, updates: Partial<CanvasPage>) => void;
 }) {
   const hasImage = !!frame.background_image;
-
   const handleUpload = async () => {
     try {
       const files = await pickFile({ accept: 'image/*' });
@@ -170,14 +416,11 @@ function FrameImageInput({ frame, onUpdateFrame }: {
       showError('Failed to upload image', err);
     }
   };
-
   return (
-    <div className="flex items-center gap-2">
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">Bg Image</label>
+    <Row label="Bg Image">
       {hasImage ? (
-        <div className="flex items-center gap-1 flex-1 min-w-0">
-          <div className="w-6 h-6 rounded border bg-cover bg-center shrink-0"
-            style={{ backgroundImage: `url('${frame.background_image}')` }} />
+        <div className="flex items-center gap-1 min-w-0">
+          <div className="w-6 h-6 rounded border bg-cover bg-center shrink-0" style={{ backgroundImage: `url('${frame.background_image}')` }} />
           <span className="flex-1 text-[11px] text-muted-foreground truncate">{frame.background_image!.split('/').pop()}</span>
           <button onClick={() => onUpdateFrame(frame.page_id, { background_image: '' })}
             className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground shrink-0" title="Remove image">
@@ -186,13 +429,15 @@ function FrameImageInput({ frame, onUpdateFrame }: {
         </div>
       ) : (
         <button onClick={handleUpload}
-          className="flex-1 text-[11px] px-1.5 py-1 rounded border border-dashed border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50 flex items-center gap-1 justify-center">
+          className="w-full text-[11px] px-1.5 py-1 rounded border border-dashed border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50 flex items-center gap-1 justify-center">
           <Upload className="h-3 w-3" /> Upload
         </button>
       )}
-    </div>
+    </Row>
   );
 }
+
+// ── Main panel ────────────────────────────────────────────────────────────────
 
 export function CanvasPropertyPanel({
   element,
@@ -200,138 +445,132 @@ export function CanvasPropertyPanel({
   frame,
   selectedCount,
   designTokens,
+  subElementSelection,
   onUpdateElement,
   onUpdateFrame,
   onUpdateToken,
   onClose,
+  onDelete,
+  onDuplicate,
+  onGroup,
+  onUngroup,
+  onAlign,
+  onLock,
 }: {
   element: CanvasElement | null;
   selectedElements?: CanvasElement[];
   frame: CanvasPage | null;
   selectedCount: number;
   designTokens: DesignToken[];
+  subElementSelection?: SubElementSelection | null;
   onUpdateElement: (id: string, updates: Partial<CanvasElement>) => void;
   onUpdateFrame: (pageId: string, updates: Partial<CanvasPage>) => void;
   onUpdateToken: (name: string, value: string) => void;
   onClose: () => void;
+  onDelete?: () => void;
+  onDuplicate?: () => void;
+  onGroup?: () => void;
+  onUngroup?: () => void;
+  onAlign?: (alignment: string) => void;
+  onLock?: () => void;
 }) {
   const [showCode, setShowCode] = useState(false);
 
-  if (!element && selectedCount > 1 && selectedElements && selectedElements.length > 1) {
-    const projected = selectedElements.map(el => projectElement(el.html));
-    const hasSvg = projected.some(p => p.isSvgShape);
-    const hasNonSvg = projected.some(p => !p.isSvgShape);
+  // ── Multi-selection: compute leaves + property union ──────────────────────
+  const allSelected = useMemo(
+    () => selectedElements ?? (element ? [element] : []),
+    [selectedElements, element],
+  );
 
-    const commonStr = (getter: (p: ReturnType<typeof projectElement>) => string | undefined): string => {
-      const vals = projected.map(getter).filter(Boolean) as string[];
-      if (vals.length === 0) return '';
-      return vals.every(v => v === vals[0]) ? vals[0] : 'mixed';
-    };
-    const commonNum = (getter: (p: ReturnType<typeof projectElement>) => number | undefined): number | 'mixed' => {
-      const vals = projected.map(getter).filter(v => v !== undefined) as number[];
-      if (vals.length === 0) return 0;
-      return vals.every(v => v === vals[0]) ? vals[0] : 'mixed';
-    };
+  const leaves = useMemo(() => flattenToLeaves(allSelected), [allSelected]);
+  const support = useMemo(() => computePropertyUnion(leaves), [leaves]);
+  const aggregated = useMemo(() => aggregateProps(leaves), [leaves]);
 
-    const applyToAll = (changes: Partial<ProjectedProps>) => {
-      for (const el of selectedElements) {
-        const newHtml = applyProjection(el.html, changes);
-        onUpdateElement(el.id, { html: newHtml });
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  const applyToAll = useCallback((changes: Partial<ProjectedProps>) => {
+    for (const el of allSelected) {
+      const [updated] = applyToLeaves([el], changes);
+      if (updated.type === 'group') {
+        if (updated.children !== el.children) onUpdateElement(el.id, { children: updated.children });
+      } else {
+        if (updated.html !== el.html) onUpdateElement(el.id, { html: updated.html });
       }
-    };
+    }
+  }, [allSelected, onUpdateElement]);
 
-    const svgFill = commonStr(p => p.svgFill);
-    const svgStroke = commonStr(p => p.svgStroke);
-    const svgStrokeW = commonNum(p => p.svgStrokeWidth);
-    const bgColor = commonStr(p => p.backgroundColor);
-    const textColor = commonStr(p => p.color);
-    const fontSize = commonNum(p => p.fontSize);
-    const radius = commonNum(p => p.borderRadius);
-    const opacity = commonNum(p => p.opacity);
+  const applyChange = useCallback((changes: Partial<ProjectedProps>) => {
+    if (!element) return;
+    const subCssPath = subElementSelection?.cssPath || undefined;
+    const newHtml = applyProjection(element.html, changes, subCssPath);
+    onUpdateElement(element.id, { html: newHtml });
+  }, [element, subElementSelection, onUpdateElement]);
 
+  const isGroup = element?.type === 'group';
+  const isSingle = selectedCount === 1 && !!element;
+  const isMulti = selectedCount > 1;
+  const isSvg = isSingle && element.html.includes('<svg');
+
+  // ── Panel header ──────────────────────────────────────────────────────────
+
+  const headerTitle = subElementSelection ? 'Sub-Element'
+    : isGroup ? 'Group'
+    : isSingle ? 'Element'
+    : isMulti ? `${selectedCount} Selected`
+    : frame ? 'Frame'
+    : 'Canvas';
+
+  const panelClass = 'w-[280px] min-w-[280px] border-l border-border flex flex-col shrink-0 bg-card overflow-y-auto h-full shadow-lg';
+
+  // ── No selection: Canvas / Frame ──────────────────────────────────────────
+
+  if (!element && selectedCount === 0) {
     return (
-      <div className="w-[280px] min-w-[280px] border-l border-border flex flex-col shrink-0 bg-card overflow-y-auto h-full shadow-lg">
+      <div className={panelClass}>
         <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{selectedCount} Selected</span>
-          <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <SectionHeader>Appearance</SectionHeader>
-        <div className="p-3 space-y-2">
-          {hasSvg && (
-            <>
-              <ColorInput label="Fill" value={svgFill === 'mixed' ? '' : svgFill}
-                onChange={v => applyToAll({ svgFill: v })} />
-              <ColorInput label="Stroke" value={svgStroke === 'mixed' ? '' : svgStroke}
-                onChange={v => applyToAll({ svgStroke: v })} />
-              <NumberInput label="Stroke W" value={typeof svgStrokeW === 'number' ? svgStrokeW : 0} min={0} step={0.5}
-                onChange={v => applyToAll({ svgStrokeWidth: v })} />
-            </>
-          )}
-          {hasNonSvg && (
-            <>
-              <ColorInput label="Fill" value={bgColor === 'mixed' ? '' : bgColor}
-                onChange={v => applyToAll({ backgroundColor: v })} />
-              <ColorInput label="Text" value={textColor === 'mixed' ? '' : textColor}
-                onChange={v => applyToAll({ color: v })} />
-              <NumberInput label="Font Size" value={typeof fontSize === 'number' ? fontSize : 16} min={1}
-                onChange={v => applyToAll({ fontSize: v })} />
-            </>
-          )}
-          <NumberInput label="Radius" value={typeof radius === 'number' ? radius : 0} min={0}
-            onChange={v => applyToAll({ borderRadius: v })} />
-          <NumberInput label="Opacity" value={typeof opacity === 'number' ? opacity : 1} min={0} step={0.1}
-            onChange={v => applyToAll({ opacity: Math.min(1, Math.max(0, v)) })} />
-        </div>
-      </div>
-    );
-  }
-
-  if (!element && selectedCount > 1) {
-    return (
-      <div className="w-[280px] min-w-[280px] border-l border-border flex flex-col shrink-0 bg-card overflow-y-auto h-full shadow-lg">
-        <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{selectedCount} Selected</span>
-          <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <div className="p-3 text-[11px] text-muted-foreground">
-          Use the floating toolbar to align or delete selected elements.
-        </div>
-      </div>
-    );
-  }
-
-  if (!element) {
-    return (
-      <div className="w-[280px] min-w-[280px] border-l border-border flex flex-col shrink-0 bg-card overflow-y-auto h-full shadow-lg">
-        <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-            {frame ? 'Frame' : 'Canvas'}
-          </span>
-          <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{frame ? 'Frame' : 'Canvas'}</span>
+          <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"><X className="h-3.5 w-3.5" /></button>
         </div>
         {frame && (
           <>
             <SectionHeader>Position & Size</SectionHeader>
             <div className="p-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
-                <NumberInput label="X" value={frame.frame_x ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_x: v })} />
-                <NumberInput label="Y" value={frame.frame_y ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_y: v })} />
-                <NumberInput label="W" value={frame.width} min={100} onChange={w => onUpdateFrame(frame.page_id, { width: w })} />
-                <NumberInput label="H" value={frame.height} min={100} onChange={h => onUpdateFrame(frame.page_id, { height: h })} />
+                <Row label="X"><NumberInput value={frame.frame_x ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_x: v })} /></Row>
+                <Row label="Y"><NumberInput value={frame.frame_y ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_y: v })} /></Row>
+                <Row label="W"><NumberInput value={frame.width} min={100} onChange={w => onUpdateFrame(frame.page_id, { width: w })} /></Row>
+                <Row label="H"><NumberInput value={frame.height} min={100} onChange={h => onUpdateFrame(frame.page_id, { height: h })} /></Row>
               </div>
             </div>
             <SectionHeader>Appearance</SectionHeader>
             <div className="p-3 space-y-2">
-              <ColorInput label="Bg Color" value={frame.background_color || '#ffffff'}
+              <ColorRow label="Bg Color" value={frame.background_color || '#ffffff'}
                 onChange={v => onUpdateFrame(frame.page_id, { background_color: v })} />
-              <NumberInput label="Radius" value={frame.border_radius ?? 0} min={0}
-                onChange={v => onUpdateFrame(frame.page_id, { border_radius: v })} />
+              <Row label="Radius">
+                <NumberInput value={frame.border_radius ?? 0} min={0} onChange={v => onUpdateFrame(frame.page_id, { border_radius: v })} />
+              </Row>
+              <ColorRow label="Border" value={frame.border_color || ''} allowNone
+                onChange={v => onUpdateFrame(frame.page_id, { border_color: v })}
+                onClear={() => onUpdateFrame(frame.page_id, { border_color: '' })} />
+              <Row label="Border W">
+                <NumberInput value={frame.border_width ?? 0} min={0} step={0.5}
+                  onChange={v => onUpdateFrame(frame.page_id, { border_width: v })} />
+              </Row>
+              <Row label="Border Style">
+                <select value={frame.border_style || 'solid'}
+                  onChange={e => onUpdateFrame(frame.page_id, { border_style: e.target.value as 'solid' | 'dashed' | 'dotted' })}
+                  className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                  <option value="solid">Solid</option>
+                  <option value="dashed">Dashed</option>
+                  <option value="dotted">Dotted</option>
+                </select>
+              </Row>
+              <Row label="Shadow">
+                <input type="text" value={frame.box_shadow || ''}
+                  placeholder="e.g. 0px 4px 8px rgba(0,0,0,0.1)"
+                  onChange={e => onUpdateFrame(frame.page_id, { box_shadow: e.target.value })}
+                  className="w-full text-[11px] px-1.5 py-1 rounded border bg-background" />
+              </Row>
               <FrameImageInput frame={frame} onUpdateFrame={onUpdateFrame} />
             </div>
           </>
@@ -341,7 +580,7 @@ export function CanvasPropertyPanel({
             <SectionHeader>Design Tokens</SectionHeader>
             <div className="p-3 space-y-2">
               {designTokens.map(token => (
-                <ColorInput key={token.name} label={token.name.replace('--', '')}
+                <ColorRow key={token.name} label={token.name.replace('--', '')}
                   value={token.value} onChange={v => onUpdateToken(token.name, v)} />
               ))}
             </div>
@@ -351,131 +590,344 @@ export function CanvasPropertyPanel({
     );
   }
 
-  const projected = projectElement(element.html);
+  // ── Sub-element mode ──────────────────────────────────────────────────────
 
-  const applyChange = (changes: Partial<ProjectedProps>) => {
-    const newHtml = applyProjection(element.html, changes);
-    onUpdateElement(element.id, { html: newHtml });
-  };
+  if (subElementSelection && element) {
+    const projected = projectElement(element.html, subElementSelection.cssPath || undefined);
+    return (
+      <div className={panelClass}>
+        <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Sub-Element</span>
+          <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"><X className="h-3.5 w-3.5" /></button>
+        </div>
+        {subElementSelection.breadcrumbs.length > 1 && (
+          <div className="px-3 py-1.5 border-b border-border flex items-center gap-1 flex-wrap">
+            {subElementSelection.breadcrumbs.map((bc, i) => (
+              <span key={i} className="text-[10px] text-muted-foreground">
+                {i > 0 && <span className="mx-0.5">&gt;</span>}
+                <span className={i === subElementSelection.breadcrumbs.length - 1 ? 'text-foreground font-medium' : ''}>{bc.label}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {subElementSelection.isPositioned && (
+          <>
+            <SectionHeader>Position</SectionHeader>
+            <div className="p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <Row label="X"><NumberInput value={projected.subLeft ?? 0} onChange={v => applyChange({ subLeft: v })} /></Row>
+                <Row label="Y"><NumberInput value={projected.subTop ?? 0} onChange={v => applyChange({ subTop: v })} /></Row>
+                <Row label="W"><NumberInput value={projected.subWidth ?? 0} min={0} onChange={v => applyChange({ subWidth: v })} /></Row>
+                <Row label="H"><NumberInput value={projected.subHeight ?? 0} min={0} onChange={v => applyChange({ subHeight: v })} /></Row>
+              </div>
+            </div>
+          </>
+        )}
+        <SectionHeader>Appearance</SectionHeader>
+        <div className="p-3 space-y-2">
+          <ColorRow label="Fill" value={projected.backgroundColor || ''} onChange={v => applyChange({ backgroundColor: v })} />
+          <ColorRow label="Text" value={projected.color || ''} onChange={v => applyChange({ color: v })} />
+          {projected.fontSize !== undefined && (
+            <Row label="Font Size"><NumberInput value={projected.fontSize} min={1} onChange={v => applyChange({ fontSize: v })} /></Row>
+          )}
+          <Row label="Opacity"><NumberInput value={projected.opacity ?? 1} min={0} max={1} step={0.1} onChange={v => applyChange({ opacity: v })} /></Row>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Element(s) selected ───────────────────────────────────────────────────
+
+  const projected = isSingle ? projectElement(element!.html) : null;
 
   return (
-    <div className="w-[280px] min-w-[280px] border-l border-border flex flex-col shrink-0 bg-card overflow-y-auto h-full shadow-lg">
+    <div className={panelClass}>
+      {/* Header */}
       <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Element</span>
-        <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{headerTitle}</span>
+        <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"><X className="h-3.5 w-3.5" /></button>
       </div>
 
-      <SectionHeader>Position & Size</SectionHeader>
-      <div className="p-3 space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          <NumberInput label="X" value={element.x} onChange={v => onUpdateElement(element.id, { x: v })} />
-          <NumberInput label="Y" value={element.y} onChange={v => onUpdateElement(element.id, { y: v })} />
-          <NumberInput label="W" value={element.w} min={20} onChange={v => onUpdateElement(element.id, { w: v })} />
-          <NumberInput label="H" value={element.h} min={20} onChange={v => onUpdateElement(element.id, { h: v })} />
-        </div>
-        <NumberInput label="Z-Index" value={element.z_index ?? 0}
-          onChange={v => onUpdateElement(element.id, { z_index: v })} />
-      </div>
-
-      <SectionHeader>Appearance</SectionHeader>
-      <div className="p-3 space-y-2">
-        {projected.isSvgShape ? (
+      {/* Operations */}
+      <div className="px-2 py-1.5 border-b border-border flex flex-wrap gap-0.5">
+        {onDuplicate && <IconBtn icon={Copy} onClick={onDuplicate} title="Duplicate" />}
+        {onDelete && <IconBtn icon={Trash} onClick={onDelete} title="Delete" danger />}
+        {onLock && element && <IconBtn icon={element.locked ? Unlock : Lock} onClick={onLock} title={element.locked ? 'Unlock' : 'Lock'} />}
+        {isMulti && onGroup && <IconBtn icon={Group} onClick={onGroup} title="Group (Cmd+G)" />}
+        {isGroup && onUngroup && <IconBtn icon={Ungroup} onClick={onUngroup} title="Ungroup (Cmd+Shift+G)" />}
+        {isMulti && onAlign && (
           <>
-            <ColorInput label="Fill" value={projected.svgFill || ''}
-              onChange={v => applyChange({ svgFill: v })} />
-            <ColorInput label="Stroke" value={projected.svgStroke || ''}
-              onChange={v => applyChange({ svgStroke: v })} />
-            <NumberInput label="Stroke W" value={projected.svgStrokeWidth ?? 2} min={0} step={0.5}
-              onChange={v => applyChange({ svgStrokeWidth: v })} />
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-muted-foreground w-14 shrink-0">Dash</label>
-              <select value={projected.svgStrokeDasharray || ''}
-                onChange={e => applyChange({ svgStrokeDasharray: e.target.value })}
-                className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background">
-                <option value="">Solid</option>
-                <option value="8 4">Dashed</option>
-                <option value="2 2">Dotted</option>
-                <option value="12 4 4 4">Dash-dot</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] text-muted-foreground w-14 shrink-0">Align</label>
-              <select value={projected.svgStrokeAlignment || 'center'}
-                onChange={e => applyChange({ svgStrokeAlignment: e.target.value as 'center' | 'inside' | 'outside' })}
-                className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background">
-                <option value="center">Center</option>
-                <option value="inside">Inside</option>
-                <option value="outside">Outside</option>
-              </select>
-            </div>
-            <NumberInput label="Radius" value={projected.borderRadius ?? 0} min={0}
-              onChange={v => applyChange({ borderRadius: v })} />
-            <ImageFillInput element={element} onUpdateElement={onUpdateElement} />
-          </>
-        ) : (
-          <>
-            <ColorInput label="Fill" value={projected.backgroundColor || ''}
-              onChange={v => applyChange({ backgroundColor: v })} />
-            <ImageFillInput element={element} onUpdateElement={onUpdateElement} />
-            <ColorInput label="Text" value={projected.color || ''}
-              onChange={v => applyChange({ color: v })} />
-            {projected.fontSize !== undefined && (
-              <NumberInput label="Font Size" value={projected.fontSize} min={1}
-                onChange={v => applyChange({ fontSize: v })} />
-            )}
-            {projected.fontFamily !== undefined && (
-              <div className="flex items-center gap-2">
-                <label className="text-[11px] text-muted-foreground w-14 shrink-0">Font</label>
-                <select value={projected.fontFamily || 'sans-serif'}
-                  onChange={e => applyChange({ fontFamily: e.target.value })}
-                  className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background">
-                  <option value="-apple-system, BlinkMacSystemFont, sans-serif">System</option>
-                  <option value="sans-serif">Sans-serif</option>
-                  <option value="serif">Serif</option>
-                  <option value="monospace">Monospace</option>
-                  <option value="Georgia, serif">Georgia</option>
-                  <option value="Arial, sans-serif">Arial</option>
-                  <option value="Verdana, sans-serif">Verdana</option>
-                </select>
-              </div>
-            )}
-            {projected.fontWeight !== undefined && (
-              <div className="flex items-center gap-2">
-                <label className="text-[11px] text-muted-foreground w-14 shrink-0">Weight</label>
-                <select value={projected.fontWeight || '400'}
-                  onChange={e => applyChange({ fontWeight: e.target.value })}
-                  className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background">
-                  <option value="300">Light</option>
-                  <option value="400">Regular</option>
-                  <option value="500">Medium</option>
-                  <option value="600">Semibold</option>
-                  <option value="700">Bold</option>
-                  <option value="900">Black</option>
-                </select>
-              </div>
+            <div className="w-px bg-border mx-0.5 self-stretch" />
+            <IconBtn icon={AlignStartHorizontal} onClick={() => onAlign('left')} title="Align left" />
+            <IconBtn icon={AlignHorizontalJustifyCenter} onClick={() => onAlign('center-h')} title="Center horizontal" />
+            <IconBtn icon={AlignEndHorizontal} onClick={() => onAlign('right')} title="Align right" />
+            <IconBtn icon={AlignStartVertical} onClick={() => onAlign('top')} title="Align top" />
+            <IconBtn icon={AlignVerticalJustifyCenter} onClick={() => onAlign('center-v')} title="Center vertical" />
+            <IconBtn icon={AlignEndVertical} onClick={() => onAlign('bottom')} title="Align bottom" />
+            {selectedCount >= 3 && (
+              <>
+                <IconBtn icon={AlignHorizontalSpaceAround} onClick={() => onAlign('distribute-h')} title="Distribute horizontally" />
+                <IconBtn icon={AlignVerticalSpaceAround} onClick={() => onAlign('distribute-v')} title="Distribute vertically" />
+              </>
             )}
           </>
         )}
-        {projected.borderRadius !== undefined && (
-          <NumberInput label="Radius" value={projected.borderRadius} min={0}
-            onChange={v => applyChange({ borderRadius: v })} />
-        )}
-        <NumberInput label="Opacity" value={projected.opacity ?? 1} min={0} step={0.1}
-          onChange={v => applyChange({ opacity: Math.min(1, Math.max(0, v)) })} />
       </div>
 
-      <SectionHeader collapsed={!showCode} onToggle={() => setShowCode(v => !v)}>HTML Code</SectionHeader>
-      {showCode && (
-        <div className="p-3">
-          <textarea
-            value={element.html}
-            onChange={e => onUpdateElement(element.id, { html: e.target.value })}
-            className="w-full h-40 text-[11px] px-2 py-1.5 rounded border bg-background font-mono resize-y"
-            spellCheck={false}
-          />
-        </div>
+      {/* Position & Size (for non-sub-element single selection) */}
+      {isSingle && !subElementSelection && element && (
+        <>
+          <SectionHeader>Position & Size</SectionHeader>
+          <div className="p-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Row label="X"><NumberInput value={element.x} onChange={v => onUpdateElement(element.id, { x: v })} /></Row>
+              <Row label="Y"><NumberInput value={element.y} onChange={v => onUpdateElement(element.id, { y: v })} /></Row>
+              <Row label="W"><NumberInput value={element.w} min={20} onChange={v => onUpdateElement(element.id, { w: v })} /></Row>
+              <Row label="H"><NumberInput value={element.h} min={20} onChange={v => onUpdateElement(element.id, { h: v })} /></Row>
+            </div>
+            <Row label="Z-Index"><NumberInput value={element.z_index ?? 0} onChange={v => onUpdateElement(element.id, { z_index: v })} /></Row>
+            <Row label="Rotation"><NumberInput value={element.rotation ?? 0} step={1} suffix="°" onChange={v => onUpdateElement(element.id, { rotation: v })} /></Row>
+          </div>
+        </>
+      )}
+
+      {/* Multi-selection: position summary (read-only) */}
+      {isMulti && (
+        <>
+          <SectionHeader>Selection</SectionHeader>
+          <div className="p-3">
+            <span className="text-[11px] text-muted-foreground">{selectedCount} elements selected</span>
+          </div>
+        </>
+      )}
+
+      {/* Appearance */}
+      {(isSingle || isMulti) && (
+        <>
+          <SectionHeader>Appearance</SectionHeader>
+          <div className="p-3 space-y-2">
+
+            {/* SVG: Fill */}
+            {isSingle && projected?.isSvgShape && element && (
+              <FillSection element={element} projected={projected} onApply={applyChange} onUpdateElement={onUpdateElement} />
+            )}
+
+            {/* Multi SVG: fill */}
+            {isMulti && support.fill && (
+              <ColorRow label="Fill"
+                value={aggregated.svgFill === 'mixed' ? '' : (aggregated.svgFill || aggregated.backgroundColor || '')}
+                onChange={v => {
+                  const hasSvg = leaves.some(l => l.html.includes('<svg'));
+                  const hasNonSvg = leaves.some(l => !l.html.includes('<svg'));
+                  if (hasSvg) applyToAll({ svgFill: v });
+                  if (hasNonSvg) applyToAll({ backgroundColor: v });
+                }}
+              />
+            )}
+
+            {/* Non-SVG single: fill */}
+            {isSingle && projected && !projected.isSvgShape && element && (
+              <FillSection element={element} projected={projected} onApply={applyChange} onUpdateElement={onUpdateElement} />
+            )}
+
+            {/* SVG single: stroke */}
+            {isSingle && projected?.isSvgShape && (
+              <>
+                <ColorRow label="Stroke" value={projected.svgStroke || ''}
+                  onChange={v => applyChange({ svgStroke: v })}
+                  allowNone onClear={() => applyChange({ svgStroke: 'none' })} />
+                <Row label="Stroke W">
+                  <NumberInput value={projected.svgStrokeWidth ?? 2} min={0} step={0.5}
+                    onChange={v => applyChange({ svgStrokeWidth: v })} />
+                </Row>
+                <Row label="Dash">
+                  <select value={projected.svgStrokeDasharray || ''}
+                    onChange={e => applyChange({ svgStrokeDasharray: e.target.value })}
+                    className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                    <option value="">Solid</option>
+                    <option value="8 4">Dashed</option>
+                    <option value="2 2">Dotted</option>
+                    <option value="12 4 4 4">Dash-dot</option>
+                  </select>
+                </Row>
+                <Row label="Align">
+                  <select value={projected.svgStrokeAlignment || 'center'}
+                    onChange={e => applyChange({ svgStrokeAlignment: e.target.value as 'center' | 'inside' | 'outside' })}
+                    className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                    <option value="center">Center</option>
+                    <option value="inside">Inside</option>
+                    <option value="outside">Outside</option>
+                  </select>
+                </Row>
+              </>
+            )}
+
+            {/* SVG: corner radius */}
+            {isSingle && projected?.isSvgShape && (
+              <Row label="Radius">
+                {projected.borderRadius === -1 ? (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-muted-foreground italic">mixed</span>
+                    <input type="number" min={0} step={1} placeholder="set all"
+                      className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background"
+                      onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) applyChange({ borderRadius: v }); }} />
+                  </div>
+                ) : (
+                  <NumberInput value={projected.borderRadius ?? 0} min={0} onChange={v => applyChange({ borderRadius: v })} />
+                )}
+              </Row>
+            )}
+
+            {/* Non-SVG: text color, font */}
+            {isSingle && projected && !projected.isSvgShape && (
+              <>
+                <ColorRow label="Text" value={projected.color || ''}
+                  onChange={v => applyChange({ color: v })} />
+                {projected.fontSize !== undefined && (
+                  <Row label="Font Size"><NumberInput value={projected.fontSize} min={1} onChange={v => applyChange({ fontSize: v })} /></Row>
+                )}
+                {projected.fontFamily !== undefined && (
+                  <Row label="Font">
+                    <select value={projected.fontFamily || 'sans-serif'}
+                      onChange={e => applyChange({ fontFamily: e.target.value })}
+                      className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                      <option value="-apple-system, BlinkMacSystemFont, sans-serif">System</option>
+                      <option value="sans-serif">Sans-serif</option>
+                      <option value="serif">Serif</option>
+                      <option value="monospace">Monospace</option>
+                      <option value="Georgia, serif">Georgia</option>
+                      <option value="Arial, sans-serif">Arial</option>
+                      <option value="Verdana, sans-serif">Verdana</option>
+                    </select>
+                  </Row>
+                )}
+                {projected.fontWeight !== undefined && (
+                  <Row label="Weight">
+                    <select value={projected.fontWeight || '400'}
+                      onChange={e => applyChange({ fontWeight: e.target.value })}
+                      className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                      <option value="300">Light</option>
+                      <option value="400">Regular</option>
+                      <option value="500">Medium</option>
+                      <option value="600">Semibold</option>
+                      <option value="700">Bold</option>
+                      <option value="900">Black</option>
+                    </select>
+                  </Row>
+                )}
+                {projected.borderRadius !== undefined && (
+                  <Row label="Radius"><NumberInput value={projected.borderRadius} min={0} onChange={v => applyChange({ borderRadius: v })} /></Row>
+                )}
+              </>
+            )}
+
+            {/* Multi: common props */}
+            {isMulti && (
+              <>
+                {support.font && (
+                  <>
+                    <ColorRow label="Text"
+                      value={aggregated.color === 'mixed' ? '' : (aggregated.color || '')}
+                      onChange={v => applyToAll({ color: v })} />
+                    <Row label="Font Size">
+                      <NumberInput value={aggregated.fontSize === 'mixed' ? null : (aggregated.fontSize ?? null)} min={1}
+                        onChange={v => applyToAll({ fontSize: v })} placeholder="Mixed" />
+                    </Row>
+                  </>
+                )}
+                <Row label="Radius">
+                  <NumberInput value={aggregated.borderRadius === 'mixed' ? null : (aggregated.borderRadius ?? null)} min={0}
+                    onChange={v => applyToAll({ borderRadius: v })} placeholder="Mixed" />
+                </Row>
+              </>
+            )}
+
+            {/* Opacity — always shown */}
+            <Row label="Opacity">
+              <NumberInput
+                value={isSingle ? (projected?.opacity ?? 1) : (aggregated.opacity === 'mixed' ? null : (aggregated.opacity ?? null))}
+                min={0} max={1} step={0.1}
+                onChange={v => {
+                  const clamped = Math.min(1, Math.max(0, v));
+                  isSingle ? applyChange({ opacity: clamped }) : applyToAll({ opacity: clamped });
+                }}
+                placeholder="Mixed"
+              />
+            </Row>
+          </div>
+        </>
+      )}
+
+      {/* Stroke Endpoints (SVG single) */}
+      {isSingle && isSvg && projected && (
+        <>
+          <SectionHeader>Stroke Endpoints</SectionHeader>
+          <div className="p-3 space-y-2">
+            <Row label="Cap">
+              <select value={projected.svgStrokeLinecap || 'butt'}
+                onChange={e => {
+                  const cap = e.target.value as 'butt' | 'round' | 'square';
+                  onUpdateElement(element!.id, { html: applyStrokeLinecap(element!.html, cap) });
+                }}
+                className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                <option value="butt">Butt</option>
+                <option value="round">Round</option>
+                <option value="square">Square</option>
+              </select>
+            </Row>
+            <Row label="Start">
+              <select value={projected.svgMarkerStart || 'none'}
+                onChange={e => onUpdateElement(element!.id, { html: applySvgMarker(element!.html, 'start', e.target.value as MarkerType) })}
+                className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                <option value="none">None</option>
+                <option value="arrow">Arrow</option>
+                <option value="triangle">Triangle</option>
+                <option value="triangle-reversed">Triangle Rev.</option>
+                <option value="circle">Circle</option>
+                <option value="diamond">Diamond</option>
+              </select>
+            </Row>
+            <Row label="End">
+              <select value={projected.svgMarkerEnd || 'none'}
+                onChange={e => onUpdateElement(element!.id, { html: applySvgMarker(element!.html, 'end', e.target.value as MarkerType) })}
+                className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                <option value="none">None</option>
+                <option value="arrow">Arrow</option>
+                <option value="triangle">Triangle</option>
+                <option value="triangle-reversed">Triangle Rev.</option>
+                <option value="circle">Circle</option>
+                <option value="diamond">Diamond</option>
+              </select>
+            </Row>
+          </div>
+        </>
+      )}
+
+      {/* Effects / Shadow */}
+      {isSingle && element && projected && (
+        <>
+          <SectionHeader>Effects</SectionHeader>
+          <div className="p-3">
+            <ShadowSection element={element} projected={projected} onUpdateElement={onUpdateElement} />
+          </div>
+        </>
+      )}
+
+      {/* HTML Code */}
+      {isSingle && !isGroup && (
+        <>
+          <SectionHeader collapsed={!showCode} onToggle={() => setShowCode(v => !v)}>HTML Code</SectionHeader>
+          {showCode && element && (
+            <div className="p-3">
+              <textarea
+                value={element.html}
+                onChange={e => onUpdateElement(element.id, { html: e.target.value })}
+                className="w-full h-40 text-[11px] px-2 py-1.5 rounded border bg-background font-mono resize-y"
+                spellCheck={false}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
