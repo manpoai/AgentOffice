@@ -85,13 +85,15 @@ export function projectElement(html: string): ProjectedProps & { rawHTML: string
       : undefined;
 
   const lineHeightRaw = style.lineHeight;
-  const lineHeight = lineHeightRaw && lineHeightRaw !== 'normal'
-    ? (parseFloat(lineHeightRaw) || undefined)
+  const lhParsed = parseFloat(lineHeightRaw ?? '');
+  const lineHeight = lineHeightRaw && lineHeightRaw !== 'normal' && !isNaN(lhParsed)
+    ? lhParsed
     : undefined;
 
   const letterSpacingRaw = style.letterSpacing;
-  const letterSpacing = letterSpacingRaw && letterSpacingRaw !== 'normal'
-    ? (parseFloat(letterSpacingRaw) || undefined)
+  const lsParsed = parseFloat(letterSpacingRaw ?? '');
+  const letterSpacing = letterSpacingRaw && letterSpacingRaw !== 'normal' && !isNaN(lsParsed)
+    ? lsParsed
     : undefined;
 
   const textDecorationRaw = style.textDecoration;

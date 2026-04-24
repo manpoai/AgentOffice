@@ -12,10 +12,10 @@ export interface AggregatedProps {
   fontSize?: number | 'mixed';
   fontFamily?: string | 'mixed';
   fontWeight?: string | 'mixed';
-  textAlign?: string | 'mixed';
+  textAlign?: 'left' | 'center' | 'right' | 'justify' | 'mixed';
   lineHeight?: number | 'mixed';
   letterSpacing?: number | 'mixed';
-  textDecoration?: string | 'mixed';
+  textDecoration?: 'none' | 'underline' | 'line-through' | 'mixed';
   borderRadius?: number | 'mixed';
   opacity?: number | 'mixed';
 }
