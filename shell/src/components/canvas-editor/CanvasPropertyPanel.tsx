@@ -20,6 +20,8 @@ import type { AggregatedProps } from './property-model';
 import { NumberInput } from './NumberInput';
 import { ColorPicker } from './ColorPicker';
 import type { SubElementSelection } from '@/components/shared/SubElementEditor';
+import { CANVAS_FONTS } from './fonts';
+import { loadGoogleFont } from './useFontLoader';
 
 // ── Section header ────────────────────────────────────────────────────────────
 
@@ -788,16 +790,24 @@ export function CanvasPropertyPanel({
                 )}
                 {projected.fontFamily !== undefined && (
                   <Row label="Font">
-                    <select value={projected.fontFamily || 'sans-serif'}
-                      onChange={e => applyChange({ fontFamily: e.target.value })}
+                    <select
+                      value={projected.fontFamily ?? ''}
+                      onChange={e => {
+                        const family = e.target.value;
+                        if (CANVAS_FONTS.google.includes(family)) loadGoogleFont(family);
+                        applyChange({ fontFamily: family });
+                      }}
                       className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
-                      <option value="-apple-system, BlinkMacSystemFont, sans-serif">System</option>
-                      <option value="sans-serif">Sans-serif</option>
-                      <option value="serif">Serif</option>
-                      <option value="monospace">Monospace</option>
-                      <option value="Georgia, serif">Georgia</option>
-                      <option value="Arial, sans-serif">Arial</option>
-                      <option value="Verdana, sans-serif">Verdana</option>
+                      <optgroup label="System">
+                        {CANVAS_FONTS.system.map(f => (
+                          <option key={f} value={f}>{f.split(',')[0]}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Google Fonts">
+                        {CANVAS_FONTS.google.map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </optgroup>
                     </select>
                   </Row>
                 )}
