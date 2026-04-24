@@ -1041,19 +1041,30 @@ export function CanvasEditor({
         if (d.handle.includes('s')) nH = Math.max(20, d.origH + dy);
         if (d.handle.includes('n')) { nH = Math.max(20, d.origH - dy); nY = d.origY + d.origH - nH; }
         // Shift: maintain aspect ratio (corner handles only — 2-char handles like 'nw', 'ne', 'sw', 'se')
+        // TouchEvent has no shiftKey; Shift+drag on touch/iPad is a known gap
         if (e instanceof MouseEvent && e.shiftKey && d.origW > 0 && d.origH > 0 && d.handle.length === 2) {
           const ratio = d.origW / d.origH;
           const dw = Math.abs(nW - d.origW);
           const dh = Math.abs(nH - d.origH);
-          if (dw / ratio >= dh) {
+          if (dw >= dh) {
             nH = nW / ratio;
             if (d.handle.includes('n')) nY = d.origY + d.origH - nH;
           } else {
             nW = nH * ratio;
             if (d.handle.includes('w')) nX = d.origX + d.origW - nW;
           }
-          nW = Math.max(20, nW);
-          nH = Math.max(20, nH);
+          if (nW < 20) {
+            nW = 20;
+            nH = nW / ratio;
+            if (d.handle.includes('n')) nY = d.origY + d.origH - nH;
+            if (d.handle.includes('w')) nX = d.origX + d.origW - nW;
+          }
+          if (nH < 20) {
+            nH = 20;
+            nW = nH * ratio;
+            if (d.handle.includes('w')) nX = d.origX + d.origW - nW;
+            if (d.handle.includes('n')) nY = d.origY + d.origH - nH;
+          }
         }
         const updates: Partial<CanvasElement> = { x: Math.round(nX), y: Math.round(nY), w: Math.round(nW), h: Math.round(nH) };
         if (d.origHtml) {
