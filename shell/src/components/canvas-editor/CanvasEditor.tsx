@@ -721,11 +721,36 @@ export function CanvasEditor({
     updateData(d => ({ ...d, elements: (d.elements ?? []).map(el => el.id === elementId ? { ...el, ...updates } : el) }));
   }, [updateData]);
 
+  // ─── ElementContext: unified element pool abstraction ───
+  const elementContext = useMemo(() => {
+    if (activeFrameId && data) {
+      const frame = data.pages.find(p => p.page_id === activeFrameId);
+      return {
+        elements: frame?.elements ?? [],
+        setElements: (updater: (els: CanvasElement[]) => CanvasElement[]) => {
+          updateFrame(activeFrameId, page => ({ ...page, elements: updater(page.elements) }));
+        },
+        offsetX: frame?.frame_x ?? 0,
+        offsetY: frame?.frame_y ?? 0,
+        containerWidth: frame?.width ?? 1920,
+        containerHeight: frame?.height ?? 1080,
+      };
+    }
+    return {
+      elements: data?.elements ?? [],
+      setElements: (updater: (els: CanvasElement[]) => CanvasElement[]) => {
+        updateData(prev => ({ ...prev, elements: updater(prev.elements ?? []) }));
+      },
+      offsetX: 0,
+      offsetY: 0,
+      containerWidth: Infinity,
+      containerHeight: Infinity,
+    };
+  }, [activeFrameId, data, updateFrame, updateData]);
+
   const resolveGroupByPath = useCallback((path: string[] = activeGroupPath): { group: CanvasElement; absX: number; absY: number } | null => {
     if (path.length === 0) return null;
-    const topElements = activeFrameId
-      ? data?.pages.find(p => p.page_id === activeFrameId)?.elements
-      : data?.elements;
+    const topElements = elementContext.elements;
     if (!topElements) return null;
     let current: CanvasElement | undefined;
     let absX = 0, absY = 0;
@@ -741,7 +766,7 @@ export function CanvasEditor({
       absY += current.y;
     }
     return current ? { group: current, absX, absY } : null;
-  }, [data, activeFrameId, activeGroupPath]);
+  }, [elementContext.elements, activeGroupPath]);
 
   const findElementById = useCallback((id: string): CanvasElement | undefined => {
     const findInChildren = (children: CanvasElement[]): CanvasElement | undefined => {
@@ -761,21 +786,15 @@ export function CanvasEditor({
         if (found) return found;
       }
     }
-    if (activeFrameId) {
-      const frame = data?.pages.find(p => p.page_id === activeFrameId);
-      const el = frame?.elements.find(e => e.id === id);
-      if (el) return el;
-    }
-    const canvasEl = data?.elements?.find(e => e.id === id);
-    if (canvasEl) return canvasEl;
-    for (const el of (data?.elements ?? [])) {
+    for (const el of elementContext.elements) {
+      if (el.id === id) return el;
       if (el.type === 'group' && el.children) {
         const found = findInChildren(el.children);
         if (found) return found;
       }
     }
     return undefined;
-  }, [data, activeFrameId, activeGroupPath, resolveGroupByPath]);
+  }, [elementContext.elements, activeGroupPath, resolveGroupByPath]);
 
   const updateElement = useCallback((elementId: string, updates: Partial<CanvasElement>, groupId?: string) => {
     const updateNestedChild = (elements: CanvasElement[], path: string[], childId: string, upd: Partial<CanvasElement>): CanvasElement[] => {
@@ -790,24 +809,13 @@ export function CanvasEditor({
         return el;
       });
     };
-    if ((groupId || activeGroupPath.length > 0) && activeFrameId) {
+    if (groupId || activeGroupPath.length > 0) {
       const path = activeGroupPath.length > 0 ? activeGroupPath : [groupId!];
-      updateFrame(activeFrameId, page => ({
-        ...page, elements: updateNestedChild(page.elements, path, elementId, updates),
-      }));
-    } else if ((groupId || activeGroupPath.length > 0) && !activeFrameId) {
-      const path = activeGroupPath.length > 0 ? activeGroupPath : [groupId!];
-      updateData(prev => ({
-        ...prev, elements: updateNestedChild(prev.elements ?? [], path, elementId, updates),
-      }));
-    } else if (activeFrameId) {
-      updateFrame(activeFrameId, page => ({
-        ...page, elements: page.elements.map(el => el.id === elementId ? { ...el, ...updates } : el),
-      }));
+      elementContext.setElements(els => updateNestedChild(els, path, elementId, updates));
     } else {
-      updateCanvasElement(elementId, updates);
+      elementContext.setElements(els => els.map(el => el.id === elementId ? { ...el, ...updates } : el));
     }
-  }, [updateFrame, activeFrameId, activeGroupPath, updateCanvasElement]);
+  }, [elementContext, activeGroupPath]);
 
   const reorderElements = useCallback((frameId: string, activeId: string, overId: string) => {
     updateFrame(frameId, page => {
@@ -992,18 +1000,18 @@ export function CanvasEditor({
       }
 
       const dx = (pos.clientX - d.startX) / scale, dy = (pos.clientY - d.startY) / scale;
-      const frame = d.frameId ? data?.pages.find(p => p.page_id === d.frameId) : null;
 
-      if (d.type === 'move' && d.elementId && frame) {
+      if (d.type === 'move' && d.elementId) {
         let newX = Math.round(d.origX + dx), newY = Math.round(d.origY + dy);
         const movingEl = findElementById(d.elementId);
         if (movingEl) {
-          const snapTargets = d.groupId ? (resolveGroupByPath()?.group.children ?? frame.elements) : frame.elements;
+          const ctxElements = elementContext.elements;
+          const snapTargets = d.groupId ? (resolveGroupByPath()?.group.children ?? ctxElements) : ctxElements;
           const otherRects = snapTargets.filter(el => el.id !== d.elementId);
+          const container = { width: elementContext.containerWidth, height: elementContext.containerHeight };
           const snap = findSnapLines(
             { x: newX, y: newY, w: movingEl.w, h: movingEl.h },
-            otherRects, SNAP_THRESHOLD / scale,
-            { width: frame.width, height: frame.height },
+            otherRects, SNAP_THRESHOLD / scale, container,
           );
           if (snap.snapX !== null) newX = snap.snapX;
           if (snap.snapY !== null) newY = snap.snapY;
@@ -1017,26 +1025,13 @@ export function CanvasEditor({
         }
         if (selectedIds.size > 1 && selectedIds.has(d.elementId)) {
           const ox = newX - d.origX, oy = newY - d.origY;
-          updateFrame(d.frameId!, page => ({ ...page, elements: page.elements.map(el => {
+          elementContext.setElements(els => els.map(el => {
             if (el.id === d.elementId) return { ...el, x: newX, y: newY };
             if (!selectedIds.has(el.id)) return el;
             const orig = d.origPositions?.get(el.id);
             return orig ? { ...el, x: orig.x + ox, y: orig.y + oy } : el;
-          }) }));
+          }));
         } else { updateElement(d.elementId, { x: newX, y: newY }, d.groupId); }
-      } else if (d.type === 'move' && d.elementId && !d.frameId) {
-        const newX = Math.round(d.origX + dx), newY = Math.round(d.origY + dy);
-        if (selectedIds.size > 1 && selectedIds.has(d.elementId)) {
-          const ox = newX - d.origX, oy = newY - d.origY;
-          updateData(prev => ({ ...prev, elements: (prev.elements ?? []).map(el => {
-            if (el.id === d.elementId) return { ...el, x: newX, y: newY };
-            if (!selectedIds.has(el.id)) return el;
-            const orig = d.origPositions?.get(el.id);
-            return orig ? { ...el, x: orig.x + ox, y: orig.y + oy } : el;
-          }) }));
-        } else if (d.groupId) {
-          updateElement(d.elementId, { x: newX, y: newY }, d.groupId);
-        } else { updateCanvasElement(d.elementId, { x: newX, y: newY }); }
       } else if (d.type === 'resize' && d.handle && d.elementId) {
         let nX = d.origX, nY = d.origY, nW = d.origW, nH = d.origH;
         if (d.handle.includes('e')) nW = Math.max(20, d.origW + dx);
@@ -1097,13 +1092,7 @@ export function CanvasEditor({
           };
           updates.children = scaleChildrenRecursive(d.origChildren, scaleX, scaleY);
         }
-        if (d.frameId) {
-          updateElement(d.elementId, updates, d.groupId);
-        } else if (d.groupId) {
-          updateElement(d.elementId, updates, d.groupId);
-        } else {
-          updateCanvasElement(d.elementId, updates);
-        }
+        updateElement(d.elementId, updates, d.groupId);
       }
     };
     const handleUp = (e: MouseEvent | TouchEvent) => {
@@ -1231,17 +1220,7 @@ export function CanvasEditor({
         setMarqueeRect(null);
       }
       if ((d?.type === 'move' || d?.type === 'resize') && d.groupId && activeGroupPath.length > 0) {
-        if (d.frameId) {
-          updateFrame(d.frameId, page => ({
-            ...page,
-            elements: recalcGroupBounds(page.elements, activeGroupPath),
-          }));
-        } else {
-          updateData(prev => ({
-            ...prev,
-            elements: recalcGroupBounds(prev.elements ?? [], activeGroupPath),
-          }));
-        }
+        elementContext.setElements(els => recalcGroupBounds(els, activeGroupPath));
       }
       if (d?.type === 'create' && d.createType && data) {
         setCreatePreview(null);
@@ -1467,7 +1446,7 @@ export function CanvasEditor({
     };
   }, [data, undoRedo]);
 
-  const handleSelectElement = useCallback((frameId: string, id: string, e: React.MouseEvent | React.TouchEvent) => {
+  const handleSelectElement = useCallback((frameId: string | null, id: string, e: React.MouseEvent | React.TouchEvent) => {
     if (subTextEditingRef.current) return;
     setActiveFrameId(frameId);
     setFrameExplicitlySelected(false);
@@ -1480,7 +1459,7 @@ export function CanvasEditor({
     }
   }, []);
 
-  const handleDoubleClick = useCallback((frameId: string, id: string) => {
+  const handleDoubleClick = useCallback((frameId: string | null, id: string) => {
     const el = findElementById(id);
     console.log('[handleDoubleClick]', { frameId, id, elType: el?.type, elFound: !!el, activeFrameId, activeGroupPath });
     if (!el) return;
@@ -1512,63 +1491,29 @@ export function CanvasEditor({
     setEditingElementId(id);
   }, [data, updateElement]);
 
-  const handleDragStart = useCallback((frameId: string, id: string, e: React.MouseEvent | React.TouchEvent) => {
+  const handleDragStart = useCallback((frameId: string | null, id: string, e: React.MouseEvent | React.TouchEvent) => {
     if (editingElementId === id || subTextEditingRef.current) return;
-    const frame = data?.pages.find(p => p.page_id === frameId);
-    const el = frame?.elements.find(el => el.id === id);
+    const el = elementContext.elements.find(el => el.id === id);
     if (!el || el.locked) return;
     const pos = getClientPos(e); if (!pos) return;
     const origPositions = new Map<string, { x: number; y: number }>();
     if (selectedIds.size > 1 && selectedIds.has(id)) {
-      for (const fel of frame.elements) {
-        if (selectedIds.has(fel.id)) origPositions.set(fel.id, { x: fel.x, y: fel.y });
+      for (const oel of elementContext.elements) {
+        if (selectedIds.has(oel.id)) origPositions.set(oel.id, { x: oel.x, y: oel.y });
       }
     }
     undoRedo.beginBatch();
-    dragRef.current = { type: 'move', elementId: id, frameId, startX: pos.clientX, startY: pos.clientY, origX: el.x, origY: el.y, origW: el.w, origH: el.h, origPositions };
-  }, [data, editingElementId, selectedIds, undoRedo]);
+    dragRef.current = { type: 'move', elementId: id, frameId: frameId ?? undefined, startX: pos.clientX, startY: pos.clientY, origX: el.x, origY: el.y, origW: el.w, origH: el.h, origPositions };
+  }, [elementContext.elements, editingElementId, selectedIds, undoRedo]);
 
-  const handleResizeStart = useCallback((frameId: string, id: string, handle: string, e: React.MouseEvent | React.TouchEvent) => {
+  const handleResizeStart = useCallback((frameId: string | null, id: string, handle: string, e: React.MouseEvent | React.TouchEvent) => {
     const el = findElementById(id);
     if (!el) return;
     const pos = getClientPos(e); if (!pos) return;
     const deepCloneChildren = (children: CanvasElement[]): CanvasElement[] =>
       children.map(c => ({ ...c, children: c.children ? deepCloneChildren(c.children) : undefined }));
     undoRedo.beginBatch();
-    dragRef.current = { type: 'resize', elementId: id, frameId, handle, startX: pos.clientX, startY: pos.clientY, origX: el.x, origY: el.y, origW: el.w, origH: el.h, origHtml: el.html?.includes('<svg') ? el.html : undefined, origChildren: el.type === 'group' && el.children ? deepCloneChildren(el.children) : undefined };
-  }, [findElementById, undoRedo]);
-
-  const handleSelectCanvasElement = useCallback((id: string, e: React.MouseEvent | React.TouchEvent) => {
-    setActiveFrameId(null);
-    setEditingElementId(null);
-    if ('shiftKey' in e && e.shiftKey) {
-      setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-    } else {
-      setSelectedIds(prev => prev.has(id) && prev.size > 1 ? prev : new Set([id]));
-    }
-  }, []);
-
-  const handleCanvasElDragStart = useCallback((id: string, e: React.MouseEvent | React.TouchEvent) => {
-    if (editingElementId === id) return;
-    const el = data?.elements?.find(el => el.id === id);
-    if (!el || el.locked) return;
-    const pos = getClientPos(e); if (!pos) return;
-    const origPositions = new Map<string, { x: number; y: number }>();
-    if (selectedIds.size > 1 && selectedIds.has(id)) {
-      for (const cel of (data?.elements ?? [])) {
-        if (selectedIds.has(cel.id)) origPositions.set(cel.id, { x: cel.x, y: cel.y });
-      }
-    }
-    undoRedo.beginBatch();
-    dragRef.current = { type: 'move', elementId: id, startX: pos.clientX, startY: pos.clientY, origX: el.x, origY: el.y, origW: el.w, origH: el.h, origPositions };
-  }, [data, editingElementId, selectedIds, undoRedo]);
-
-  const handleCanvasElResizeStart = useCallback((id: string, handle: string, e: React.MouseEvent | React.TouchEvent) => {
-    const el = data?.elements?.find(el => el.id === id);
-    if (!el) return;
-    const pos = getClientPos(e); if (!pos) return;
-    undoRedo.beginBatch();
-    dragRef.current = { type: 'resize', elementId: id, handle, startX: pos.clientX, startY: pos.clientY, origX: el.x, origY: el.y, origW: el.w, origH: el.h, origHtml: el.html.includes('<svg') ? el.html : undefined };
+    dragRef.current = { type: 'resize', elementId: id, frameId: frameId ?? undefined, handle, startX: pos.clientX, startY: pos.clientY, origX: el.x, origY: el.y, origW: el.w, origH: el.h, origHtml: el.html?.includes('<svg') ? el.html : undefined, origChildren: el.type === 'group' && el.children ? deepCloneChildren(el.children) : undefined };
   }, [data, undoRedo]);
 
   // ─── Clipboard ─────────────────────
@@ -1577,13 +1522,12 @@ export function CanvasEditor({
 
   const handleCopy = useCallback(() => {
     if (selectedIds.size === 0) return;
-    const allEls = activeFrame?.elements ?? data?.elements ?? [];
-    const copied = allEls.filter(el => selectedIds.has(el.id));
+    const copied = elementContext.elements.filter(el => selectedIds.has(el.id));
     if (copied.length === 0) return;
     const payload = JSON.stringify({ type: CLIPBOARD_KEY, elements: copied });
     navigator.clipboard.writeText(payload).catch(() => {});
     pasteCountRef.current = 0;
-  }, [selectedIds, activeFrame, data]);
+  }, [selectedIds, elementContext.elements]);
 
   const handlePaste = useCallback(async () => {
     try {
@@ -1599,14 +1543,10 @@ export function CanvasEditor({
         x: el.x + offset,
         y: el.y + offset,
       }));
-      if (activeFrameId) {
-        updateFrame(activeFrameId, page => ({ ...page, elements: [...page.elements, ...newEls] }));
-      } else {
-        updateData(d => ({ ...d, elements: [...(d.elements ?? []), ...newEls] }));
-      }
+      elementContext.setElements(els => [...els, ...newEls]);
       setSelectedIds(new Set(newEls.map(el => el.id)));
     } catch {}
-  }, [activeFrameId, activeFrame, updateFrame, updateData]);
+  }, [elementContext]);
 
   const deleteSelected = useCallback(() => {
     if (activeGroupPath.length > 0) {
@@ -1637,30 +1577,17 @@ export function CanvasEditor({
           };
         }).filter(Boolean) as CanvasElement[];
       };
-      if (activeFrameId) {
-        updateFrame(activeFrameId, page => ({
-          ...page,
-          elements: deleteFromNestedGroup(page.elements, activeGroupPath, selectedIds),
-        }));
-      } else {
-        updateData(prev => ({
-          ...prev,
-          elements: deleteFromNestedGroup(prev.elements ?? [], activeGroupPath, selectedIds),
-        }));
-      }
+      elementContext.setElements(els => deleteFromNestedGroup(els, activeGroupPath, selectedIds));
       setSelectedIds(new Set()); setEditingElementId(null);
       const resolved = resolveGroupByPath();
       if (!resolved || !resolved.group.children || resolved.group.children.filter(c => !selectedIds.has(c.id)).length === 0) {
         setActiveGroupPath(prev => prev.slice(0, -1));
       }
-    } else if (activeFrameId) {
-      updateFrame(activeFrameId, page => ({ ...page, elements: page.elements.filter(el => !selectedIds.has(el.id)) }));
-      setSelectedIds(new Set()); setEditingElementId(null);
     } else {
-      updateData(d => ({ ...d, elements: (d.elements ?? []).filter(el => !selectedIds.has(el.id)) }));
+      elementContext.setElements(els => els.filter(el => !selectedIds.has(el.id)));
       setSelectedIds(new Set()); setEditingElementId(null);
     }
-  }, [activeFrameId, activeGroupPath, selectedIds, data, updateFrame, updateData, resolveGroupByPath]);
+  }, [elementContext, activeGroupPath, selectedIds, resolveGroupByPath]);
 
   const handleCut = useCallback(() => {
     handleCopy();
@@ -1669,68 +1596,34 @@ export function CanvasEditor({
 
   // ─── Group / Ungroup ────────────────
   const groupSelected = useCallback(() => {
-    if (selectedIds.size < 2 || !data) return;
-    const buildGroup = (selectedEls: CanvasElement[]) => {
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const el of selectedEls) {
-        minX = Math.min(minX, el.x); minY = Math.min(minY, el.y);
-        maxX = Math.max(maxX, el.x + el.w); maxY = Math.max(maxY, el.y + el.h);
-      }
-      const children: CanvasElement[] = selectedEls.map(el => ({ ...el, x: el.x - minX, y: el.y - minY }));
-      return {
-        id: crypto.randomUUID(), type: 'group' as const, html: '',
-        x: minX, y: minY, w: maxX - minX, h: maxY - minY,
-        z_index: Math.max(...selectedEls.map(el => el.z_index ?? 0)),
-        children,
-      };
-    };
-    if (activeFrameId) {
-      const frame = data.pages.find(p => p.page_id === activeFrameId);
-      if (!frame) return;
-      const selectedEls = frame.elements.filter(el => selectedIds.has(el.id));
-      if (selectedEls.length < 2) return;
-      const group = buildGroup(selectedEls);
-      updateFrame(activeFrameId, page => ({
-        ...page,
-        elements: [...page.elements.filter(el => !selectedIds.has(el.id)), group],
-      }));
-      setSelectedIds(new Set([group.id]));
-    } else {
-      const selectedEls = (data.elements ?? []).filter(el => selectedIds.has(el.id));
-      if (selectedEls.length < 2) return;
-      const group = buildGroup(selectedEls);
-      updateData(d => ({
-        ...d,
-        elements: [...(d.elements ?? []).filter(el => !selectedIds.has(el.id)), group],
-      }));
-      setSelectedIds(new Set([group.id]));
+    if (selectedIds.size < 2) return;
+    const selectedEls = elementContext.elements.filter(el => selectedIds.has(el.id));
+    if (selectedEls.length < 2) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of selectedEls) {
+      minX = Math.min(minX, el.x); minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + el.w); maxY = Math.max(maxY, el.y + el.h);
     }
-  }, [selectedIds, activeFrameId, data, updateFrame, updateData]);
+    const children: CanvasElement[] = selectedEls.map(el => ({ ...el, x: el.x - minX, y: el.y - minY }));
+    const group = {
+      id: crypto.randomUUID(), type: 'group' as const, html: '',
+      x: minX, y: minY, w: maxX - minX, h: maxY - minY,
+      z_index: Math.max(...selectedEls.map(el => el.z_index ?? 0)),
+      children,
+    };
+    elementContext.setElements(els => [...els.filter(el => !selectedIds.has(el.id)), group]);
+    setSelectedIds(new Set([group.id]));
+  }, [selectedIds, elementContext]);
 
   const ungroupSelected = useCallback(() => {
-    if (selectedIds.size !== 1 || !data) return;
+    if (selectedIds.size !== 1) return;
     const id = Array.from(selectedIds)[0];
-    if (activeFrameId) {
-      const frame = data.pages.find(p => p.page_id === activeFrameId);
-      const group = frame?.elements.find(el => el.id === id);
-      if (!group || group.type !== 'group' || !group.children) return;
-      const children = group.children.map(child => ({ ...child, x: child.x + group.x, y: child.y + group.y }));
-      updateFrame(activeFrameId, page => ({
-        ...page,
-        elements: [...page.elements.filter(el => el.id !== id), ...children],
-      }));
-      setSelectedIds(new Set(children.map(c => c.id)));
-    } else {
-      const group = (data.elements ?? []).find(el => el.id === id);
-      if (!group || group.type !== 'group' || !group.children) return;
-      const children = group.children.map(child => ({ ...child, x: child.x + group.x, y: child.y + group.y }));
-      updateData(d => ({
-        ...d,
-        elements: [...(d.elements ?? []).filter(el => el.id !== id), ...children],
-      }));
-      setSelectedIds(new Set(children.map(c => c.id)));
-    }
-  }, [selectedIds, activeFrameId, data, updateFrame, updateData]);
+    const group = elementContext.elements.find(el => el.id === id);
+    if (!group || group.type !== 'group' || !group.children) return;
+    const children = group.children.map(child => ({ ...child, x: child.x + group.x, y: child.y + group.y }));
+    elementContext.setElements(els => [...els.filter(el => el.id !== id), ...children]);
+    setSelectedIds(new Set(children.map(c => c.id)));
+  }, [selectedIds, elementContext]);
 
   // ─── Keyboard ─────────────────────
   useEffect(() => {
@@ -1742,8 +1635,7 @@ export function CanvasEditor({
       if (e.key === 'g' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); ungroupSelected(); }
       if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        if (activeFrame) setSelectedIds(new Set(activeFrame.elements.map(el => el.id)));
-        else if (data?.elements?.length) setSelectedIds(new Set(data.elements.map(el => el.id)));
+        setSelectedIds(new Set(elementContext.elements.map(el => el.id)));
       }
       if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handleCopy(); }
       if (e.key === 'v' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handlePaste(); }
@@ -1885,16 +1777,10 @@ export function CanvasEditor({
   };
 
   const duplicateElement = (id: string) => {
-    const el = activeFrameId
-      ? activeFrame?.elements.find(e => e.id === id)
-      : data?.elements?.find(e => e.id === id);
+    const el = elementContext.elements.find(e => e.id === id);
     if (!el) return;
     const newEl = { ...el, id: `el-${crypto.randomUUID().slice(0, 8)}`, x: el.x + 20, y: el.y + 20 };
-    if (activeFrameId) {
-      updateFrame(activeFrameId, page => ({ ...page, elements: [...page.elements, newEl] }));
-    } else {
-      updateData(d => ({ ...d, elements: [...(d.elements ?? []), newEl] }));
-    }
+    elementContext.setElements(els => [...els, newEl]);
     setSelectedIds(new Set([newEl.id]));
   };
 
@@ -2016,30 +1902,28 @@ export function CanvasEditor({
   }, []);
 
   const bringForward = useCallback((id: string) => {
-    const el = activeFrameId ? activeFrame?.elements.find(e => e.id === id) : data?.elements?.find(e => e.id === id);
+    const el = elementContext.elements.find(e => e.id === id);
     updateElement(id, { z_index: (el?.z_index ?? 0) + 1 });
-  }, [activeFrameId, activeFrame, data, updateElement]);
+  }, [elementContext.elements, updateElement]);
 
   const sendBackward = useCallback((id: string) => {
-    const el = activeFrameId ? activeFrame?.elements.find(e => e.id === id) : data?.elements?.find(e => e.id === id);
+    const el = elementContext.elements.find(e => e.id === id);
     updateElement(id, { z_index: Math.max(0, (el?.z_index ?? 0) - 1) });
-  }, [activeFrameId, activeFrame, data, updateElement]);
+  }, [elementContext.elements, updateElement]);
 
   const bringToFront = useCallback((id: string) => {
-    const elements = activeFrame?.elements ?? data?.elements ?? [];
-    const maxZ = Math.max(0, ...elements.map(e => e.z_index ?? 0));
+    const maxZ = Math.max(0, ...elementContext.elements.map(e => e.z_index ?? 0));
     updateElement(id, { z_index: maxZ + 1 });
-  }, [activeFrame, data, updateElement]);
+  }, [elementContext.elements, updateElement]);
 
   const sendToBack = useCallback((id: string) => {
-    const elements = activeFrame?.elements ?? data?.elements ?? [];
-    if (!activeFrameId) { updateElement(id, { z_index: 0 }); return; }
-    updateFrame(activeFrameId, page => {
-      const others = page.elements.filter(e => e.id !== id);
+    elementContext.setElements(els => {
+      const others = els.filter(e => e.id !== id);
       const bumped = others.map(e => ({ ...e, z_index: (e.z_index ?? 0) + 1 }));
-      return { ...page, elements: [...bumped, { ...page.elements.find(e => e.id === id)!, z_index: 0 }] };
+      const target = els.find(e => e.id === id);
+      return target ? [...bumped, { ...target, z_index: 0 }] : els;
     });
-  }, [activeFrame, data, activeFrameId, updateElement, updateFrame]);
+  }, [elementContext]);
 
   const toggleLock = useCallback((id: string) => {
     const el = findElementById(id);
@@ -2174,22 +2058,20 @@ export function CanvasEditor({
   }, [renameFrame, duplicateFrame, deleteFrame, handleExportFramePng, handleExportFrameSvg, canvasFrameActionMap, t, data]);
 
   const alignElements = (alignment: string) => {
-    if (selectedIds.size < 2 || !activeFrame || !activeFrameId) return;
-    const selected = activeFrame.elements.filter(el => selectedIds.has(el.id));
+    if (selectedIds.size < 2) return;
+    const selected = elementContext.elements.filter(el => selectedIds.has(el.id));
     if (selected.length < 2) return;
-    updateFrame(activeFrameId, page => ({
-      ...page, elements: page.elements.map(el => {
-        if (!selectedIds.has(el.id)) return el;
-        switch (alignment) {
-          case 'left': return { ...el, x: Math.min(...selected.map(s => s.x)) };
-          case 'right': return { ...el, x: Math.max(...selected.map(s => s.x + s.w)) - el.w };
-          case 'top': return { ...el, y: Math.min(...selected.map(s => s.y)) };
-          case 'bottom': return { ...el, y: Math.max(...selected.map(s => s.y + s.h)) - el.h };
-          case 'center-h': return { ...el, x: Math.round(selected.reduce((s, e) => s + e.x + e.w / 2, 0) / selected.length - el.w / 2) };
-          case 'center-v': return { ...el, y: Math.round(selected.reduce((s, e) => s + e.y + e.h / 2, 0) / selected.length - el.h / 2) };
-          default: return el;
-        }
-      }),
+    elementContext.setElements(els => els.map(el => {
+      if (!selectedIds.has(el.id)) return el;
+      switch (alignment) {
+        case 'left': return { ...el, x: Math.min(...selected.map(s => s.x)) };
+        case 'right': return { ...el, x: Math.max(...selected.map(s => s.x + s.w)) - el.w };
+        case 'top': return { ...el, y: Math.min(...selected.map(s => s.y)) };
+        case 'bottom': return { ...el, y: Math.max(...selected.map(s => s.y + s.h)) - el.h };
+        case 'center-h': return { ...el, x: Math.round(selected.reduce((s, e) => s + e.x + e.w / 2, 0) / selected.length - el.w / 2) };
+        case 'center-v': return { ...el, y: Math.round(selected.reduce((s, e) => s + e.y + e.h / 2, 0) / selected.length - el.h / 2) };
+        default: return el;
+      }
     }));
     if (alignment === 'distribute-h' && selected.length >= 3) {
       const sorted = [...selected].sort((a, b) => a.x - b.x);
@@ -2197,14 +2079,12 @@ export function CanvasEditor({
       const totalElWidth = sorted.reduce((s, e) => s + e.w, 0);
       const gap = (totalSpan - totalElWidth) / (sorted.length - 1);
       let cx = sorted[0].x + sorted[0].w + gap;
-      updateFrame(activeFrameId, page => ({
-        ...page, elements: page.elements.map(el => {
-          const idx = sorted.findIndex(s => s.id === el.id);
-          if (idx <= 0 || idx >= sorted.length - 1) return el;
-          const newX = Math.round(cx);
-          cx += el.w + gap;
-          return { ...el, x: newX };
-        }),
+      elementContext.setElements(els => els.map(el => {
+        const idx = sorted.findIndex(s => s.id === el.id);
+        if (idx <= 0 || idx >= sorted.length - 1) return el;
+        const newX = Math.round(cx);
+        cx += el.w + gap;
+        return { ...el, x: newX };
       }));
     }
     if (alignment === 'distribute-v' && selected.length >= 3) {
@@ -2213,23 +2093,19 @@ export function CanvasEditor({
       const totalElHeight = sorted.reduce((s, e) => s + e.h, 0);
       const gap = (totalSpan - totalElHeight) / (sorted.length - 1);
       let cy = sorted[0].y + sorted[0].h + gap;
-      updateFrame(activeFrameId, page => ({
-        ...page, elements: page.elements.map(el => {
-          const idx = sorted.findIndex(s => s.id === el.id);
-          if (idx <= 0 || idx >= sorted.length - 1) return el;
-          const newY = Math.round(cy);
-          cy += el.h + gap;
-          return { ...el, y: newY };
-        }),
+      elementContext.setElements(els => els.map(el => {
+        const idx = sorted.findIndex(s => s.id === el.id);
+        if (idx <= 0 || idx >= sorted.length - 1) return el;
+        const newY = Math.round(cy);
+        cy += el.h + gap;
+        return { ...el, y: newY };
       }));
     }
   };
 
   const handleBooleanOp = useCallback(async (op: BooleanOp) => {
     if (selectedIds.size !== 2) return;
-    const elements = activeFrameId
-      ? (activeFrame?.elements.filter(el => selectedIds.has(el.id)) ?? [])
-      : (data?.elements ?? []).filter(el => selectedIds.has(el.id));
+    const elements = elementContext.elements.filter(el => selectedIds.has(el.id));
     if (elements.length !== 2) return;
     const sorted = [...elements].sort((x, y) => x.z_index - y.z_index);
     const [a, b] = sorted;
@@ -2294,22 +2170,12 @@ export function CanvasEditor({
         locked: false, z_index: Math.max(a.z_index, b.z_index), x: rx, y: ry, w: rw, h: rh, html,
       };
 
-      if (activeFrameId) {
-        updateFrame(activeFrameId, page => ({
-          ...page,
-          elements: [...page.elements.filter(el => !selectedIds.has(el.id)), newEl],
-        }));
-      } else {
-        updateData(d => ({
-          ...d,
-          elements: [...(d.elements ?? []).filter(el => !selectedIds.has(el.id)), newEl],
-        }));
-      }
+      elementContext.setElements(els => [...els.filter(el => !selectedIds.has(el.id)), newEl]);
       setSelectedIds(new Set([newEl.id]));
     } catch (err) {
       console.error('Boolean operation failed:', err);
     }
-  }, [selectedIds, activeFrameId, activeFrame, data, updateFrame, updateData]);
+  }, [selectedIds, elementContext]);
 
   const handleUpdateFrame = useCallback((pageId: string, updates: Partial<CanvasPage>) => {
     updateFrame(pageId, page => ({ ...page, ...updates }));
@@ -2687,16 +2553,16 @@ export function CanvasEditor({
                       onSelect={(id, e) => {
                         if (activeGroupPath.includes(id)) return;
                         if (activeGroupId) { setActiveGroupPath([]); setSelectedIds(new Set()); }
-                        handleSelectCanvasElement(id, e);
+                        handleSelectElement(null, id, e);
                       }}
                       onDragStart={(id, e) => {
                         if (activeGroupPath.includes(id)) return;
                         if (activeGroupId) { setActiveGroupPath([]); setSelectedIds(new Set()); }
-                        handleCanvasElDragStart(id, e);
+                        handleDragStart(null, id, e);
                       }}
                       onResizeStart={(id, handle, e) => {
                         if (activeGroupPath.includes(id)) return;
-                        handleCanvasElResizeStart(id, handle, e);
+                        handleResizeStart(null, id, handle, e);
                       }}
                       onShadowRootReady={(id, sr) => shadowRootRefs.current.set(id, sr)}
                       onMouseEnter={() => { if (!activeGroupPath.includes(el.id)) setHoveredId(el.id); }}
@@ -2710,30 +2576,7 @@ export function CanvasEditor({
                       }}
                       onDoubleClick={(id) => {
                         if (activeGroupPath.includes(id)) return;
-                        setActiveFrameId(null);
-                        const el = data.elements?.find(e => e.id === id);
-                        if (!el) return;
-                        if (el.type === 'group') {
-                          setActiveGroupPath(prev => [...prev, id]);
-                          setSelectedIds(new Set());
-                          return;
-                        }
-                        if (el.html.includes('<svg')) {
-                          const converted = convertShapesToPaths(el.html);
-                          if (extractAllPathDs(converted).length > 0) {
-                            if (converted !== el.html) updateCanvasElement(id, { html: converted });
-                            setVectorEditId(id);
-                            return;
-                          }
-                        }
-                        const tmp = document.createElement('div');
-                        tmp.innerHTML = el.html;
-                        const root = tmp.firstElementChild;
-                        if (root && root.children.length > 0 && !el.html.includes('contenteditable')) {
-                          setSubElementEditId(id);
-                          return;
-                        }
-                        setEditingElementId(id);
+                        handleDoubleClick(null, id);
                       }} />
                   </div>
                 </div>
@@ -2787,7 +2630,7 @@ export function CanvasEditor({
                           vectorEditing={isDeepest && vectorEditId === child.id}
                           nonInteractive={!isDeepest}
                           groupChildrenInteractive={false}
-                          onSelect={(id, e) => isDeepest ? handleSelectCanvasElement(id, e) : undefined}
+                          onSelect={(id, e) => isDeepest ? handleSelectElement(null, id, e) : undefined}
                           onDragStart={(id, e) => {
                             if (!isDeepest) return;
                             const pos = getClientPos(e); if (!pos) return;
@@ -2800,25 +2643,7 @@ export function CanvasEditor({
                             undoRedo.beginBatch();
                             dragRef.current = { type: 'resize', elementId: id, handle, groupId: activeGroupId!, startX: pos.clientX, startY: pos.clientY, origX: child.x, origY: child.y, origW: child.w, origH: child.h, origHtml: child.html?.includes('<svg') ? child.html : undefined, origChildren: child.type === 'group' && child.children ? child.children : undefined };
                           }}
-                          onDoubleClick={(id) => {
-                            if (!isDeepest) return;
-                            const el = findElementById(id);
-                            if (!el) return;
-                            if (el.type === 'group') {
-                              setActiveGroupPath(prev => [...prev, id]);
-                              setSelectedIds(new Set());
-                              return;
-                            }
-                            if (el.html.includes('<svg')) {
-                              const converted = convertShapesToPaths(el.html);
-                              if (extractAllPathDs(converted).length > 0) {
-                                if (converted !== el.html) updateElement(id, { html: converted });
-                                setVectorEditId(id);
-                                return;
-                              }
-                            }
-                            setEditingElementId(id);
-                          }}
+                          onDoubleClick={(id) => isDeepest ? handleDoubleClick(null, id) : undefined}
                           onShadowRootReady={(id, sr) => shadowRootRefs.current.set(id, sr)}
                           onMouseEnter={() => isDeepest ? setHoveredId(child.id) : undefined}
                           onMouseLeave={() => { if (hoveredId === child.id) setHoveredId(null); }} />
@@ -2891,34 +2716,14 @@ export function CanvasEditor({
                   panY={pan.y}
                   onUpdate={({ html, x, y, w, h }) => {
                     const updates = { html, x: x - fx - groupOffX, y: y - fy - groupOffY, w, h };
+                    updateElement(el.id, updates);
                     if (activeGroupPath.length > 0) {
-                      updateElement(el.id, updates);
-                      if (activeFrameId) {
-                        updateFrame(activeFrameId, page => ({
-                          ...page, elements: recalcGroupBounds(page.elements, activeGroupPath),
-                        }));
-                      } else {
-                        updateData(prev => ({
-                          ...prev, elements: recalcGroupBounds(prev.elements ?? [], activeGroupPath),
-                        }));
-                      }
-                    } else if (isInFrame) {
-                      updateElement(el.id, updates);
-                    } else {
-                      updateCanvasElement(el.id, updates);
+                      elementContext.setElements(els => recalcGroupBounds(els, activeGroupPath));
                     }
                   }}
                   onExit={() => {
                     if (activeGroupPath.length > 0) {
-                      if (activeFrameId) {
-                        updateFrame(activeFrameId, page => ({
-                          ...page, elements: recalcGroupBounds(page.elements, activeGroupPath),
-                        }));
-                      } else {
-                        updateData(prev => ({
-                          ...prev, elements: recalcGroupBounds(prev.elements ?? [], activeGroupPath),
-                        }));
-                      }
+                      elementContext.setElements(els => recalcGroupBounds(els, activeGroupPath));
                     }
                     setVectorEditId(null); setVectorSelection(null);
                   }}
