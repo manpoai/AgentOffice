@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type RefObject } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface LineDrawToolProps {
   scale: number;
@@ -8,7 +8,7 @@ interface LineDrawToolProps {
   panY: number;
   frameX?: number;
   frameY?: number;
-  containerRef: RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   onComplete: (html: string, x: number, y: number, w: number, h: number) => void;
   onCancel: () => void;
 }
@@ -20,20 +20,20 @@ export function LineDrawTool({
   const [startPt, setStartPt] = useState<{ x: number; y: number } | null>(null);
   const [endPt, setEndPt] = useState<{ x: number; y: number } | null>(null);
 
-  const clientToCanvas = (clientX: number, clientY: number) => {
+  const clientToCanvas = useCallback((clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
-    const offsetX = rect?.left ?? 0;
-    const offsetY = rect?.top ?? 0;
+    const ox = rect ? rect.left : 0;
+    const oy = rect ? rect.top : 0;
     return {
-      x: (clientX - offsetX - panX) / scale - frameX,
-      y: (clientY - offsetY - panY) / scale - frameY,
+      x: (clientX - ox - panX) / scale - frameX,
+      y: (clientY - oy - panY) / scale - frameY,
     };
-  };
+  }, [containerRef, panX, panY, scale, frameX, frameY]);
 
-  const canvasToScreen = (cx: number, cy: number) => ({
+  const canvasToLocal = useCallback((cx: number, cy: number) => ({
     x: panX + (frameX + cx) * scale,
     y: panY + (frameY + cy) * scale,
-  });
+  }), [panX, panY, frameX, frameY, scale]);
 
   const snapAngle = (start: { x: number; y: number }, end: { x: number; y: number }, shiftKey: boolean) => {
     if (!shiftKey) return end;
@@ -99,8 +99,8 @@ export function LineDrawTool({
     onComplete(html, Math.round(x1 - pad), Math.round(y1 - pad), Math.round(w), Math.round(h));
   };
 
-  const s1 = startPt ? canvasToScreen(startPt.x, startPt.y) : null;
-  const s2 = endPt ? canvasToScreen(endPt.x, endPt.y) : null;
+  const s1 = startPt ? canvasToLocal(startPt.x, startPt.y) : null;
+  const s2 = endPt ? canvasToLocal(endPt.x, endPt.y) : null;
 
   return (
     <svg
