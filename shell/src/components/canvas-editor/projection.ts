@@ -99,20 +99,36 @@ export function projectElement(html: string, cssPath?: string): ProjectedProps &
   let svgStroke: string | undefined;
   let svgStrokeWidth: number | undefined;
   if (isSvgShape) {
-    const fillMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*\sfill="([^"]*)"/);
-    const strokeMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*\sstroke="([^"]*)"/);
-    const swMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*\sstroke-width="([^"]*)"/);
-    svgFill = fillMatch?.[1] ?? undefined;
-    svgStroke = strokeMatch?.[1] ?? undefined;
+    const resolveColor = (c: string | undefined): string | undefined => {
+      if (!c || c === 'currentColor') return undefined;
+      return c;
+    };
+    const fillMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sfill="([^"]*)"/);
+    const strokeMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sstroke="([^"]*)"/);
+    const swMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sstroke-width="([^"]*)"/);
+    svgFill = resolveColor(fillMatch?.[1]);
+    svgStroke = resolveColor(strokeMatch?.[1]);
+    if (!svgFill) {
+      const svgFillMatch = html.match(/<svg[^>]*?\sfill="([^"]*)"/);
+      svgFill = resolveColor(svgFillMatch?.[1]);
+    }
+    if (!svgStroke) {
+      const svgStrokeMatch = html.match(/<svg[^>]*?\sstroke="([^"]*)"/);
+      svgStroke = resolveColor(svgStrokeMatch?.[1]);
+    }
     if (swMatch) { const v = parseFloat(swMatch[1]); svgStrokeWidth = isNaN(v) ? undefined : v; }
+    if (svgStrokeWidth === undefined) {
+      const svgSwMatch = html.match(/<svg[^>]*?\sstroke-width="([^"]*)"/);
+      if (svgSwMatch) { const v = parseFloat(svgSwMatch[1]); svgStrokeWidth = isNaN(v) ? undefined : v; }
+    }
   }
 
   let svgStrokeDasharray: string | undefined;
   let svgStrokeAlignment: 'center' | 'inside' | 'outside' | undefined;
   if (isSvgShape) {
-    const dashMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*\sstroke-dasharray="([^"]*)"/);
+    const dashMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sstroke-dasharray="([^"]*)"/);
     svgStrokeDasharray = dashMatch?.[1] ?? undefined;
-    const paintMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*\spaint-order="([^"]*)"/);
+    const paintMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\spaint-order="([^"]*)"/);
     const alignMatch = html.match(/data-stroke-align="([^"]*)"/);
     if (alignMatch?.[1] === 'outside') svgStrokeAlignment = 'outside';
     else if (alignMatch?.[1] === 'inside') svgStrokeAlignment = 'inside';
@@ -238,23 +254,25 @@ export function applyProjection(rawHTML: string, changes: Partial<ProjectedProps
 
   let html = rawHTML;
 
+  const replaceAttrOnShapeOrSvg = (h: string, attr: string, val: string): string => {
+    const shapeRe = new RegExp(`(<(?:path|rect|circle|ellipse|polygon)\\b[^>]*?)\\s${attr}="[^"]*"`);
+    if (shapeRe.test(h)) return h.replace(shapeRe, `$1 ${attr}="${val}"`);
+    const svgRe = new RegExp(`(<svg\\b[^>]*?)\\s${attr}="[^"]*"`);
+    if (svgRe.test(h)) return h.replace(svgRe, `$1 ${attr}="${val}"`);
+    const addRe = /<(path|rect|circle|ellipse|polygon)\b([^>]*?)>/;
+    const m = h.match(addRe);
+    if (m) return h.replace(addRe, `<${m[1]}${m[2]} ${attr}="${val}">`);
+    return h;
+  };
+
   if (changes.svgFill !== undefined) {
-    html = html.replace(
-      /(<(?:path|rect|circle|ellipse|polygon)\b[^>]*\s)fill="[^"]*"/,
-      `$1fill="${changes.svgFill}"`
-    );
+    html = replaceAttrOnShapeOrSvg(html, 'fill', changes.svgFill);
   }
   if (changes.svgStroke !== undefined) {
-    html = html.replace(
-      /(<(?:path|rect|circle|ellipse|polygon)\b[^>]*\s)stroke="[^"]*"/,
-      `$1stroke="${changes.svgStroke}"`
-    );
+    html = replaceAttrOnShapeOrSvg(html, 'stroke', changes.svgStroke);
   }
   if (changes.svgStrokeWidth !== undefined) {
-    html = html.replace(
-      /(<(?:path|rect|circle|ellipse|polygon)\b[^>]*\s)stroke-width="[^"]*"/,
-      `$1stroke-width="${changes.svgStrokeWidth}"`
-    );
+    html = replaceAttrOnShapeOrSvg(html, 'stroke-width', String(changes.svgStrokeWidth));
   }
   if (changes.svgStrokeDasharray !== undefined) {
     const shapeTag = /<(path|rect|circle|ellipse|polygon)\b([^>]*)>/;
