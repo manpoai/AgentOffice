@@ -25,3 +25,7 @@ export function extractDroppedImageFiles(e: DragEvent): File[] {
 export function isSvgFile(file: File): boolean {
   return file.type === 'image/svg+xml' || file.name.endsWith('.svg');
 }
+
+export async function uploadImageFile(file: File): Promise<string> {
+  return readFileAsDataUrl(file);
+}

@@ -19,7 +19,10 @@ interface VectorEditorProps {
   elementW: number;
   elementH: number;
   scale: number;
-  onUpdateHtml: (newHtml: string) => void;
+  panX?: number;
+  panY?: number;
+  onUpdate?: (updates: { html: string; x: number; y: number; w: number; h: number }) => void;
+  onUpdateHtml?: (newHtml: string) => void;
   onExit: () => void;
   onSelectionChange?: (info: VectorSelectionInfo | null) => void;
 }
@@ -29,7 +32,7 @@ const HANDLE_SIZE = 4;
 
 export function VectorEditor({
   elementHtml, elementX, elementY, elementW, elementH,
-  scale, onUpdateHtml, onExit, onSelectionChange,
+  scale, panX = 0, panY = 0, onUpdate, onUpdateHtml, onExit, onSelectionChange,
 }: VectorEditorProps) {
   const pathD = extractPathD(elementHtml);
   const [parsed, setParsed] = useState<ParsedPath | null>(
@@ -56,7 +59,34 @@ export function VectorEditor({
     if (!parsed || !pathD) return;
     const newD = serializePath(parsed);
     if (newD !== pathD) {
-      onUpdateHtml(updatePathInHtml(elementHtml, newD));
+      const pad = 2;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const pt of parsed.points) {
+        minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y);
+        maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y);
+        if (pt.handleIn) {
+          minX = Math.min(minX, pt.x + pt.handleIn.x); minY = Math.min(minY, pt.y + pt.handleIn.y);
+          maxX = Math.max(maxX, pt.x + pt.handleIn.x); maxY = Math.max(maxY, pt.y + pt.handleIn.y);
+        }
+        if (pt.handleOut) {
+          minX = Math.min(minX, pt.x + pt.handleOut.x); minY = Math.min(minY, pt.y + pt.handleOut.y);
+          maxX = Math.max(maxX, pt.x + pt.handleOut.x); maxY = Math.max(maxY, pt.y + pt.handleOut.y);
+        }
+      }
+      const newVbX = minX - pad, newVbY = minY - pad;
+      const newVbW = Math.max(maxX - minX + pad * 2, 1);
+      const newVbH = Math.max(maxY - minY + pad * 2, 1);
+      let newHtml = updatePathInHtml(elementHtml, newD);
+      newHtml = newHtml.replace(/viewBox="[^"]*"/, `viewBox="${newVbX} ${newVbY} ${newVbW} ${newVbH}"`);
+      const vbX0 = viewBox?.[0] ?? 0;
+      const vbY0 = viewBox?.[1] ?? 0;
+      const newX = elementX - (elementW / vbW) * (newVbX - vbX0);
+      const newY = elementY - (elementH / vbH) * (newVbY - vbY0);
+      if (onUpdate) {
+        onUpdate({ html: newHtml, x: Math.round(newX), y: Math.round(newY), w: Math.round(newVbW * scaleX), h: Math.round(newVbH * scaleY) });
+      } else if (onUpdateHtml) {
+        onUpdateHtml(newHtml);
+      }
     }
   }, [parsed]);
 
@@ -67,8 +97,8 @@ export function VectorEditor({
   const scaleY = elementH / vbH;
 
   const toScreen = (px: number, py: number) => ({
-    x: (elementX + px * scaleX) * scale,
-    y: (elementY + py * scaleY) * scale,
+    x: panX + (elementX + px * scaleX) * scale,
+    y: panY + (elementY + py * scaleY) * scale,
   });
 
   useEffect(() => {

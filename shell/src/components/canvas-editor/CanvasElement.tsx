@@ -6,14 +6,20 @@ import type { CanvasElement as CanvasElementType } from './types';
 interface CanvasElementProps {
   element: CanvasElementType;
   selected: boolean;
+  hovered?: boolean;
   scale: number;
   editing?: boolean;
+  vectorEditing?: boolean;
   onSelect: (id: string, e: React.MouseEvent | React.TouchEvent) => void;
   onDragStart: (id: string, e: React.MouseEvent | React.TouchEvent) => void;
   onResizeStart: (id: string, handle: string, e: React.MouseEvent | React.TouchEvent) => void;
   onDoubleClick?: (id: string) => void;
   onHtmlChange?: (html: string) => void;
-  onContextMenu?: (id: string, e: React.MouseEvent) => void;
+  onShadowRootReady?: (id: string, shadowRoot: ShadowRoot) => void;
+  onMouseEnter?: (id: string) => void;
+  onMouseLeave?: (id: string) => void;
+  groupChildrenInteractive?: boolean;
+  hideGroupChildren?: boolean;
 }
 
 interface EditingOverlayProps {
@@ -25,15 +31,15 @@ interface EditingOverlayProps {
   onDone: () => void;
 }
 
-const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
+export const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 
-const HANDLE_CURSORS: Record<string, string> = {
+export const HANDLE_CURSORS: Record<string, string> = {
   nw: 'nwse-resize', n: 'ns-resize', ne: 'nesw-resize',
   e: 'ew-resize', se: 'nwse-resize', s: 'ns-resize',
   sw: 'nesw-resize', w: 'ew-resize',
 };
 
-const HANDLE_POS: Record<string, { top: string; left: string; transform: string }> = {
+export const HANDLE_POS: Record<string, { top: string; left: string; transform: string }> = {
   nw: { top: '0', left: '0', transform: 'translate(-50%, -50%)' },
   n:  { top: '0', left: '50%', transform: 'translate(-50%, -50%)' },
   ne: { top: '0', left: '100%', transform: 'translate(-50%, -50%)' },
@@ -110,6 +116,8 @@ export function EditingOverlay({ element, scale, panX, panY, onHtmlChange, onDon
         outlineOffset: -1,
         borderRadius: 2,
         overflow: 'hidden',
+        transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+        transformOrigin: 'center center',
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -131,10 +139,7 @@ export function EditingOverlay({ element, scale, panX, panY, onHtmlChange, onDon
   );
 }
 
-export function CanvasElementView({ element, selected, scale, editing, onSelect, onDragStart, onResizeStart, onDoubleClick, onContextMenu }: CanvasElementProps) {
-  // Guard must come BEFORE any hooks
-  if (element.visible === false) return null;
-
+export function CanvasElementView({ element, selected, hovered, scale, editing, vectorEditing, onSelect, onDragStart, onResizeStart, onDoubleClick, onShadowRootReady, onMouseEnter, onMouseLeave, groupChildrenInteractive, hideGroupChildren }: CanvasElementProps) {
   const shadowHostRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
 
@@ -143,11 +148,12 @@ export function CanvasElementView({ element, selected, scale, editing, onSelect,
     if (!host) return;
     if (!shadowRootRef.current) {
       shadowRootRef.current = host.attachShadow({ mode: 'open' });
+      onShadowRootReady?.(element.id, shadowRootRef.current);
     }
     const sr = shadowRootRef.current;
-    const needsOverflow = element.html.includes('data-stroke-align="outside"');
-    sr.innerHTML = `<style>:host { display: block; width: 100%; height: 100%; overflow: ${needsOverflow ? 'visible' : 'hidden'}; }</style>${element.html}`;
-  }, [element.html]);
+    const needsOverflow = element.html.includes('data-stroke-align="outside"') || vectorEditing;
+    sr.innerHTML = `<style>:host { display: block; width: 100%; height: 100%; overflow: ${needsOverflow ? 'visible' : 'hidden'}; } svg path, svg rect, svg circle, svg ellipse, svg line, svg polygon, svg polyline { vector-effect: non-scaling-stroke; }</style>${element.html}`;
+  }, [element.html, vectorEditing]);
 
   const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
     if (editing) return;
@@ -175,14 +181,44 @@ export function CanvasElementView({ element, selected, scale, editing, onSelect,
         height: element.h,
         zIndex: element.z_index ?? 0,
         cursor: editing ? 'text' : element.locked ? 'default' : 'move',
-        opacity: editing ? 0.3 : 1,
+        opacity: editing ? 0 : 1,
+        pointerEvents: editing ? 'none' : 'auto',
+        transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+        transformOrigin: 'center center',
       }}
       onMouseDown={handlePointerDown}
       onTouchStart={handlePointerDown}
       onDoubleClick={handleDblClick}
-      onContextMenu={onContextMenu ? (e) => { e.stopPropagation(); onContextMenu(element.id, e); } : undefined}
+      onMouseEnter={() => onMouseEnter?.(element.id)}
+      onMouseLeave={() => onMouseLeave?.(element.id)}
     >
-      <div ref={shadowHostRef} style={{ width: '100%', height: '100%', pointerEvents: 'none' }} />
+      {element.type === 'group' && element.children ? (
+        hideGroupChildren ? null : (
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: groupChildrenInteractive ? 'auto' : 'none' }}>
+          {element.children.map(child => (
+            <CanvasElementView
+              key={child.id}
+              element={child}
+              selected={false}
+              scale={scale}
+              onSelect={onSelect}
+              onDragStart={onDragStart}
+              onResizeStart={onResizeStart}
+              onDoubleClick={onDoubleClick}
+            />
+          ))}
+        </div>
+        )
+      ) : (
+        <div ref={shadowHostRef} style={{ width: '100%', height: '100%', pointerEvents: 'none' }} />
+      )}
+      {hovered && !selected && !editing && (
+        <div style={{
+          position: 'absolute', inset: -1,
+          border: '2px solid rgba(59, 130, 246, 0.5)',
+          pointerEvents: 'none', borderRadius: 2,
+        }} />
+      )}
       {selected && !editing && (
         <div
           style={{
@@ -194,7 +230,22 @@ export function CanvasElementView({ element, selected, scale, editing, onSelect,
           }}
         />
       )}
-      {selected && !element.locked && !editing && HANDLES.map(h => (
+      {selected && !editing && (
+        <div style={{
+          position: 'absolute',
+          top: '100%', left: '50%',
+          transform: 'translateX(-50%)',
+          marginTop: 4,
+          fontSize: 10, lineHeight: '16px',
+          padding: '0 6px',
+          background: '#3b82f6', color: 'white',
+          borderRadius: 3, pointerEvents: 'none', whiteSpace: 'nowrap',
+          zIndex: 10,
+        }}>
+          {Math.round(element.w)} × {Math.round(element.h)}
+        </div>
+      )}
+      {selected && !element.locked && !editing && !vectorEditing && HANDLES.map(h => (
         <div
           key={h}
           style={{

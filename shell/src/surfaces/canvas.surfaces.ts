@@ -51,5 +51,6 @@ export const canvasSurfaces = {
     'canvas-frame-delete',
     '---',
     'canvas-frame-export-png',
+    'canvas-frame-export-svg',
   ] as SurfaceConfig,
 };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type RefObject } from 'react';
 
 interface LineDrawToolProps {
   scale: number;
@@ -8,21 +8,27 @@ interface LineDrawToolProps {
   panY: number;
   frameX?: number;
   frameY?: number;
+  containerRef: RefObject<HTMLDivElement | null>;
   onComplete: (html: string, x: number, y: number, w: number, h: number) => void;
   onCancel: () => void;
 }
 
 export function LineDrawTool({
   scale, panX, panY, frameX = 0, frameY = 0,
-  onComplete, onCancel,
+  containerRef, onComplete, onCancel,
 }: LineDrawToolProps) {
   const [startPt, setStartPt] = useState<{ x: number; y: number } | null>(null);
   const [endPt, setEndPt] = useState<{ x: number; y: number } | null>(null);
 
-  const clientToCanvas = (clientX: number, clientY: number) => ({
-    x: (clientX - panX) / scale - frameX,
-    y: (clientY - panY) / scale - frameY,
-  });
+  const clientToCanvas = (clientX: number, clientY: number) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const offsetX = rect?.left ?? 0;
+    const offsetY = rect?.top ?? 0;
+    return {
+      x: (clientX - offsetX - panX) / scale - frameX,
+      y: (clientY - offsetY - panY) / scale - frameY,
+    };
+  };
 
   const canvasToScreen = (cx: number, cy: number) => ({
     x: panX + (frameX + cx) * scale,

@@ -18,6 +18,7 @@ export interface ProjectedProps {
   fontFamily?: string;
   fontWeight?: string;
   textAlign?: 'left' | 'center' | 'right' | 'justify';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
   lineHeight?: number;
   letterSpacing?: number;
   textDecoration?: 'none' | 'underline' | 'line-through';
@@ -145,6 +146,17 @@ export function projectElement(html: string, cssPath?: string): ProjectedProps &
       ? textAlignRaw
       : undefined;
 
+  const display = style.display;
+  const alignItems = style.alignItems;
+  const justifyContent = style.justifyContent;
+  let verticalAlign: ProjectedProps['verticalAlign'] | undefined;
+  if (display === 'flex') {
+    const ai = alignItems || justifyContent;
+    if (ai === 'center') verticalAlign = 'middle';
+    else if (ai === 'flex-end' || ai === 'end') verticalAlign = 'bottom';
+    else verticalAlign = 'top';
+  }
+
   const lineHeightRaw = style.lineHeight;
   const lhParsed = parseFloat(lineHeightRaw ?? '');
   const lineHeight = lineHeightRaw && lineHeightRaw !== 'normal' && !isNaN(lhParsed)
@@ -178,6 +190,7 @@ export function projectElement(html: string, cssPath?: string): ProjectedProps &
     fontFamily: isSvgShape ? undefined : (style.fontFamily || undefined),
     fontWeight: isSvgShape ? undefined : (style.fontWeight || undefined),
     textAlign: isSvgShape ? undefined : textAlign,
+    verticalAlign: isSvgShape ? undefined : verticalAlign,
     lineHeight: isSvgShape ? undefined : lineHeight,
     letterSpacing: isSvgShape ? undefined : letterSpacing,
     textDecoration: isSvgShape ? undefined : textDecoration,
@@ -291,6 +304,13 @@ export function applyProjection(rawHTML: string, changes: Partial<ProjectedProps
   if (changes.fontFamily !== undefined) el.style.fontFamily = changes.fontFamily;
   if (changes.fontWeight !== undefined) el.style.fontWeight = changes.fontWeight;
   if (changes.textAlign !== undefined) el.style.textAlign = changes.textAlign;
+  if (changes.verticalAlign !== undefined) {
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    if (changes.verticalAlign === 'top') el.style.justifyContent = 'flex-start';
+    else if (changes.verticalAlign === 'middle') el.style.justifyContent = 'center';
+    else if (changes.verticalAlign === 'bottom') el.style.justifyContent = 'flex-end';
+  }
   if (changes.lineHeight !== undefined) el.style.lineHeight = String(changes.lineHeight);
   if (changes.letterSpacing !== undefined) el.style.letterSpacing = changes.letterSpacing + 'px';
   if (changes.textDecoration !== undefined) el.style.textDecoration = changes.textDecoration;

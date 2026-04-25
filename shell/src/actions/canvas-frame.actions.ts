@@ -1,4 +1,4 @@
-import { Pencil, CopyPlus, Trash2, Image } from 'lucide-react';
+import { Pencil, CopyPlus, Trash2, Image, FileCode } from 'lucide-react';
 import type { ActionDef } from './types';
 
 export interface CanvasFrameCtx {
@@ -7,6 +7,8 @@ export interface CanvasFrameCtx {
   duplicateFrame: (id: string) => void;
   deleteFrame: (id: string) => void;
   exportFramePng: (id: string) => void;
+  exportFrameSvg?: (id: string) => void;
+  canExportSvg?: boolean;
 }
 
 export const canvasFrameActions: ActionDef<CanvasFrameCtx>[] = [
@@ -38,5 +40,12 @@ export const canvasFrameActions: ActionDef<CanvasFrameCtx>[] = [
     icon: Image,
     group: 'export',
     execute: ctx => ctx.exportFramePng(ctx.frameId),
+  },
+  {
+    id: 'canvas-frame-export-svg',
+    label: _t => 'Export SVG',
+    icon: FileCode,
+    group: 'export',
+    execute: ctx => ctx.exportFrameSvg?.(ctx.frameId),
   },
 ];

@@ -7,6 +7,7 @@ import {
   AlignStartHorizontal, AlignHorizontalJustifyCenter, AlignEndHorizontal,
   AlignStartVertical, AlignVerticalJustifyCenter, AlignEndVertical,
   AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
+  ArrowUp, ArrowDown, ChevronsUp, ChevronsDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
@@ -571,6 +572,10 @@ export function CanvasPropertyPanel({
   onDuplicateFrame,
   onDeleteFrame,
   onMoveSelection,
+  onBringForward,
+  onSendBackward,
+  onBringToFront,
+  onSendToBack,
 }: {
   element: CanvasElement | null;
   selectedElements?: CanvasElement[];
@@ -596,6 +601,10 @@ export function CanvasPropertyPanel({
   onDuplicateFrame?: (pageId: string) => void;
   onDeleteFrame?: (pageId: string) => void;
   onMoveSelection?: (dx: number, dy: number) => void;
+  onBringForward?: (id: string) => void;
+  onSendBackward?: (id: string) => void;
+  onBringToFront?: (id: string) => void;
+  onSendToBack?: (id: string) => void;
 }) {
   const [showCode, setShowCode] = useState(false);
 
@@ -651,18 +660,29 @@ export function CanvasPropertyPanel({
   const [aspectLocked, setAspectLocked] = useState(false);
   const aspectRatio = useRef<number>(1);
 
+  const selectionBounds = useMemo(() => {
+    if (!selectedElements || selectedElements.length < 2) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of selectedElements) {
+      minX = Math.min(minX, el.x);
+      minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + el.w);
+      maxY = Math.max(maxY, el.y + el.h);
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }, [selectedElements]);
+
   // ── No selection: Canvas / Frame ──────────────────────────────────────────
 
   if (!element && selectedCount === 0) {
     return (
-      <div className={panelClass}>
+      <div className={panelClass} onWheel={e => e.stopPropagation()}>
         <div className="px-3 py-2 border-b border-border flex items-center justify-between shrink-0">
           {frame && onRenameFrame ? (
             <InlineEditHeader value={frame.title || 'Frame'} onSave={v => onRenameFrame(frame.page_id, v)} />
           ) : (
             <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Canvas</span>
           )}
-          <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"><X className="h-3.5 w-3.5" /></button>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto">
         {frame && (
@@ -740,10 +760,9 @@ export function CanvasPropertyPanel({
   if (subElementSelection && element) {
     const projected = projectElement(element.html, subElementSelection.cssPath || undefined);
     return (
-      <div className={panelClass}>
+      <div className={panelClass} onWheel={e => e.stopPropagation()}>
         <div className="px-3 py-2 border-b border-border flex items-center justify-between">
           <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Sub-Element</span>
-          <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"><X className="h-3.5 w-3.5" /></button>
         </div>
         {subElementSelection.breadcrumbs.length > 1 && (
           <div className="px-3 py-1.5 border-b border-border flex items-center gap-1 flex-wrap">
@@ -786,20 +805,8 @@ export function CanvasPropertyPanel({
   const projected = isSingle ? projectElement(element!.html) : null;
   const isHtmlBlock = isSingle && projected && !projected.isSvgShape && !element!.html.includes('contenteditable');
 
-  const selectionBounds = useMemo(() => {
-    if (!selectedElements || selectedElements.length < 2) return null;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const el of selectedElements) {
-      minX = Math.min(minX, el.x);
-      minY = Math.min(minY, el.y);
-      maxX = Math.max(maxX, el.x + el.w);
-      maxY = Math.max(maxY, el.y + el.h);
-    }
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-  }, [selectedElements]);
-
   return (
-    <div className={panelClass}>
+    <div className={panelClass} onWheel={e => e.stopPropagation()}>
       {/* Header */}
       <div className="px-3 py-2 border-b border-border flex items-center justify-between shrink-0">
         {isSingle && element && onRenameElement ? (
@@ -807,7 +814,6 @@ export function CanvasPropertyPanel({
         ) : (
           <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{headerTitle}</span>
         )}
-        <button onClick={onClose} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors"><X className="h-3.5 w-3.5" /></button>
       </div>
 
       {/* Operations */}
@@ -882,7 +888,15 @@ export function CanvasPropertyPanel({
               </button>
               <span className="text-[10px] text-muted-foreground">{aspectLocked ? 'Aspect locked' : 'Aspect unlocked'}</span>
             </div>
-            <Row label="Z-Index"><NumberInput value={element.z_index ?? 0} onChange={v => onUpdateElement(element.id, { z_index: v })} /></Row>
+            <Row label="Z-Index">
+              <div className="flex items-center gap-1">
+                <NumberInput value={element.z_index ?? 0} onChange={v => onUpdateElement(element.id, { z_index: v })} />
+                <button className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/50" title="Send to back" onClick={() => onSendToBack?.(element.id)}><ChevronsDown className="w-3 h-3" /></button>
+                <button className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/50" title="Send backward" onClick={() => onSendBackward?.(element.id)}><ArrowDown className="w-3 h-3" /></button>
+                <button className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/50" title="Bring forward" onClick={() => onBringForward?.(element.id)}><ArrowUp className="w-3 h-3" /></button>
+                <button className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/50" title="Bring to front" onClick={() => onBringToFront?.(element.id)}><ChevronsUp className="w-3 h-3" /></button>
+              </div>
+            </Row>
             <Row label="Rotation"><NumberInput value={element.rotation ?? 0} step={1} suffix="°" onChange={v => onUpdateElement(element.id, { rotation: v })} /></Row>
           </div>
         </>
@@ -1078,6 +1092,20 @@ export function CanvasPropertyPanel({
                                 ? 'bg-primary text-primary-foreground border-primary'
                                 : 'border-border hover:border-muted-foreground')}
                             onClick={() => applyChange({ textAlign: a })}>
+                            {a.charAt(0).toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </Row>
+                    <Row label="V-Align">
+                      <div className="flex gap-0.5">
+                        {(['top', 'middle', 'bottom'] as const).map(a => (
+                          <button key={a}
+                            className={cn('flex-1 text-[10px] px-1 py-0.5 rounded border transition-colors',
+                              (projected.verticalAlign ?? 'top') === a
+                                ? 'bg-primary text-primary-foreground border-primary'
+                                : 'border-border hover:border-muted-foreground')}
+                            onClick={() => applyChange({ verticalAlign: a })}>
                             {a.charAt(0).toUpperCase()}
                           </button>
                         ))}

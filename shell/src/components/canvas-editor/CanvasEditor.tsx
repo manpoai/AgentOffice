@@ -7,6 +7,7 @@ import {
   Plus, Minus, Trash2,
   Lock, Unlock,
   Type, Hexagon, Frame, ImagePlus, FileUp,
+  Square, Image as ImageIcon, Code2, Slash,
   AlignHorizontalJustifyCenter, AlignVerticalJustifyCenter,
   AlignStartHorizontal, AlignEndHorizontal, AlignStartVertical, AlignEndVertical,
   PanelRight, PanelRightClose, Copy, ArrowUp, ArrowDown,
@@ -54,7 +55,7 @@ import { canvasElementActions, type CanvasElementCtx } from '@/actions/canvas-el
 import { canvasFrameActions, type CanvasFrameCtx } from '@/actions/canvas-frame.actions';
 import { canvasSurfaces } from '@/surfaces/canvas.surfaces';
 import { CanvasFrameExportView } from './CanvasFrameExportView';
-import { exportFramePng } from './exportUtils';
+import { exportFramePng, exportFrameSvg, canExportFrameAsSvg } from './exportUtils';
 
 type PendingInsert = { type: 'text' } | { type: 'shape'; shapeType: ShapeType } | { type: 'frame' } | { type: 'pen'; continueElementId?: string; initialPoints?: PathPoint[]; appendEnd?: 'start' | 'end' } | { type: 'line-draw' };
 
@@ -385,14 +386,26 @@ function getElementLabel(el: CanvasElement): string {
   if (el.html.includes('<svg')) return 'Shape';
   if (el.html.includes('<img')) return 'Image';
   if (el.html.includes('contenteditable')) return 'Text';
+  if (el.html.includes('<iframe') || el.html.includes('<script')) return 'HTML';
   return 'Element';
 }
 
-function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onToggleVisible }: {
+function getElementTypeIcon(el: CanvasElement): React.ElementType {
+  if (el.type === 'group') return Folder;
+  if (el.html.includes('<svg') && el.html.includes('<line')) return Slash;
+  if (el.html.includes('<svg')) return Hexagon;
+  if (el.html.includes('<img')) return ImageIcon;
+  if (el.html.includes('contenteditable')) return Type;
+  if (el.html.includes('<iframe') || el.html.includes('<script')) return Code2;
+  return Square;
+}
+
+function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onToggleVisible, onToggleLock }: {
   el: CanvasElement; frameId: string; isSelected: boolean;
   onSelect: (frameId: string, elementId: string) => void;
   onRename: (elementId: string, name: string) => void;
   onToggleVisible: (elementId: string) => void;
+  onToggleLock: (elementId: string) => void;
 }) {
   const [groupExpanded, setGroupExpanded] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: el.id });
@@ -423,10 +436,23 @@ function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onTogg
             {groupExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
           </button>
         )}
-        {isGroup ? (groupExpanded ? <FolderOpen className="h-3 w-3 shrink-0" /> : <Folder className="h-3 w-3 shrink-0" />) : null}
+        {isGroup
+          ? (groupExpanded ? <FolderOpen className="h-3 w-3 shrink-0" /> : <Folder className="h-3 w-3 shrink-0" />)
+          : React.createElement(getElementTypeIcon(el), { className: 'h-3 w-3 shrink-0 text-muted-foreground' })
+        }
         <InlineEdit value={el.name || ''} defaultValue={defaultLabel}
           onSave={(v) => onRename(el.id, v === defaultLabel ? '' : v)} />
-        {el.locked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0" />}
+        <button
+          className="p-0.5 shrink-0 opacity-0 group-hover:opacity-100 data-[locked=true]:opacity-100"
+          data-locked={el.locked || undefined}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onToggleLock(el.id); }}
+          title={el.locked ? 'Unlock' : 'Lock'}
+        >
+          {el.locked
+            ? <Lock className="h-2.5 w-2.5 text-muted-foreground" />
+            : <Unlock className="h-2.5 w-2.5 text-muted-foreground/30" />}
+        </button>
       </div>
       {isGroup && groupExpanded && el.children && (
         <div className="pl-4">
@@ -439,6 +465,7 @@ function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onTogg
               onSelect={onSelect}
               onRename={onRename}
               onToggleVisible={onToggleVisible}
+              onToggleLock={onToggleLock}
             />
           ))}
         </div>
@@ -447,7 +474,7 @@ function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onTogg
   );
 }
 
-function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectElement, onSelectCanvasElement, onClose, onRenameFrame, onRenameElement, onRenameCanvasElement, onReorderElements, onToggleVisible }: {
+function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectElement, onSelectCanvasElement, onClose, onRenameFrame, onRenameElement, onRenameCanvasElement, onReorderElements, onToggleVisible, onToggleLock }: {
   data: CanvasData;
   activeFrameId: string | null;
   selectedIds: Set<string>;
@@ -460,6 +487,7 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
   onRenameCanvasElement: (elementId: string, name: string) => void;
   onReorderElements: (frameId: string, activeId: string, overId: string) => void;
   onToggleVisible: (elementId: string) => void;
+  onToggleLock: (elementId: string) => void;
 }) {
   const [collapsedFrames, setCollapsedFrames] = useState<Set<string>>(new Set());
   const toggleCollapse = (fid: string) => setCollapsedFrames(prev => {
@@ -470,7 +498,7 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   return (
-    <div className="w-[200px] min-w-[200px] border-r border-border flex flex-col shrink-0 bg-card overflow-y-auto"
+    <div className="w-[248px] min-w-[248px] border-r border-border flex flex-col shrink-0 bg-card overflow-y-auto"
       onMouseDown={e => e.stopPropagation()}>
       <div className="px-2 py-1.5 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-1">
@@ -486,16 +514,27 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
           const defaultLabel = getElementLabel(el);
           return (
             <div key={el.id}
-              className={cn('flex items-center gap-1 px-3 py-1 cursor-pointer hover:bg-accent/50 text-[11px]',
+              className={cn('group flex items-center gap-1 px-3 py-1 cursor-pointer hover:bg-accent/50 text-[11px]',
                 !activeFrameId && selectedIds.has(el.id) && 'bg-primary/10 text-primary')}
               onClick={() => onSelectCanvasElement(el.id)}>
+              {React.createElement(getElementTypeIcon(el), { className: 'h-3 w-3 shrink-0 text-muted-foreground' })}
               <InlineEdit value={el.name || ''} defaultValue={defaultLabel}
                 onSave={(v) => onRenameCanvasElement(el.id, v === defaultLabel ? '' : v)} />
-              {el.locked && <Lock className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0" />}
+              <button
+                className="p-0.5 shrink-0 opacity-0 group-hover:opacity-100 data-[locked=true]:opacity-100"
+                data-locked={el.locked || undefined}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onToggleLock(el.id); }}
+                title={el.locked ? 'Unlock' : 'Lock'}
+              >
+                {el.locked
+                  ? <Lock className="h-2.5 w-2.5 text-muted-foreground" />
+                  : <Unlock className="h-2.5 w-2.5 text-muted-foreground/30" />}
+              </button>
             </div>
           );
         })}
-        {data.pages.map(frame => {
+        {(data.pages ?? []).map(frame => {
           const isActive = frame.page_id === activeFrameId;
           const collapsed = collapsedFrames.has(frame.page_id);
           const sortedEls = frame.elements.slice().sort((a, b) => (b.z_index ?? 0) - (a.z_index ?? 0));
@@ -524,7 +563,8 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
                         isSelected={selectedIds.has(el.id)}
                         onSelect={onSelectElement}
                         onRename={(eid, name) => onRenameElement(frame.page_id, eid, name)}
-                        onToggleVisible={onToggleVisible} />
+                        onToggleVisible={onToggleVisible}
+                        onToggleLock={onToggleLock} />
                     ))}
                   </SortableContext>
                 </DndContext>
@@ -1958,6 +1998,33 @@ export function CanvasEditor({
     }
   }, [data]);
 
+  const handleExportFrameSvg = useCallback(async (pageId: string) => {
+    const frame = data?.pages.find(p => p.page_id === pageId);
+    if (!frame) return;
+
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-99999px;top:0;pointer-events:none;';
+    document.body.appendChild(container);
+
+    const { createRoot } = await import('react-dom/client');
+    const { flushSync } = await import('react-dom');
+    const root = createRoot(container);
+    const ref = React.createRef<HTMLDivElement>();
+
+    try {
+      flushSync(() => {
+        root.render(React.createElement(CanvasFrameExportView, { frame, ref }));
+      });
+
+      if (ref.current) {
+        await exportFrameSvg(ref.current, frame.title || 'frame');
+      }
+    } finally {
+      root.unmount();
+      document.body.removeChild(container);
+    }
+  }, [data]);
+
   // ─── Context menus ──────────────────
   const canvasElementActionMap = useMemo(() => buildActionMap(canvasElementActions), []);
   const canvasFrameActionMap = useMemo(() => buildActionMap(canvasFrameActions), []);
@@ -1985,16 +2052,41 @@ export function CanvasEditor({
 
   const { onContextMenu: onElementContextMenu } = useContextMenu(getElementMenuItems);
 
+  const getBlankMenuItems = useCallback(() => {
+    const ctx: CanvasElementCtx = {
+      selectedIds: new Set(),
+      singleSelected: null,
+      handleCut, handleCopy, handlePaste,
+      deleteSelected,
+      duplicateElement: () => {},
+      bringToFront, bringForward, sendBackward, sendToBack,
+      groupSelected, ungroupSelected,
+      toggleLock,
+      openAiEdit: () => {},
+      openComments: () => {},
+    };
+    return toContextMenuItems(canvasSurfaces.blankMenu, canvasElementActionMap, ctx, t);
+  }, [handleCut, handleCopy, handlePaste, deleteSelected, bringToFront, bringForward, sendBackward, sendToBack,
+      groupSelected, ungroupSelected, toggleLock, canvasElementActionMap, t]);
+
+  const { onContextMenu: onBlankContextMenu } = useContextMenu(getBlankMenuItems);
+
   const getFrameMenuItems = useCallback((frameId: string) => () => {
+    const frame = data?.pages.find(p => p.page_id === frameId);
     const ctx: CanvasFrameCtx = {
       frameId,
       renameFrame,
       duplicateFrame,
       deleteFrame,
       exportFramePng: handleExportFramePng,
+      exportFrameSvg: handleExportFrameSvg,
+      canExportSvg: frame ? canExportFrameAsSvg(frame) : false,
     };
-    return toContextMenuItems(canvasSurfaces.frameMenu, canvasFrameActionMap, ctx, t);
-  }, [renameFrame, duplicateFrame, deleteFrame, handleExportFramePng, canvasFrameActionMap, t]);
+    const surface = frame && canExportFrameAsSvg(frame)
+      ? canvasSurfaces.frameMenu
+      : canvasSurfaces.frameMenu.filter(s => s !== 'canvas-frame-export-svg') as typeof canvasSurfaces.frameMenu;
+    return toContextMenuItems(surface, canvasFrameActionMap, ctx, t);
+  }, [renameFrame, duplicateFrame, deleteFrame, handleExportFramePng, handleExportFrameSvg, canvasFrameActionMap, t, data]);
 
   const alignElements = (alignment: string) => {
     if (selectedIds.size < 2 || !activeFrame || !activeFrameId) return;
@@ -2056,8 +2148,10 @@ export function CanvasEditor({
     if (elements.length !== 2) return;
     const sorted = [...elements].sort((x, y) => x.z_index - y.z_index);
     const [a, b] = sorted;
-    const dA = extractPathD(a.html);
-    const dB = extractPathD(b.html);
+    const htmlA = convertShapesToPaths(a.html);
+    const htmlB = convertShapesToPaths(b.html);
+    const dA = extractPathD(htmlA);
+    const dB = extractPathD(htmlB);
     if (!dA || !dB) return;
 
     const viewBoxA = a.html.match(/viewBox="([^"]*)"/)?.[1]?.split(/[\s,]+/).map(Number);
@@ -2212,6 +2306,7 @@ export function CanvasEditor({
               onRenameCanvasElement={(eid, name) => updateCanvasElement(eid, { name })}
               onReorderElements={reorderElements}
               onToggleVisible={toggleElementVisible}
+              onToggleLock={toggleLock}
             />
           )}
 
@@ -2219,7 +2314,8 @@ export function CanvasEditor({
           <div className="flex-1 min-w-0 overflow-hidden relative"
             style={{ background: data.background_color || '#e8e8e8', touchAction: 'none', cursor: isPanning ? 'grabbing' : pendingInsert ? 'crosshair' : 'default' }}
             ref={containerRef} onMouseDown={handleCanvasPointerDown}
-            onDrop={handleCanvasDrop} onDragOver={handleCanvasDragOver}>
+            onDrop={handleCanvasDrop} onDragOver={handleCanvasDragOver}
+            onContextMenu={onBlankContextMenu}>
 
             <CanvasToolbar
               pendingInsert={pendingInsert}
@@ -2235,7 +2331,7 @@ export function CanvasEditor({
 
 
             {/* All frames rendered on infinite canvas */}
-            {data.pages.map(frame => {
+            {(data.pages ?? []).map(frame => {
               const fx = frame.frame_x ?? 0;
               const fy = frame.frame_y ?? 0;
               const isActive = frame.page_id === activeFrameId;
@@ -2896,6 +2992,10 @@ export function CanvasEditor({
                     onRenameFrame={(fid, title) => updateFrame(fid, p => ({ ...p, title }))}
                     onDuplicateFrame={duplicateFrame}
                     onDeleteFrame={deleteFrame}
+                    onBringForward={bringForward}
+                    onSendBackward={sendBackward}
+                    onBringToFront={bringToFront}
+                    onSendToBack={sendToBack}
                     onMoveSelection={(dx, dy) => {
                       selectedElements.forEach(el => {
                         updateElement(el.id, { x: el.x + dx, y: el.y + dy });

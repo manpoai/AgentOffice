@@ -63,7 +63,7 @@ export function PenTool({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { onCancel(); return; }
-      if (e.key === 'Enter') { finishPath(false); return; }
+      if (e.key === 'Enter') { e.preventDefault(); e.stopImmediatePropagation(); finishPath(false); return; }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);

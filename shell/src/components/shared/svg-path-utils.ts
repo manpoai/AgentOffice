@@ -9,6 +9,7 @@ export interface PathPoint {
 export interface ParsedPath {
   points: PathPoint[];
   closed: boolean;
+  subPaths?: { points: PathPoint[]; closed: boolean }[];
 }
 
 interface PathCmd {
@@ -236,6 +237,93 @@ export function removePoint(parsed: ParsedPath, index: number): ParsedPath {
   if (parsed.points.length <= 2) return parsed;
   const points = parsed.points.filter((_, i) => i !== index);
   return { ...parsed, points };
+}
+
+export function serializeSubPath(sub: { points: PathPoint[]; closed: boolean }): string {
+  return serializePath(sub);
+}
+
+export function extractAllPathDs(html: string): string[] {
+  const re = /<path\b[^>]*\sd="([^"]*)"/g;
+  const results: string[] = [];
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (m[1]) results.push(m[1]);
+  }
+  return results;
+}
+
+export function convertShapesToPaths(html: string): string {
+  let result = html;
+  result = result.replace(/<rect\b([^>]*)\/?>/g, (_, attrs) => {
+    const x = parseFloat(attrs.match(/\bx="([^"]*)"/)?.[1] ?? '0');
+    const y = parseFloat(attrs.match(/\by="([^"]*)"/)?.[1] ?? '0');
+    const w = parseFloat(attrs.match(/\bwidth="([^"]*)"/)?.[1] ?? '0');
+    const h = parseFloat(attrs.match(/\bheight="([^"]*)"/)?.[1] ?? '0');
+    const rx = parseFloat(attrs.match(/\brx="([^"]*)"/)?.[1] ?? '0');
+    const ry = parseFloat(attrs.match(/\bry="([^"]*)"/)?.[1] ?? rx.toString());
+    const otherAttrs = attrs
+      .replace(/\b(x|y|width|height|rx|ry)="[^"]*"/g, '')
+      .trim();
+    let d: string;
+    if (rx > 0 || ry > 0) {
+      const r = Math.min(rx, w / 2);
+      const rv = Math.min(ry, h / 2);
+      d = `M${x + r},${y} L${x + w - r},${y} A${r},${rv} 0 0 1 ${x + w},${y + rv} L${x + w},${y + h - rv} A${r},${rv} 0 0 1 ${x + w - r},${y + h} L${x + r},${y + h} A${r},${rv} 0 0 1 ${x},${y + h - rv} L${x},${y + rv} A${r},${rv} 0 0 1 ${x + r},${y}Z`;
+    } else {
+      d = `M${x},${y} L${x + w},${y} L${x + w},${y + h} L${x},${y + h}Z`;
+    }
+    return `<path d="${d}" ${otherAttrs}/>`;
+  });
+  result = result.replace(/<circle\b([^>]*)\/?>/g, (_, attrs) => {
+    const cx = parseFloat(attrs.match(/\bcx="([^"]*)"/)?.[1] ?? '0');
+    const cy = parseFloat(attrs.match(/\bcy="([^"]*)"/)?.[1] ?? '0');
+    const r = parseFloat(attrs.match(/\br="([^"]*)"/)?.[1] ?? '0');
+    const otherAttrs = attrs.replace(/\b(cx|cy|r)="[^"]*"/g, '').trim();
+    const d = `M${cx - r},${cy} A${r},${r} 0 1 0 ${cx + r},${cy} A${r},${r} 0 1 0 ${cx - r},${cy}Z`;
+    return `<path d="${d}" ${otherAttrs}/>`;
+  });
+  result = result.replace(/<ellipse\b([^>]*)\/?>/g, (_, attrs) => {
+    const cx = parseFloat(attrs.match(/\bcx="([^"]*)"/)?.[1] ?? '0');
+    const cy = parseFloat(attrs.match(/\bcy="([^"]*)"/)?.[1] ?? '0');
+    const rx = parseFloat(attrs.match(/\brx="([^"]*)"/)?.[1] ?? '0');
+    const ry = parseFloat(attrs.match(/\bry="([^"]*)"/)?.[1] ?? '0');
+    const otherAttrs = attrs.replace(/\b(cx|cy|rx|ry)="[^"]*"/g, '').trim();
+    const d = `M${cx - rx},${cy} A${rx},${ry} 0 1 0 ${cx + rx},${cy} A${rx},${ry} 0 1 0 ${cx - rx},${cy}Z`;
+    return `<path d="${d}" ${otherAttrs}/>`;
+  });
+  result = result.replace(/<line\b([^>]*)\/?>/g, (_, attrs) => {
+    const x1 = parseFloat(attrs.match(/\bx1="([^"]*)"/)?.[1] ?? '0');
+    const y1 = parseFloat(attrs.match(/\by1="([^"]*)"/)?.[1] ?? '0');
+    const x2 = parseFloat(attrs.match(/\bx2="([^"]*)"/)?.[1] ?? '0');
+    const y2 = parseFloat(attrs.match(/\by2="([^"]*)"/)?.[1] ?? '0');
+    const otherAttrs = attrs.replace(/\b(x1|y1|x2|y2)="[^"]*"/g, '').trim();
+    return `<path d="M${x1},${y1} L${x2},${y2}" ${otherAttrs}/>`;
+  });
+  result = result.replace(/<polygon\b([^>]*)\/?>/g, (_, attrs) => {
+    const pointsStr = attrs.match(/\bpoints="([^"]*)"/)?.[1] ?? '';
+    const nums = pointsStr.trim().split(/[\s,]+/).map(Number);
+    const otherAttrs = attrs.replace(/\bpoints="[^"]*"/g, '').trim();
+    if (nums.length < 4) return `<path d="" ${otherAttrs}/>`;
+    let d = `M${nums[0]},${nums[1]}`;
+    for (let i = 2; i < nums.length; i += 2) d += ` L${nums[i]},${nums[i + 1]}`;
+    d += 'Z';
+    return `<path d="${d}" ${otherAttrs}/>`;
+  });
+  return result;
+}
+
+export function rescaleSvgHtml(html: string, newW: number, newH: number): string {
+  return html.replace(
+    /viewBox="([^"]*)"/,
+    (_, vb) => {
+      const parts = vb.split(/[\s,]+/).map(Number);
+      if (parts.length === 4) {
+        return `viewBox="${parts[0]} ${parts[1]} ${newW} ${newH}"`;
+      }
+      return `viewBox="0 0 ${newW} ${newH}"`;
+    },
+  );
 }
 
 export type BooleanOp = 'union' | 'difference' | 'intersection' | 'exclusion';
