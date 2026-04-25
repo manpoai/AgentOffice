@@ -20,6 +20,7 @@ interface CanvasElementProps {
   onMouseLeave?: (id: string) => void;
   groupChildrenInteractive?: boolean;
   hideGroupChildren?: boolean;
+  nonInteractive?: boolean;
 }
 
 interface EditingOverlayProps {
@@ -139,7 +140,7 @@ export function EditingOverlay({ element, scale, panX, panY, onHtmlChange, onDon
   );
 }
 
-export function CanvasElementView({ element, selected, hovered, scale, editing, vectorEditing, onSelect, onDragStart, onResizeStart, onDoubleClick, onShadowRootReady, onMouseEnter, onMouseLeave, groupChildrenInteractive, hideGroupChildren }: CanvasElementProps) {
+export function CanvasElementView({ element, selected, hovered, scale, editing, vectorEditing, onSelect, onDragStart, onResizeStart, onDoubleClick, onShadowRootReady, onMouseEnter, onMouseLeave, groupChildrenInteractive, hideGroupChildren, nonInteractive }: CanvasElementProps) {
   const shadowHostRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
 
@@ -182,7 +183,7 @@ export function CanvasElementView({ element, selected, hovered, scale, editing, 
         zIndex: element.z_index ?? 0,
         cursor: editing ? 'text' : element.locked ? 'default' : 'move',
         opacity: editing ? 0 : 1,
-        pointerEvents: editing ? 'none' : 'auto',
+        pointerEvents: editing || nonInteractive ? 'none' : 'auto',
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
         transformOrigin: 'center center',
       }}
@@ -205,6 +206,7 @@ export function CanvasElementView({ element, selected, hovered, scale, editing, 
               onDragStart={onDragStart}
               onResizeStart={onResizeStart}
               onDoubleClick={onDoubleClick}
+              nonInteractive={!groupChildrenInteractive}
             />
           ))}
         </div>
