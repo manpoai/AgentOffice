@@ -949,6 +949,17 @@ export function CanvasEditor({
     });
   }, []);
 
+  const resetZoomTo100 = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const cx = rect.width / 2, cy = rect.height / 2;
+    setPan(prevPan => ({
+      x: cx - (cx - prevPan.x) * (1 / scale),
+      y: cy - (cy - prevPan.y) * (1 / scale),
+    }));
+    setScale(1);
+  }, [scale]);
+
   // ─── Drag/resize/pan ───────────────
   useEffect(() => {
     const handleMove = (e: MouseEvent | TouchEvent) => {
@@ -1635,11 +1646,24 @@ export function CanvasEditor({
       if (e.key === 'g' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); ungroupSelected(); }
       if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        setSelectedIds(new Set(elementContext.elements.map(el => el.id)));
+        setSelectedIds(new Set(elementContext.elements.filter(el => el.visible !== false).map(el => el.id)));
       }
       if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handleCopy(); }
       if (e.key === 'v' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handlePaste(); }
       if (e.key === 'x' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handleCut(); }
+      if (e.key === 'd' && (e.ctrlKey || e.metaKey) && !e.shiftKey && selectedIds.size > 0) {
+        e.preventDefault();
+        const newIds: string[] = [];
+        elementContext.setElements(els => {
+          const toAdd: typeof els = [];
+          for (const id of selectedIds) {
+            const el = els.find(e => e.id === id);
+            if (el) { const nid = `el-${crypto.randomUUID().slice(0, 8)}`; newIds.push(nid); toAdd.push({ ...el, id: nid, x: el.x + 20, y: el.y + 20 }); }
+          }
+          return [...els, ...toAdd];
+        });
+        if (newIds.length > 0) setSelectedIds(new Set(newIds));
+      }
       if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); setPendingInsert(null); return; }
       if (e.key === 'r' && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); setPendingInsert({ type: 'shape', shapeType: 'rect' }); return; }
       if (e.key === 'o' && !e.ctrlKey && !e.metaKey && !e.shiftKey) { e.preventDefault(); setPendingInsert({ type: 'shape', shapeType: 'circle' }); return; }
@@ -1651,7 +1675,7 @@ export function CanvasEditor({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, activeFrame, editingElementId, vectorEditId, subElementEditId, handleUndo, handleRedo, pendingInsert, handleCopy, handlePaste, handleCut, groupSelected, ungroupSelected]);
+  }, [selectedIds, activeFrame, editingElementId, vectorEditId, subElementEditId, handleUndo, handleRedo, pendingInsert, handleCopy, handlePaste, handleCut, groupSelected, ungroupSelected, elementContext]);
 
   // ─── Sub-element editing ────────────
   const handleSubElementDragMove = useCallback((cssPath: string, totalDx: number, totalDy: number) => {
@@ -2012,12 +2036,16 @@ export function CanvasEditor({
       toggleLock,
       openAiEdit: () => onShowComments(),
       openComments: () => onShowComments(),
+      selectAll: () => setSelectedIds(new Set(elementContext.elements.filter(el => el.visible !== false).map(el => el.id))),
+      fitToView: fitAllFrames,
+      resetZoom: resetZoomTo100,
     };
     const surface = selectedIds.size > 1 ? canvasSurfaces.multiMenu : canvasSurfaces.elementMenu;
     return toContextMenuItems(surface, canvasElementActionMap, ctx, t);
   }, [selectedIds, findElementById, handleCut, handleCopy, handlePaste, deleteSelected,
       duplicateElement, bringToFront, bringForward, sendBackward, sendToBack,
-      groupSelected, ungroupSelected, toggleLock, canvasElementActionMap, t, onShowComments]);
+      groupSelected, ungroupSelected, toggleLock, canvasElementActionMap, t, onShowComments,
+      elementContext.elements, fitAllFrames, resetZoomTo100]);
 
   const { onContextMenu: onElementContextMenu } = useContextMenu(getElementMenuItems);
 
@@ -2033,10 +2061,14 @@ export function CanvasEditor({
       toggleLock,
       openAiEdit: () => {},
       openComments: () => {},
+      selectAll: () => setSelectedIds(new Set(elementContext.elements.filter(el => el.visible !== false).map(el => el.id))),
+      fitToView: fitAllFrames,
+      resetZoom: resetZoomTo100,
     };
     return toContextMenuItems(canvasSurfaces.blankMenu, canvasElementActionMap, ctx, t);
   }, [handleCut, handleCopy, handlePaste, deleteSelected, bringToFront, bringForward, sendBackward, sendToBack,
-      groupSelected, ungroupSelected, toggleLock, canvasElementActionMap, t]);
+      groupSelected, ungroupSelected, toggleLock, canvasElementActionMap, t,
+      elementContext.elements, fitAllFrames, resetZoomTo100]);
 
   const { onContextMenu: onBlankContextMenu } = useContextMenu(getBlankMenuItems);
 
@@ -2399,7 +2431,7 @@ export function CanvasEditor({
                         }
                       })}
                       {/* Render all frame elements normally */}
-                      {frame.elements.slice().sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0)).map(el => (
+                      {frame.elements.filter(el => el.visible !== false).slice().sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0)).map(el => (
                         <CanvasElementView key={el.id} element={el}
                           selected={isActive && selectedIds.has(el.id) && subElementEditId !== el.id && !(activeGroupPath.includes(el.id))}
                           scale={scale}
@@ -2532,7 +2564,7 @@ export function CanvasEditor({
             })}
 
             {/* Canvas-level elements (not in any frame) */}
-            {(data.elements ?? []).slice().sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0)).map(el => {
+            {(data.elements ?? []).filter(el => el.visible !== false).slice().sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0)).map(el => {
               const zeroed = { ...el, x: 0, y: 0 };
               return (
                 <div key={el.id} style={{

@@ -16,6 +16,7 @@ interface CanvasElementProps {
   onDoubleClick?: (id: string) => void;
   onHtmlChange?: (html: string) => void;
   onShadowRootReady?: (id: string, shadowRoot: ShadowRoot) => void;
+  onContextMenu?: (id: string, e: React.MouseEvent) => void;
   onMouseEnter?: (id: string) => void;
   onMouseLeave?: (id: string) => void;
   groupChildrenInteractive?: boolean;
@@ -140,7 +141,7 @@ export function EditingOverlay({ element, scale, panX, panY, onHtmlChange, onDon
   );
 }
 
-export function CanvasElementView({ element, selected, hovered, scale, editing, vectorEditing, onSelect, onDragStart, onResizeStart, onDoubleClick, onShadowRootReady, onMouseEnter, onMouseLeave, groupChildrenInteractive, hideGroupChildren, nonInteractive }: CanvasElementProps) {
+export function CanvasElementView({ element, selected, hovered, scale, editing, vectorEditing, onSelect, onDragStart, onResizeStart, onDoubleClick, onContextMenu, onShadowRootReady, onMouseEnter, onMouseLeave, groupChildrenInteractive, hideGroupChildren, nonInteractive }: CanvasElementProps) {
   const shadowHostRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
 
@@ -190,6 +191,7 @@ export function CanvasElementView({ element, selected, hovered, scale, editing, 
       onMouseDown={handlePointerDown}
       onTouchStart={handlePointerDown}
       onDoubleClick={handleDblClick}
+      onContextMenu={onContextMenu ? (e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(element.id, e); } : undefined}
       onMouseEnter={() => onMouseEnter?.(element.id)}
       onMouseLeave={() => onMouseLeave?.(element.id)}
     >

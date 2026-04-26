@@ -25,7 +25,7 @@ interface Props {
 
 export const CanvasFrameExportView = React.forwardRef<HTMLDivElement, Props>(
   ({ frame }, ref) => {
-    const sorted = [...frame.elements].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+    const sorted = frame.elements.filter(el => el.visible !== false).sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
     return (
       <div
         ref={ref}

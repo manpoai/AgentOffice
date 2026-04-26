@@ -2,6 +2,7 @@ import {
   Scissors, Copy, ClipboardPaste, CopyPlus, Trash2,
   ArrowUpToLine, ArrowUp, ArrowDown, ArrowDownToLine,
   Lock, Unlock, Group, Ungroup, MessageSquare, Sparkles,
+  MousePointerSquareDashed, Maximize, Search,
 } from 'lucide-react';
 import type { ActionDef } from './types';
 import type { CanvasElement } from '@/components/canvas-editor/types';
@@ -23,6 +24,9 @@ export interface CanvasElementCtx {
   toggleLock: (id: string) => void;
   openAiEdit: () => void;
   openComments: () => void;
+  selectAll: () => void;
+  fitToView: () => void;
+  resetZoom: () => void;
 }
 
 export const canvasElementActions: ActionDef<CanvasElementCtx>[] = [
@@ -130,5 +134,27 @@ export const canvasElementActions: ActionDef<CanvasElementCtx>[] = [
     icon: MessageSquare,
     group: 'ai',
     execute: ctx => ctx.openComments(),
+  },
+  {
+    id: 'canvas-select-all',
+    label: _t => 'Select All',
+    icon: MousePointerSquareDashed,
+    shortcut: '⌘A',
+    group: 'selection',
+    execute: ctx => ctx.selectAll(),
+  },
+  {
+    id: 'canvas-fit-to-view',
+    label: _t => 'Zoom to Fit',
+    icon: Maximize,
+    group: 'view',
+    execute: ctx => ctx.fitToView(),
+  },
+  {
+    id: 'canvas-reset-zoom',
+    label: _t => 'Zoom to 100%',
+    icon: Search,
+    group: 'view',
+    execute: ctx => ctx.resetZoom(),
   },
 ];

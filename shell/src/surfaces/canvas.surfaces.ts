@@ -5,6 +5,10 @@ export const canvasSurfaces = {
   blankMenu: [
     'canvas-paste',
     '---',
+    'canvas-select-all',
+    '---',
+    'canvas-fit-to-view',
+    'canvas-reset-zoom',
   ] as SurfaceConfig,
 
   /** Canvas: single element right-click */
