@@ -1,5 +1,5 @@
 import { toPng, toSvg } from 'html-to-image';
-import type { CanvasPage } from './types';
+import type { CanvasPage, CanvasElement } from './types';
 
 export async function exportFramePng(frameEl: HTMLElement, frameName: string): Promise<void> {
   const dataUrl = await toPng(frameEl, { pixelRatio: 2, skipFonts: false });
@@ -12,9 +12,20 @@ export async function exportFramePng(frameEl: HTMLElement, frameName: string): P
 }
 
 export function canExportFrameAsSvg(frame: CanvasPage): boolean {
-  return frame.elements.every(el =>
-    el.html.includes('<svg') && !el.html.includes('<img') && !el.html.includes('<iframe')
-  );
+  return canExportElementsAsSvg(frame.elements);
+}
+
+export function canExportElementsAsSvg(elements: CanvasElement[]): boolean {
+  return elements.every(el => {
+    if (el.visible === false) return true;
+    if (el.type === 'group' && el.children) return canExportElementsAsSvg(el.children);
+    return el.html.includes('<svg') && !el.html.includes('<img') && !el.html.includes('<iframe');
+  });
+}
+
+export function canExportElementAsSvg(el: CanvasElement): boolean {
+  if (el.type === 'group' && el.children) return canExportElementsAsSvg(el.children);
+  return el.html.includes('<svg') && !el.html.includes('<img') && !el.html.includes('<iframe');
 }
 
 export async function exportFrameSvg(frameEl: HTMLElement, frameName: string): Promise<void> {

@@ -8,6 +8,7 @@ import {
   AlignStartVertical, AlignVerticalJustifyCenter, AlignEndVertical,
   AlignHorizontalSpaceAround, AlignVerticalSpaceAround,
   ArrowUp, ArrowDown, ChevronsUp, ChevronsDown,
+  Download,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
@@ -576,6 +577,9 @@ export function CanvasPropertyPanel({
   onSendBackward,
   onBringToFront,
   onSendToBack,
+  onExportPng,
+  onExportSvg,
+  canExportSvg,
 }: {
   element: CanvasElement | null;
   selectedElements?: CanvasElement[];
@@ -605,6 +609,9 @@ export function CanvasPropertyPanel({
   onSendBackward?: (id: string) => void;
   onBringToFront?: (id: string) => void;
   onSendToBack?: (id: string) => void;
+  onExportPng?: () => void;
+  onExportSvg?: () => void;
+  canExportSvg?: boolean;
 }) {
   const [showCode, setShowCode] = useState(false);
 
@@ -747,6 +754,29 @@ export function CanvasPropertyPanel({
                 <ColorRow key={token.name} label={token.name.replace('--', '')}
                   value={token.value} onChange={v => onUpdateToken(token.name, v)} />
               ))}
+            </div>
+          </>
+        )}
+        {onExportPng && (
+          <>
+            <SectionHeader>Export</SectionHeader>
+            <div className="p-3 flex gap-2">
+              <button
+                onClick={onExportPng}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+              >
+                <Download className="h-3.5 w-3.5" />
+                PNG
+              </button>
+              {canExportSvg && onExportSvg && (
+                <button
+                  onClick={onExportSvg}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  SVG
+                </button>
+              )}
             </div>
           </>
         )}
@@ -1257,6 +1287,31 @@ export function CanvasPropertyPanel({
               />
             </div>
           )}
+        </>
+      )}
+
+      {/* Export */}
+      {onExportPng && (
+        <>
+          <SectionHeader>Export</SectionHeader>
+          <div className="p-3 flex gap-2">
+            <button
+              onClick={onExportPng}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" />
+              PNG
+            </button>
+            {canExportSvg && onExportSvg && (
+              <button
+                onClick={onExportSvg}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+              >
+                <Download className="h-3.5 w-3.5" />
+                SVG
+              </button>
+            )}
+          </div>
         </>
       )}
       </div>

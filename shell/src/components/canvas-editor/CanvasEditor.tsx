@@ -54,8 +54,8 @@ import { buildActionMap } from '@/actions/types';
 import { canvasElementActions, type CanvasElementCtx } from '@/actions/canvas-element.actions';
 import { canvasFrameActions, type CanvasFrameCtx } from '@/actions/canvas-frame.actions';
 import { canvasSurfaces } from '@/surfaces/canvas.surfaces';
-import { CanvasFrameExportView } from './CanvasFrameExportView';
-import { exportFramePng, exportFrameSvg, canExportFrameAsSvg } from './exportUtils';
+import { CanvasFrameExportView, ElementExportView } from './CanvasFrameExportView';
+import { exportFramePng, exportFrameSvg, canExportFrameAsSvg, canExportElementAsSvg } from './exportUtils';
 
 type PendingInsert = { type: 'text' } | { type: 'shape'; shapeType: ShapeType } | { type: 'frame' } | { type: 'pen'; continueElementId?: string; initialPoints?: PathPoint[]; appendEnd?: 'start' | 'end' } | { type: 'line-draw' };
 
@@ -2018,6 +2018,78 @@ export function CanvasEditor({
     }
   }, [data]);
 
+  // ─── Property panel export handlers ──────────────────
+
+  const handleExportSelectionPng = useCallback(async () => {
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-99999px;top:0;pointer-events:none;';
+    document.body.appendChild(container);
+    const { createRoot } = await import('react-dom/client');
+    const { flushSync } = await import('react-dom');
+    const root = createRoot(container);
+    const ref = React.createRef<HTMLDivElement>();
+
+    try {
+      if (frameExplicitlySelected && activeFrame && selectedIds.size === 0) {
+        flushSync(() => {
+          root.render(React.createElement(CanvasFrameExportView, { frame: activeFrame, ref }));
+        });
+        if (ref.current) await exportFramePng(ref.current, activeFrame.title || 'frame');
+      } else {
+        const resolved = Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean) as CanvasElement[];
+        if (resolved.length === 0) return;
+        const name = resolved.length === 1 ? (resolved[0].name || 'element') : 'selection';
+        flushSync(() => {
+          root.render(React.createElement(ElementExportView, { elements: resolved, ref }));
+        });
+        if (ref.current) await exportFramePng(ref.current, name);
+      }
+    } finally {
+      root.unmount();
+      document.body.removeChild(container);
+    }
+  }, [frameExplicitlySelected, activeFrame, selectedIds, findElementById]);
+
+  const handleExportSelectionSvg = useCallback(async () => {
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-99999px;top:0;pointer-events:none;';
+    document.body.appendChild(container);
+    const { createRoot } = await import('react-dom/client');
+    const { flushSync } = await import('react-dom');
+    const root = createRoot(container);
+    const ref = React.createRef<HTMLDivElement>();
+
+    try {
+      if (frameExplicitlySelected && activeFrame && selectedIds.size === 0) {
+        flushSync(() => {
+          root.render(React.createElement(CanvasFrameExportView, { frame: activeFrame, ref }));
+        });
+        if (ref.current) await exportFrameSvg(ref.current, activeFrame.title || 'frame');
+      } else {
+        const resolved = Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean) as CanvasElement[];
+        if (resolved.length === 0) return;
+        const name = resolved.length === 1 ? (resolved[0].name || 'element') : 'selection';
+        flushSync(() => {
+          root.render(React.createElement(ElementExportView, { elements: resolved, ref }));
+        });
+        if (ref.current) await exportFrameSvg(ref.current, name);
+      }
+    } finally {
+      root.unmount();
+      document.body.removeChild(container);
+    }
+  }, [frameExplicitlySelected, activeFrame, selectedIds, findElementById]);
+
+  const canSelectionExportSvg = useMemo(() => {
+    if (frameExplicitlySelected && activeFrame && selectedIds.size === 0) {
+      return canExportFrameAsSvg(activeFrame);
+    }
+    const resolved = Array.from(selectedIds).map(id => findElementById(id)).filter(Boolean) as CanvasElement[];
+    return resolved.length > 0 && resolved.every(el => canExportElementAsSvg(el));
+  }, [frameExplicitlySelected, activeFrame, selectedIds, findElementById]);
+
+  const hasExportTarget = frameExplicitlySelected || selectedIds.size > 0;
+
   // ─── Context menus ──────────────────
   const canvasElementActionMap = useMemo(() => buildActionMap(canvasElementActions), []);
   const canvasFrameActionMap = useMemo(() => buildActionMap(canvasFrameActions), []);
@@ -3093,6 +3165,9 @@ export function CanvasEditor({
                         updateElement(el.id, { x: el.x + dx, y: el.y + dy });
                       });
                     }}
+                    onExportPng={hasExportTarget ? handleExportSelectionPng : undefined}
+                    onExportSvg={hasExportTarget ? handleExportSelectionSvg : undefined}
+                    canExportSvg={canSelectionExportSvg}
                   />
                 )}
               </div>

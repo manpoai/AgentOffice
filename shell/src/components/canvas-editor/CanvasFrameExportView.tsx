@@ -74,3 +74,44 @@ export const CanvasFrameExportView = React.forwardRef<HTMLDivElement, Props>(
   }
 );
 CanvasFrameExportView.displayName = 'CanvasFrameExportView';
+
+interface ElementExportProps {
+  elements: CanvasElement[];
+}
+
+export const ElementExportView = React.forwardRef<HTMLDivElement, ElementExportProps>(
+  ({ elements }, ref) => {
+    const visible = elements.filter(el => el.visible !== false);
+    if (visible.length === 0) return <div ref={ref} />;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of visible) {
+      minX = Math.min(minX, el.x);
+      minY = Math.min(minY, el.y);
+      maxX = Math.max(maxX, el.x + el.w);
+      maxY = Math.max(maxY, el.y + el.h);
+    }
+    const w = maxX - minX;
+    const h = maxY - minY;
+
+    const sorted = [...visible].sort((a, b) => (a.z_index ?? 0) - (b.z_index ?? 0));
+
+    return (
+      <div
+        ref={ref}
+        style={{
+          position: 'relative',
+          width: w,
+          height: h,
+          overflow: 'hidden',
+          backgroundColor: 'transparent',
+        }}
+      >
+        {sorted.map(el => (
+          <ExportElement key={el.id} el={{ ...el, x: el.x - minX, y: el.y - minY }} />
+        ))}
+      </div>
+    );
+  }
+);
+ElementExportView.displayName = 'ElementExportView';
