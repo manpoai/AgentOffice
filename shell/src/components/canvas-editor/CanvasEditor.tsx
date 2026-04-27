@@ -2585,7 +2585,7 @@ export function CanvasEditor({
 
           {/* Infinite canvas viewport */}
           <div className="flex-1 min-w-0 overflow-hidden relative"
-            style={{ background: data.background_color || '#e8e8e8', touchAction: 'none', cursor: isPanning ? 'grabbing' : pendingInsert ? 'crosshair' : 'default' }}
+            style={{ background: data.background_color || '#e8e8e8', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', cursor: isPanning ? 'grabbing' : pendingInsert ? 'crosshair' : 'default' }}
             ref={containerRef} onMouseDown={handleCanvasPointerDown}
             onDrop={handleCanvasDrop} onDragOver={handleCanvasDragOver}
             onContextMenu={onBlankContextMenu}>

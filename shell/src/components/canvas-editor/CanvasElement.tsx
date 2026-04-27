@@ -187,6 +187,11 @@ export function EditingOverlay({ element, scale, panX, panY, onHtmlChange, onSiz
           zoom: scale,
           outline: 'none',
           cursor: 'text',
+          // Re-enable text selection inside the editor, since the canvas root
+          // disables user-select to prevent marquee/resize from selecting
+          // contenteditable text in the rest of the canvas.
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
         }}
       />
     </div>
@@ -208,7 +213,11 @@ export function CanvasElementView({ element, selected, hovered, scale, editing, 
     const isSvg = element.html.includes('<svg');
     const needsOverflow = isSvg || vectorEditing;
     const svgWrapperOverflow = isSvg ? ':host > div { overflow: visible !important; }' : '';
-    sr.innerHTML = `<style>:host { display: block; width: 100%; height: 100%; overflow: ${needsOverflow ? 'visible' : 'hidden'}; } ${svgWrapperOverflow} svg path, svg rect, svg circle, svg ellipse, svg line, svg polygon, svg polyline { vector-effect: non-scaling-stroke; }</style>${element.html}`;
+    // user-select:none in the shadow DOM prevents text inside contenteditable
+    // elements from being selected by canvas marquee / drag-select. The actual
+    // editing UI (EditingOverlay) lives outside the shadow DOM, so this doesn't
+    // affect typing.
+    sr.innerHTML = `<style>:host { display: block; width: 100%; height: 100%; overflow: ${needsOverflow ? 'visible' : 'hidden'}; user-select: none; -webkit-user-select: none; } ${svgWrapperOverflow} svg path, svg rect, svg circle, svg ellipse, svg line, svg polygon, svg polyline { vector-effect: non-scaling-stroke; }</style>${element.html}`;
   }, [element.html, vectorEditing]);
 
   const handlePointerDown = (e: React.MouseEvent | React.TouchEvent) => {
