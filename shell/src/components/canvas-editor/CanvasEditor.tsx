@@ -2816,6 +2816,7 @@ export function CanvasEditor({
                       selected={!activeFrameId && selectedIds.has(el.id) && subElementEditId !== el.id && !activeGroupPath.includes(el.id)} scale={scale}
                       hovered={hoveredId === el.id && !subElementEditId && !activeGroupPath.includes(el.id)}
                       editing={editingElementId === el.id}
+                      vectorEditing={vectorEditId === el.id}
                       groupChildrenInteractive={false}
                       hideGroupChildren={activeGroupPath.includes(el.id)}
                       onSelect={(id, e) => {
