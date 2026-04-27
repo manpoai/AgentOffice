@@ -266,7 +266,7 @@ function createShapeElement(shapeType: ShapeType, pageW: number, pageH: number):
   return {
     id: `el-${crypto.randomUUID().slice(0, 8)}`, locked: false, z_index: 1,
     x: Math.round(pageW / 2 - w / 2), y: Math.round(pageH / 2 - h / 2), w, h,
-    html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${w + 2} ${h + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pathData}" fill="#e0e7ff" stroke="#374151" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"${extraPathAttrs}/></svg></div>`,
+    html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${w + 2} ${h + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pathData}" fill="#e0e7ff" stroke="#374151" stroke-width="2" vector-effect="non-scaling-stroke"${extraPathAttrs}/></svg></div>`,
   };
 }
 
@@ -1329,7 +1329,7 @@ export function CanvasEditor({
                 el = {
                   id: `el-${crypto.randomUUID().slice(0, 8)}`, locked: false, z_index: 1,
                   x: 0, y: 0, w: rw, h: rh,
-                  html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${rw + 2} ${rh + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pd}" fill="#e0e7ff" stroke="#374151" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"${epa}/></svg></div>`,
+                  html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${rw + 2} ${rh + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pd}" fill="#e0e7ff" stroke="#374151" stroke-width="2" vector-effect="non-scaling-stroke"${epa}/></svg></div>`,
                 };
               } else {
                 el = createShapeElement(shapeType, Math.round(elW), Math.round(elH));
@@ -2301,7 +2301,7 @@ export function CanvasEditor({
 
       const fillA = a.html.match(/fill="([^"]*)"/)?.[1] ?? '#e0e7ff';
       const fill = fillA === 'none' ? '#e0e7ff' : fillA;
-      const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${rw} ${rh}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${shiftedD}" fill="${fill}" stroke="#374151" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></div>`;
+      const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${rw} ${rh}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${shiftedD}" fill="${fill}" stroke="#374151" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>`;
 
       const newEl: CanvasElement = {
         id: `el-${crypto.randomUUID().slice(0, 8)}`,
