@@ -654,20 +654,18 @@ export function rescaleSvgHtml(html: string, oldW: number, oldH: number, newW: n
   if (!html.includes('<svg') || oldW <= 0 || oldH <= 0 || newW <= 0 || newH <= 0) return html;
   if (oldW === newW && oldH === newH) return html;
 
-  const vbMatch = html.match(/viewBox="([^"]*)"/);
-  if (!vbMatch) return html;
-  const vb = vbMatch[1].split(/[\s,]+/).map(Number);
-  if (vb.length < 4) return html;
+  if (!html.match(/viewBox="([^"]*)"/)) return html;
 
   const sx = newW / oldW;
   const sy = newH / oldH;
 
-  // Scale the viewBox uniformly (both origin and dimensions) to match the
-  // path scaling. This keeps the path's relative position within the
-  // viewBox consistent — important for vector-edited shapes where the
-  // viewBox may not be a tight padding-1 box around an axis-aligned AABB.
-  const newVb = [vb[0] * sx, vb[1] * sy, vb[2] * sx, vb[3] * sy];
-  let result = html.replace(/viewBox="[^"]*"/, `viewBox="${newVb.map(v => Math.round(v * 100) / 100).join(' ')}"`);
+  // Scale all path points by sx/sy first; then recompute the viewBox to
+  // tightly fit the scaled paths plus a fixed 1-unit padding. This keeps
+  // padding constant in viewBox units regardless of element size, so the
+  // visual gap between the path and the element box stays sub-pixel
+  // (critical for selection box alignment), while still working for
+  // vector-edited shapes whose AABB is offset from (0,0).
+  let result = html;
 
   const scaleD = (d: string): string => {
     const parsed = parsePath(d);
@@ -736,6 +734,33 @@ export function rescaleSvgHtml(html: string, oldW: number, oldH: number, newW: n
       }
     }
   });
+
+  // Recompute viewBox to tightly fit all scaled paths + 1 unit padding.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const d of extractAllPathDs(result)) {
+    const parsed = parsePath(d);
+    const subs = parsed.subPaths && parsed.subPaths.length > 0
+      ? parsed.subPaths : [{ points: parsed.points, closed: parsed.closed }];
+    for (const sp of subs) for (const pt of sp.points) {
+      if (pt.x < minX) minX = pt.x; if (pt.x > maxX) maxX = pt.x;
+      if (pt.y < minY) minY = pt.y; if (pt.y > maxY) maxY = pt.y;
+      if (pt.handleIn) {
+        const hx = pt.x + pt.handleIn.x, hy = pt.y + pt.handleIn.y;
+        if (hx < minX) minX = hx; if (hx > maxX) maxX = hx;
+        if (hy < minY) minY = hy; if (hy > maxY) maxY = hy;
+      }
+      if (pt.handleOut) {
+        const hx = pt.x + pt.handleOut.x, hy = pt.y + pt.handleOut.y;
+        if (hx < minX) minX = hx; if (hx > maxX) maxX = hx;
+        if (hy < minY) minY = hy; if (hy > maxY) maxY = hy;
+      }
+    }
+  }
+  if (isFinite(minX)) {
+    const pad = 1;
+    const newVb = [minX - pad, minY - pad, (maxX - minX) + pad * 2, (maxY - minY) + pad * 2];
+    result = result.replace(/viewBox="[^"]*"/, `viewBox="${newVb.map(v => Math.round(v * 100) / 100).join(' ')}"`);
+  }
 
   return result;
 }
