@@ -2349,9 +2349,26 @@ export function CanvasEditor({
     const [a, b] = sorted;
     // Bake each element's rotation into the path geometry first, so the
     // boolean op runs on the rotated visual shape (not the local-frame
-    // unrotated shape). The result element gets rotation = 0.
-    const htmlARotated = a.rotation ? bakeRotation(a.html, a.rotation, a.w, a.h) : a.html;
-    const htmlBRotated = b.rotation ? bakeRotation(b.html, b.rotation, b.w, b.h) : b.html;
+    // unrotated shape). Use each element's actual rotation pivot
+    // (transform-origin), translated into viewBox-local coords.
+    const computeBakeCenter = (el: typeof a) => {
+      const m = el.html.match(/viewBox="([^"]*)"/)?.[1]?.split(/[\s,]+/).map(Number);
+      const vx = m?.[0] ?? 0, vy = m?.[1] ?? 0;
+      const vw = m?.[2] ?? el.w, vh = m?.[3] ?? el.h;
+      const sx = el.w > 0 ? vw / el.w : 1; // canvas → viewBox
+      const sy = el.h > 0 ? vh / el.h : 1;
+      const originFx = el.rotationOriginX ?? 0.5;
+      const originFy = el.rotationOriginY ?? 0.5;
+      // Pivot canvas pos relative to element top-left = originFx*w, originFy*h.
+      // In viewBox coords: vbX + canvasOffset * (vbW/elementW).
+      const vbCx = vx + (originFx * el.w) * sx;
+      const vbCy = vy + (originFy * el.h) * sy;
+      return { vbCx, vbCy };
+    };
+    const aCenter = a.rotation ? computeBakeCenter(a) : null;
+    const bCenter = b.rotation ? computeBakeCenter(b) : null;
+    const htmlARotated = a.rotation ? bakeRotation(a.html, a.rotation, a.w, a.h, aCenter!.vbCx, aCenter!.vbCy) : a.html;
+    const htmlBRotated = b.rotation ? bakeRotation(b.html, b.rotation, b.w, b.h, bCenter!.vbCx, bCenter!.vbCy) : b.html;
     const htmlA = convertShapesToPaths(htmlARotated);
     const htmlB = convertShapesToPaths(htmlBRotated);
     const dA = extractPathD(htmlA);

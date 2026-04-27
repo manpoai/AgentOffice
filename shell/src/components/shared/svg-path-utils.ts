@@ -765,13 +765,20 @@ export async function booleanPathOp(d1: string, d2: string, op: BooleanOp): Prom
  *
  * Each path's data-orig-d (used to reapply corner radii) is also rotated.
  */
-export function bakeRotation(html: string, rotation: number, w: number, h: number): string {
+/**
+ * Bake a rotation into the path geometry of an SVG html string.
+ * Rotates around (cx, cy) given in viewBox local coordinates. Caller is
+ * responsible for translating CSS transform-origin into viewBox coords.
+ * If centerX / centerY are omitted, defaults to (w/2, h/2) (the viewBox
+ * content's geometric center).
+ */
+export function bakeRotation(html: string, rotation: number, w: number, h: number, centerX?: number, centerY?: number): string {
   if (!html.includes('<svg') || !rotation) return html;
   const rad = (rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
-  const cx = w / 2;
-  const cy = h / 2;
+  const cx = centerX !== undefined ? centerX : w / 2;
+  const cy = centerY !== undefined ? centerY : h / 2;
 
   const rotatePt = (x: number, y: number): { x: number; y: number } => {
     const dx = x - cx;
