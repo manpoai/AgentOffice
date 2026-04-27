@@ -1716,24 +1716,35 @@ export function CanvasEditor({
     pasteCountRef.current = 0;
   }, [selectedIds, elementContext.elements]);
 
+  // AOSE JSON paste (own clipboard format, copy/paste between canvas elements).
+  // Returns true if the text was a valid AOSE JSON payload and was handled.
+  const tryPasteAoseJson = useCallback((text: string): boolean => {
+    let parsed: { type: string; elements: CanvasElement[] };
+    try { parsed = JSON.parse(text); } catch { return false; }
+    if ((parsed.type !== CLIPBOARD_KEY && parsed.type !== 'aose-video-clipboard') || !Array.isArray(parsed.elements) || parsed.elements.length === 0) return false;
+    pasteCountRef.current += 1;
+    const offset = pasteCountRef.current * 20;
+    const newEls = parsed.elements.map(el => ({
+      ...el,
+      id: `el-${crypto.randomUUID().slice(0, 8)}`,
+      x: el.x + offset,
+      y: el.y + offset,
+    }));
+    elementContext.setElements(els => [...els, ...newEls]);
+    setSelectedIds(new Set(newEls.map(el => el.id)));
+    return true;
+  }, [elementContext]);
+
+  // Fallback for Cmd+V via keyboard shortcut on browsers/contexts where the
+  // native paste event doesn't fire (rare; mostly when the canvas region
+  // hasn't been focused). Tries AOSE JSON only — system SVG/image require
+  // clipboardData from the paste event.
   const handlePaste = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
-      let parsed: { type: string; elements: CanvasElement[] };
-      try { parsed = JSON.parse(text); } catch { return; }
-      if ((parsed.type !== CLIPBOARD_KEY && parsed.type !== 'aose-video-clipboard') || !Array.isArray(parsed.elements) || parsed.elements.length === 0) return;
-      pasteCountRef.current += 1;
-      const offset = pasteCountRef.current * 20;
-      const newEls = parsed.elements.map(el => ({
-        ...el,
-        id: `el-${crypto.randomUUID().slice(0, 8)}`,
-        x: el.x + offset,
-        y: el.y + offset,
-      }));
-      elementContext.setElements(els => [...els, ...newEls]);
-      setSelectedIds(new Set(newEls.map(el => el.id)));
+      tryPasteAoseJson(text);
     } catch {}
-  }, [elementContext]);
+  }, [tryPasteAoseJson]);
 
   const deleteSelected = useCallback(() => {
     if (activeGroupPath.length > 0) {
@@ -1825,7 +1836,9 @@ export function CanvasEditor({
         setSelectedIds(new Set(elementContext.elements.filter(el => el.visible !== false).map(el => el.id)));
       }
       if (e.key === 'c' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handleCopy(); }
-      if (e.key === 'v' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handlePaste(); }
+      // Cmd+V is handled via the document-level 'paste' event listener so we
+      // can read clipboardData.items (SVG / image / text) — readText alone
+      // can't see images. Don't preventDefault here, or the paste event won't fire.
       if (e.key === 'x' && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); handleCut(); }
       if (e.key === 'd' && (e.ctrlKey || e.metaKey) && !e.shiftKey && selectedIds.size > 0) {
         e.preventDefault();
@@ -1853,6 +1866,7 @@ export function CanvasEditor({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedIds, activeFrame, editingElementId, vectorEditId, subElementEditId, handleUndo, handleRedo, pendingInsert, handleCopy, handlePaste, handleCut, groupSelected, ungroupSelected, elementContext]);
+
 
   // ─── Sub-element editing ────────────
   const handleSubElementDragMove = useCallback((cssPath: string, totalDx: number, totalDy: number) => {
@@ -2084,6 +2098,72 @@ export function CanvasEditor({
     updateFrame(target.frameId, page => ({ ...page, elements: [...page.elements, newEl] }));
     setSelectedIds(new Set([newEl.id]));
   }, [getTargetFrame, updateFrame]);
+
+  // System paste: SVG strings, images, and AOSE JSON. Reads clipboardData
+  // directly (the only way to see images). Skipped if focus is inside any
+  // editable region — the inner editor handles its own paste.
+  useEffect(() => {
+    const handler = (e: ClipboardEvent) => {
+      if (editingElementId || vectorEditId || subElementEditId) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (active) {
+        const tag = active.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        if (active.isContentEditable) return;
+      }
+      const items = Array.from(e.clipboardData?.items ?? []);
+      if (items.length === 0) return;
+
+      const svgItem = items.find(i => i.type === 'image/svg+xml');
+      if (svgItem) {
+        e.preventDefault();
+        svgItem.getAsString(s => {
+          const parsed = parseSvgFileContent(s);
+          insertSvgElement(parsed, 'Pasted SVG');
+        });
+        return;
+      }
+
+      const imgItem = items.find(i => i.kind === 'file' && i.type.startsWith('image/'));
+      if (imgItem) {
+        const file = imgItem.getAsFile();
+        if (file) {
+          e.preventDefault();
+          insertImageFromFile(file, 'Pasted Image');
+        }
+        return;
+      }
+
+      const textItem = items.find(i => i.kind === 'string' && i.type === 'text/plain');
+      if (textItem) {
+        e.preventDefault();
+        textItem.getAsString(s => {
+          const trimmed = s.trim();
+          if (trimmed.startsWith('<svg') || /<svg[\s>]/.test(trimmed)) {
+            const parsed = parseSvgFileContent(trimmed);
+            insertSvgElement(parsed, 'Pasted SVG');
+          } else {
+            tryPasteAoseJson(trimmed);
+          }
+        });
+        return;
+      }
+
+      const htmlItem = items.find(i => i.kind === 'string' && i.type === 'text/html');
+      if (htmlItem) {
+        e.preventDefault();
+        htmlItem.getAsString(s => {
+          const m = s.match(/<svg[\s\S]*?<\/svg>/i);
+          if (m) {
+            const parsed = parseSvgFileContent(m[0]);
+            insertSvgElement(parsed, 'Pasted SVG');
+          }
+        });
+      }
+    };
+    document.addEventListener('paste', handler);
+    return () => document.removeEventListener('paste', handler);
+  }, [editingElementId, vectorEditId, subElementEditId, insertImageFromFile, insertSvgElement, tryPasteAoseJson]);
 
   const handleImageFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
