@@ -662,7 +662,9 @@ export function rescaleSvgHtml(html: string, oldW: number, oldH: number, newW: n
   const sx = newW / oldW;
   const sy = newH / oldH;
 
-  const newVb = [vb[0] * sx, vb[1] * sy, vb[2] * sx, vb[3] * sy];
+  // Preserve viewBox padding structure in SVG units (keep x0/y0; extend width/height by content delta).
+  // Scaling the entire viewBox by sx/sy would scale padding too, causing screen-px misalignment as size grows.
+  const newVb = [vb[0], vb[1], vb[2] + (newW - oldW), vb[3] + (newH - oldH)];
   let result = html.replace(/viewBox="[^"]*"/, `viewBox="${newVb.map(v => Math.round(v * 100) / 100).join(' ')}"`);
 
   const scaleD = (d: string): string => {
