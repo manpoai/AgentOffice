@@ -648,7 +648,7 @@ function FillModeSelect({ element, projected, onApply, onUpdateElement }: {
     if (wasImage) {
       if (isSvgHtml) {
         cleared = cleared.replace(/<defs>[\s\S]*?<\/defs>/g, '');
-        cleared = cleared.replace(/fill="url\(#img-fill\)"/, 'fill="#e0e7ff"');
+        cleared = cleared.replace(/fill="url\(#img-fill\)"/, 'fill="#D9D9D9"');
       } else {
         const wrapperStyleMatch = cleared.match(/^<div\s+style="([^"]*)"/);
         if (wrapperStyleMatch) {
@@ -661,7 +661,7 @@ function FillModeSelect({ element, projected, onApply, onUpdateElement }: {
         }
       }
     }
-    const targetColor = m === 'none' ? 'none' : (isSvg ? '#e0e7ff' : '#ffffff');
+    const targetColor = m === 'none' ? 'none' : (isSvg ? '#D9D9D9' : '#ffffff');
     const next = applyProjection(cleared, isSvg ? { svgFill: targetColor } : { backgroundColor: targetColor }, undefined);
     onUpdateElement(element.id, { html: next });
   };
@@ -971,7 +971,7 @@ function FillSection({ element, projected, onApply, onUpdateElement }: {
           html = html.replace(/<svg([^>]*)>/, `<svg$1>${defsBlock}`);
           html = html.replace(/fill="[^"]*"/, 'fill="url(#img-fill)"');
         } else {
-          html = html.replace(/fill="url\(#img-fill\)"/, 'fill="#e0e7ff"');
+          html = html.replace(/fill="url\(#img-fill\)"/, 'fill="#D9D9D9"');
         }
       }
     } else {
@@ -1658,7 +1658,7 @@ export function CanvasPropertyPanel({
           </>
         )}
         {!frame && onUpdateCanvasBackground && (() => {
-          const bg = canvasBackgroundColor || '#e8e8e8';
+          const bg = canvasBackgroundColor || '#F5F7F5';
           const hex = bg.startsWith('#') ? bg.slice(1).toUpperCase() : (() => {
             const m = bg.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
             if (m) {

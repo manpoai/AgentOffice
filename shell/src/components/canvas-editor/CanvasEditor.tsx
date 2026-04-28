@@ -283,7 +283,7 @@ function createShapeElement(shapeType: ShapeType, pageW: number, pageH: number):
   return {
     id: `el-${crypto.randomUUID().slice(0, 8)}`, locked: false, z_index: 1,
     x: Math.round(pageW / 2 - w / 2), y: Math.round(pageH / 2 - h / 2), w, h,
-    html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${w + 2} ${h + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pathData}" fill="#e0e7ff" stroke="#374151" stroke-width="2" vector-effect="non-scaling-stroke"${extraPathAttrs}/></svg></div>`,
+    html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${w + 2} ${h + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pathData}" fill="#D9D9D9" stroke="none" vector-effect="non-scaling-stroke"${extraPathAttrs}/></svg></div>`,
   };
 }
 
@@ -1530,7 +1530,7 @@ export function CanvasEditor({
                 el = {
                   id: `el-${crypto.randomUUID().slice(0, 8)}`, locked: false, z_index: 1,
                   x: 0, y: 0, w: rw, h: rh,
-                  html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${rw + 2} ${rh + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pd}" fill="#e0e7ff" stroke="#374151" stroke-width="2" vector-effect="non-scaling-stroke"${epa}/></svg></div>`,
+                  html: `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${rw + 2} ${rh + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pd}" fill="#D9D9D9" stroke="none" vector-effect="non-scaling-stroke"${epa}/></svg></div>`,
                 };
               } else {
                 el = createShapeElement(shapeType, Math.round(elW), Math.round(elH));
@@ -2649,9 +2649,9 @@ export function CanvasEditor({
         return serializeSubPath({ points: shifted, closed: sp.closed });
       }).join('');
 
-      const fillA = a.html.match(/fill="([^"]*)"/)?.[1] ?? '#e0e7ff';
-      const fill = fillA === 'none' ? '#e0e7ff' : fillA;
-      const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${rw} ${rh}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${shiftedD}" fill="${fill}" stroke="#374151" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>`;
+      const fillA = a.html.match(/fill="([^"]*)"/)?.[1] ?? '#D9D9D9';
+      const fill = fillA === 'none' ? '#D9D9D9' : fillA;
+      const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${rw} ${rh}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${shiftedD}" fill="${fill}" stroke="none" vector-effect="non-scaling-stroke"/></svg></div>`;
 
       const newEl: CanvasElement = {
         id: `el-${crypto.randomUUID().slice(0, 8)}`,
@@ -2863,7 +2863,7 @@ export function CanvasEditor({
 
           {/* Infinite canvas viewport */}
           <div className="flex-1 min-w-0 overflow-hidden relative"
-            style={{ background: data.background_color || '#e8e8e8', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', cursor: isPanning ? 'grabbing' : pendingInsert ? 'crosshair' : 'default' }}
+            style={{ background: data.background_color || '#F5F7F5', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', cursor: isPanning ? 'grabbing' : pendingInsert ? 'crosshair' : 'default' }}
             ref={containerRef} onMouseDown={handleCanvasPointerDown}
             onDrop={handleCanvasDrop} onDragOver={handleCanvasDragOver}
             onContextMenu={onBlankContextMenu}>

@@ -82,8 +82,11 @@ export function PenTool({
     const shifted = points.map(pt => ({ ...pt, x: pt.x - x, y: pt.y - y }));
     const d = serializePath({ points: shifted, closed });
 
-    const fill = closed ? '#e0e7ff' : 'none';
-    const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Math.round(w)} ${Math.round(h)}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${d}" fill="${fill}" stroke="#374151" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg></div>`;
+    // Closed path → shape default (fill #D9D9D9, no stroke)
+    // Open path → line default (no fill, stroke #000000)
+    const fill = closed ? '#D9D9D9' : 'none';
+    const strokeAttr = closed ? 'stroke="none"' : 'stroke="#000000" stroke-width="2" stroke-linejoin="round"';
+    const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Math.round(w)} ${Math.round(h)}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${d}" fill="${fill}" ${strokeAttr} vector-effect="non-scaling-stroke"/></svg></div>`;
 
     onComplete(html, Math.round(x), Math.round(y), Math.round(w), Math.round(h));
   }, [points, onComplete, onCancel]);

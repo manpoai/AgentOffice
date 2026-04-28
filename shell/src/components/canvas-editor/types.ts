@@ -53,8 +53,8 @@ export interface DesignToken {
   usageCount: number;
 }
 
-export const DEFAULT_PAGE_WIDTH = 1920;
-export const DEFAULT_PAGE_HEIGHT = 1080;
+export const DEFAULT_PAGE_WIDTH = 800;
+export const DEFAULT_PAGE_HEIGHT = 600;
 
 export function createEmptyPage(pageNum: number): CanvasPage {
   return {
