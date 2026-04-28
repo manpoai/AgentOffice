@@ -12,6 +12,10 @@ import {
   MoveHorizontal, MoveVertical, Square,
   SquaresUnite, SquaresSubtract, SquaresIntersect, SquaresExclude,
   SquareRoundCorner, Loader, Eclipse, Settings2,
+  ALargeSmall, Rows3, RulerDimensionLine,
+  TextAlignStart, TextAlignCenter, TextAlignEnd, TextAlignJustify,
+  ArrowUpToLine, SeparatorHorizontal, ArrowDownToLine,
+  Minus, Underline, Strikethrough,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
@@ -169,7 +173,26 @@ function SubsectionHeader({ children }: { children: React.ReactNode }) {
 // Used for X/Y/W/H/Rotation/Opacity/Radius and similar across sections.
 
 // Tailwind class string used by selects to match LabeledNumberInput visual.
-const SELECT_CLASS = 'w-full text-[10px] px-2 h-6 rounded bg-muted/60 hover:bg-muted border-0 focus:outline-none focus:ring-1 focus:ring-primary/40';
+const SELECT_CLASS = 'w-full text-[10px] pl-2 pr-5 h-6 rounded bg-muted/60 hover:bg-muted border-0 focus:outline-none focus:ring-1 focus:ring-primary/40 appearance-none cursor-pointer';
+
+// Wraps a <select> so the chevron sits a few pixels in from the right edge
+// rather than glued to the border (Figma-style). Use this anywhere we'd
+// otherwise spell out className={SELECT_CLASS} on a bare <select>.
+function MutedSelect({ value, onChange, children, className }: {
+  value: string;
+  onChange: (v: string) => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('relative w-full', className)}>
+      <select value={value} onChange={e => onChange(e.target.value)} className={SELECT_CLASS}>
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+    </div>
+  );
+}
 
 function LabeledNumberInput({
   label, value, onChange, min, max, step, suffix, placeholder,
@@ -193,6 +216,44 @@ function LabeledNumberInput({
         inputClassName="w-full bg-transparent border-0 px-0 py-0 text-[10px] text-foreground focus:outline-none font-mono tabular-nums"
       />
     </label>
+  );
+}
+
+// ── Hex text input (uncontrolled-ish) ─────────────────────────────────────────
+// React controlled input was preventing typing because handleHexCommit only
+// commits when the draft is a full 3 or 6 hex digits — partial drafts got
+// reset back to the prop value on every keystroke. Keep a local draft, sync
+// to prop only when prop actually changes (e.g. swatch picker), commit on
+// blur / Enter.
+
+function HexTextInput({ value, onCommit, className }: {
+  value: string; onCommit: (raw: string) => void; className?: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  const lastValueRef = useRef(value);
+  React.useEffect(() => {
+    if (value !== lastValueRef.current) {
+      lastValueRef.current = value;
+      setDraft(value);
+    }
+  }, [value]);
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => onCommit(draft)}
+      onKeyDown={e => {
+        if (e.key === 'Enter') {
+          (e.target as HTMLInputElement).blur();
+        } else if (e.key === 'Escape') {
+          setDraft(value);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      className={className}
+      spellCheck={false}
+    />
   );
 }
 
@@ -350,7 +411,101 @@ function applyImageFitMode(html: string, mode: ImageFitMode): string {
 type FillMode = 'solid' | 'image' | 'none';
 
 // Returns the current fill mode of an element from its html.
+function isTextElement(element: CanvasElement): boolean {
+  return element.html.includes('contenteditable');
+}
+
+/**
+ * Apply a "fill" change to a text element. Fill on text means:
+ *   solid  → style.color = <hex/rgba>; clear bg-image + background-clip
+ *   image  → background-image: url(...) + background-clip:text + color: transparent
+ *   none   → color: transparent; clear bg-image + background-clip
+ * The DOM style serialization order is preserved by editing the wrapper's
+ * style attribute string.
+ */
+function applyTextFill(html: string, op:
+  | { kind: 'solid'; color: string }
+  | { kind: 'none' }
+  | { kind: 'image'; url: string }
+): string {
+  // Match `<div ... style="..." ...>` where style="" can appear right after
+  // <div  or after some other attrs. Don't require an extra leading space —
+  // createTextElement starts with `<div style="...">` (single leading space).
+  const styleMatch = html.match(/^(<div\b[^>]*?\bstyle=")([^"]*)("[^>]*>)/);
+  if (!styleMatch) return html;
+  const [full, head, styleStr, tail] = styleMatch;
+  let s = styleStr;
+  // Strip prior fill-related decls so we have a clean slate.
+  s = s.replace(/(?:^|\s|;)\s*color:\s*[^;]+;?/g, ';');
+  s = s.replace(/(?:^|\s|;)\s*background-image:\s*[^;]+;?/g, ';');
+  s = s.replace(/(?:^|\s|;)\s*background-clip:\s*[^;]+;?/g, ';');
+  s = s.replace(/(?:^|\s|;)\s*-webkit-background-clip:\s*[^;]+;?/g, ';');
+  s = s.replace(/(?:^|\s|;)\s*background-size:\s*[^;]+;?/g, ';');
+  s = s.replace(/(?:^|\s|;)\s*background-position:\s*[^;]+;?/g, ';');
+  s = s.replace(/(?:^|\s|;)\s*background-repeat:\s*[^;]+;?/g, ';');
+  s = s.replace(/;{2,}/g, ';').replace(/^\s*;/, '').trim();
+  if (s && !s.endsWith(';')) s += ';';
+  if (op.kind === 'solid') {
+    s += ` color: ${op.color};`;
+  } else if (op.kind === 'none') {
+    s += ` color: transparent;`;
+  } else {
+    s += ` background-image: url('${op.url}');`;
+    s += ` background-size: cover;`;
+    s += ` background-position: center;`;
+    s += ` -webkit-background-clip: text;`;
+    s += ` background-clip: text;`;
+    s += ` color: transparent;`;
+  }
+  return html.replace(full, `${head}${s.trim()}${tail}`);
+}
+
+/** Convert any color string (hex/rgb/rgba) to rgba(r,g,b,alpha). */
+function hexOrRgbToRgba(c: string, alpha: number): string {
+  const a = Math.max(0, Math.min(1, alpha));
+  const rgbaM = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (rgbaM) {
+    return `rgba(${rgbaM[1]}, ${rgbaM[2]}, ${rgbaM[3]}, ${a})`;
+  }
+  const hex = c.replace(/^#/, '');
+  const full = hex.length === 3 ? hex.split('').map(ch => ch + ch).join('') : hex.slice(0, 6);
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return c;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+/** Read the current text color (returns hex or rgba string, or '' if none). */
+function readTextColor(html: string): string {
+  const m = html.match(/(?:^|;|\")\s*color:\s*([^;\"]+)/);
+  const c = m?.[1]?.trim() || '';
+  return c === 'transparent' ? '' : c;
+}
+
+/** Read the current text fill image URL, or '' if not in image mode. */
+function readTextImageUrl(html: string): string {
+  if (!/background-clip:\s*text/.test(html) && !/-webkit-background-clip:\s*text/.test(html)) return '';
+  const m = html.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/);
+  return m?.[1] || '';
+}
+
 function readFillMode(element: CanvasElement, projected: ReturnType<typeof projectElement>): FillMode {
+  // ── Text elements: fill drives the TEXT color ──────────────────────────────
+  // Solid: style.color is a non-transparent color
+  // Image: background-image + background-clip:text (color set to transparent)
+  // None:  color === 'transparent' and no background-image
+  if (isTextElement(element)) {
+    const html = element.html;
+    const bgMatch = html.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/);
+    const clippedToText = /-webkit-background-clip:\s*text/.test(html) || /background-clip:\s*text/.test(html);
+    if (bgMatch && clippedToText) return 'image';
+    const colorMatch = html.match(/(?:^|;|\")\s*color:\s*([^;\"]+)/);
+    const c = colorMatch?.[1]?.trim() || '';
+    if (!c || c === 'transparent') return 'none';
+    return 'solid';
+  }
+
   const isSvg = projected.isSvgShape;
   const currentColor = isSvg ? (projected.svgFill || '') : (projected.backgroundColor || '');
   const isSvgHtml = element.html.includes('<svg');
@@ -377,6 +532,8 @@ function FillModeSelect({ element, projected, onApply, onUpdateElement }: {
   const isSvgHtml = element.html.includes('<svg');
   const fillMode = readFillMode(element, projected);
 
+  const isText = isTextElement(element);
+
   const handleUpload = async () => {
     try {
       const files = await pickFile({ accept: 'image/*' });
@@ -385,6 +542,12 @@ function FillModeSelect({ element, projected, onApply, onUpdateElement }: {
       const blobUrl = URL.createObjectURL(file);
       const applyImageFill = (url: string) => {
         let html = element.html;
+        if (isText) {
+          // Text element: use background-clip: text trick.
+          html = applyTextFill(html, { kind: 'image', url });
+          onUpdateElement(element.id, { html });
+          return;
+        }
         if (isSvgHtml) {
           html = html.replace(/<defs>[\s\S]*?<\/defs>/g, '');
           const pathEl = html.match(/<(path|rect|circle|ellipse|polygon)\s/);
@@ -437,8 +600,15 @@ function FillModeSelect({ element, projected, onApply, onUpdateElement }: {
 
   const switchTo = (m: FillMode) => {
     if (m === fillMode) return;
-    const wasImage = fillMode === 'image';
     if (m === 'image') { handleUpload(); return; }
+    if (isText) {
+      const next = m === 'none'
+        ? applyTextFill(element.html, { kind: 'none' })
+        : applyTextFill(element.html, { kind: 'solid', color: '#111827' });
+      onUpdateElement(element.id, { html: next });
+      return;
+    }
+    const wasImage = fillMode === 'image';
     let cleared = element.html;
     if (wasImage) {
       if (isSvgHtml) {
@@ -635,6 +805,96 @@ function StrokeSettingsPopover({
   );
 }
 
+// Settings popover trigger for text typography detail (justify, decoration,
+// textTransform). Mirrors StrokeSettingsPopover's interaction.
+function TextSettingsPopover({
+  projected, applyChange,
+}: {
+  projected: ReturnType<typeof projectElement>;
+  applyChange: (changes: Partial<ProjectedProps>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const popRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      if (btnRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  return (
+    <div className="relative">
+      <button
+        ref={btnRef}
+        className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/50"
+        onClick={() => setOpen(v => !v)}
+        title="Text settings"
+      >
+        <Settings2 className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div
+          ref={popRef}
+          className="absolute right-0 top-7 z-50 w-[220px] rounded-md border border-border bg-card shadow-lg p-3 space-y-2"
+        >
+          <div>
+            <SubsectionHeader>Justify</SubsectionHeader>
+            <button
+              className={cn('w-full h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+                projected.textAlign === 'justify'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+              onClick={() => applyChange({ textAlign: projected.textAlign === 'justify' ? 'left' : 'justify' })}>
+              {projected.textAlign === 'justify' ? 'On' : 'Off'}
+            </button>
+          </div>
+          <div>
+            <SubsectionHeader>Decoration</SubsectionHeader>
+            <div className="grid grid-cols-3 gap-0.5">
+              {([
+                ['none', Minus, 'None'],
+                ['underline', Underline, 'Underline'],
+                ['line-through', Strikethrough, 'Strikethrough'],
+              ] as const).map(([d, Icon, title]) => (
+                <button key={d}
+                  className={cn('h-6 flex items-center justify-center rounded transition-colors',
+                    (projected.textDecoration ?? 'none') === d
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+                  onClick={() => applyChange({ textDecoration: d })}
+                  title={title}>
+                  <Icon className="w-3 h-3" />
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <SubsectionHeader>Letter case</SubsectionHeader>
+            <select
+              value={projected.textTransform ?? 'none'}
+              onChange={e => applyChange({ textTransform: e.target.value as 'none' | 'uppercase' | 'lowercase' | 'capitalize' })}
+              className={SELECT_CLASS}>
+              <option value="none">As typed</option>
+              <option value="uppercase">UPPERCASE</option>
+              <option value="lowercase">lowercase</option>
+              <option value="capitalize">Capitalize</option>
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FillSection({ element, projected, onApply, onUpdateElement }: {
   element: CanvasElement;
   projected: ReturnType<typeof projectElement>;
@@ -642,20 +902,31 @@ function FillSection({ element, projected, onApply, onUpdateElement }: {
   onUpdateElement: (id: string, updates: Partial<CanvasElement>) => void;
 }) {
   const isSvg = projected.isSvgShape;
-  const currentColor = isSvg ? (projected.svgFill || '') : (projected.backgroundColor || '');
+  const isText = isTextElement(element);
   const isSvgHtml = element.html.includes('<svg');
+  // For text elements, fill drives the text color (or text-clipped image).
+  const currentColor = isText
+    ? readTextColor(element.html)
+    : isSvg ? (projected.svgFill || '') : (projected.backgroundColor || '');
   const patternMatch = element.html.match(/href="([^"]+)"/);
   const bgMatch = element.html.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/);
-  const currentUrl = (isSvgHtml ? patternMatch?.[1] : bgMatch?.[1]) || '';
+  const currentUrl = isText ? readTextImageUrl(element.html) : (isSvgHtml ? patternMatch?.[1] : bgMatch?.[1]) || '';
 
-  let fillMode: FillMode = currentColor === 'none' ? 'none' : 'solid';
-  if (currentUrl) fillMode = 'image';
+  // Use the same readFillMode as everywhere else for consistency.
+  const fillMode: FillMode = readFillMode(element, projected);
 
   const isGradient = hasGradientFill(element.html);
   const fitMode = currentUrl ? getImageFitMode(element.html) : 'cover';
 
   const applyImageFill = async (url: string) => {
     let html = element.html;
+    if (isText) {
+      html = url
+        ? applyTextFill(html, { kind: 'image', url })
+        : applyTextFill(html, { kind: 'solid', color: '#111827' });
+      onUpdateElement(element.id, { html });
+      return;
+    }
     if (isSvgHtml) {
       html = html.replace(/<defs>[\s\S]*?<\/defs>/g, '');
       const pathEl = html.match(/<(path|rect|circle|ellipse|polygon)\s/);
@@ -719,27 +990,56 @@ function FillSection({ element, projected, onApply, onUpdateElement }: {
     }
   };
 
-  // Display hex without leading '#', uppercase, falls back to empty for non-hex.
-  const hexNoHash = currentColor && currentColor.startsWith('#')
-    ? currentColor.slice(1).toUpperCase()
-    : (currentColor || '').toUpperCase();
+  // Display hex without leading '#', uppercase. Convert rgb/rgba → hex for display.
+  const hexNoHash = (() => {
+    if (!currentColor) return '';
+    if (currentColor.startsWith('#')) return currentColor.slice(1).toUpperCase();
+    const m = currentColor.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (m) {
+      const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
+      return ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+    }
+    return currentColor.toUpperCase();
+  })();
 
   const handleHexCommit = (raw: string) => {
     const cleaned = raw.trim().replace(/^#+/, '').toUpperCase();
     if (!/^[0-9A-F]{3}([0-9A-F]{3})?$/.test(cleaned)) return;
     const next = '#' + cleaned;
-    isSvg ? onApply({ svgFill: next }) : onApply({ backgroundColor: next });
+    if (isText) {
+      // Preserve current alpha if user is using rgba
+      const newColor = textColorAlpha < 1 ? hexOrRgbToRgba(next, textColorAlpha) : next;
+      onUpdateElement(element.id, { html: applyTextFill(element.html, { kind: 'solid', color: newColor }) });
+    } else if (isSvg) {
+      onApply({ svgFill: next });
+    } else {
+      onApply({ backgroundColor: next });
+    }
   };
 
   // Fill alpha (0..100 percent for the UI). Source of truth: SVG → fill-opacity
-  // attr; HTML → rgba() alpha channel on background.
-  const fillAlpha = isSvg
-    ? (projected.svgFillOpacity ?? 1)
-    : (projected.backgroundColorAlpha ?? 1);
+  // attr; HTML → rgba() alpha channel on background; Text → rgba() on color.
+  const textColorAlpha = (() => {
+    if (!isText) return 1;
+    const c = readTextColor(element.html);
+    if (!c) return 1;
+    const m = c.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([0-9.]+)\)/);
+    return m ? parseFloat(m[1]) : 1;
+  })();
+  const fillAlpha = isText
+    ? textColorAlpha
+    : isSvg
+      ? (projected.svgFillOpacity ?? 1)
+      : (projected.backgroundColorAlpha ?? 1);
   const fillAlphaPct = Math.round(fillAlpha * 100);
   const setFillAlpha = (pct: number) => {
     const clamped = Math.max(0, Math.min(100, Math.round(pct))) / 100;
-    if (isSvg) onApply({ svgFillOpacity: clamped });
+    if (isText) {
+      // Convert current text color (hex or rgb/rgba) to rgba with the new alpha.
+      const c = readTextColor(element.html) || '#000000';
+      const rgba = hexOrRgbToRgba(c, clamped);
+      onUpdateElement(element.id, { html: applyTextFill(element.html, { kind: 'solid', color: rgba }) });
+    } else if (isSvg) onApply({ svgFillOpacity: clamped });
     else onApply({ backgroundColorAlpha: clamped });
   };
 
@@ -759,18 +1059,23 @@ function FillSection({ element, projected, onApply, onUpdateElement }: {
                 const inp = document.createElement('input');
                 inp.type = 'color';
                 inp.value = currentColor && currentColor.startsWith('#') ? currentColor : '#000000';
-                inp.onchange = () => isSvg ? onApply({ svgFill: inp.value }) : onApply({ backgroundColor: inp.value });
+                inp.onchange = () => {
+                  if (isText) {
+                    onUpdateElement(element.id, { html: applyTextFill(element.html, { kind: 'solid', color: inp.value }) });
+                  } else if (isSvg) {
+                    onApply({ svgFill: inp.value });
+                  } else {
+                    onApply({ backgroundColor: inp.value });
+                  }
+                };
                 inp.click();
               }}
               title={currentColor || 'Pick color'}
             />
-            <input
-              type="text"
+            <HexTextInput
               value={hexNoHash}
-              onChange={e => handleHexCommit(e.target.value)}
-              onBlur={e => handleHexCommit(e.target.value)}
+              onCommit={handleHexCommit}
               className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
-              spellCheck={false}
             />
           </div>
           <LabeledNumberInput
@@ -1635,101 +1940,129 @@ export function CanvasPropertyPanel({
         );
       })()}
 
-      {/* §6 Text properties (non-svg single with font, or multi with font support) */}
+      {/* §6 Typography (non-svg single with font, or multi with font support) */}
       {((isSingle && projected && !projected.isSvgShape && projected.fontSize !== undefined) || (isMulti && support.font)) && (
         <>
           <SectionHeader>Text</SectionHeader>
           <div className="px-3 pb-3 space-y-2">
-            {isSingle && projected && !projected.isSvgShape && (
+            {isSingle && projected && !projected.isSvgShape && element && (
               <>
-                <ColorRow label="Color" value={projected.color || ''}
-                  onChange={v => applyChange({ color: v })} />
+                {/* Font family — keeps the right 24px icon column reserved */}
                 {projected.fontFamily !== undefined && (
-                  <select
-                    value={projected.fontFamily ?? ''}
-                    onChange={e => {
-                      const family = e.target.value;
-                      if (CANVAS_FONTS.google.includes(family)) loadGoogleFont(family);
-                      applyChange({ fontFamily: family });
-                    }}
-                    className="w-full text-[10px] px-2 h-6 rounded bg-muted/60 hover:bg-muted border-0 focus:outline-none focus:ring-1 focus:ring-primary/40">
-                    <optgroup label="System">
-                      {CANVAS_FONTS.system.map(f => (
-                        <option key={f} value={f}>{f.split(',')[0]}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="Google Fonts">
-                      {CANVAS_FONTS.google.map(f => (
-                        <option key={f} value={f}>{f}</option>
-                      ))}
-                    </optgroup>
-                  </select>
+                  <div className="grid grid-cols-[1fr_24px] gap-2 items-center">
+                    <MutedSelect
+                      value={projected.fontFamily ?? ''}
+                      onChange={family => {
+                        if (CANVAS_FONTS.google.includes(family)) loadGoogleFont(family);
+                        applyChange({ fontFamily: family });
+                      }}>
+                      <optgroup label="System">
+                        {CANVAS_FONTS.system.map(f => (
+                          <option key={f} value={f}>{f.split(',')[0]}</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Google Fonts">
+                        {CANVAS_FONTS.google.map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </optgroup>
+                    </MutedSelect>
+                    <div />
+                  </div>
                 )}
+                {/* Weight + Size */}
                 <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
-                  {projected.fontSize !== undefined && (
-                    <LabeledNumberInput label="Aa" value={projected.fontSize} min={1} onChange={v => applyChange({ fontSize: v })} />
-                  )}
-                  {projected.fontWeight !== undefined && (
-                    <select value={projected.fontWeight || '400'}
-                      onChange={e => applyChange({ fontWeight: e.target.value })}
-                      className="text-[10px] px-2 h-6 rounded bg-muted/60 hover:bg-muted border-0 focus:outline-none focus:ring-1 focus:ring-primary/40">
+                  {projected.fontWeight !== undefined ? (
+                    <MutedSelect value={projected.fontWeight || '400'}
+                      onChange={v => applyChange({ fontWeight: v })}>
                       <option value="300">Light</option>
                       <option value="400">Regular</option>
                       <option value="500">Medium</option>
                       <option value="600">Semibold</option>
                       <option value="700">Bold</option>
                       <option value="900">Black</option>
-                    </select>
-                  )}
+                    </MutedSelect>
+                  ) : <div />}
+                  {projected.fontSize !== undefined ? (
+                    <LabeledNumberInput
+                      label={<ALargeSmall className="w-3 h-3" />}
+                      value={projected.fontSize}
+                      min={1}
+                      onChange={v => applyChange({ fontSize: v })}
+                    />
+                  ) : <div />}
                   <div />
                 </div>
                 {projected.fontSize !== undefined && (
                   <>
-                    <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
-                      <LabeledNumberInput label="↕" value={projected.lineHeight ?? 1.4} min={0.5} max={10} step={0.1}
-                        onChange={v => applyChange({ lineHeight: v })} />
-                      <LabeledNumberInput label="↔" value={projected.letterSpacing ?? 0} step={0.5}
-                        onChange={v => applyChange({ letterSpacing: v })} suffix="px" />
-                      <div />
+                    {/* Line height + Letter spacing */}
+                    <div>
+                      <div className="grid grid-cols-[1fr_1fr_24px] gap-2 mb-1">
+                        <SubsectionHeader>Line height</SubsectionHeader>
+                        <SubsectionHeader>Letter spacing</SubsectionHeader>
+                        <div />
+                      </div>
+                      <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                        <LabeledNumberInput
+                          label={<Rows3 className="w-3 h-3" />}
+                          value={projected.lineHeight ?? null}
+                          min={0.5} max={10} step={0.1}
+                          onChange={v => applyChange({ lineHeight: v })}
+                          placeholder="Auto"
+                        />
+                        <LabeledNumberInput
+                          label={<RulerDimensionLine className="w-3 h-3" />}
+                          value={projected.letterSpacing ?? 0}
+                          step={0.5}
+                          onChange={v => applyChange({ letterSpacing: v })}
+                          suffix="px"
+                        />
+                        <div />
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      {(['left', 'center', 'right', 'justify'] as const).map(a => (
-                        <button key={a}
-                          className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
-                            projected.textAlign === a
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
-                          onClick={() => applyChange({ textAlign: a })}
-                          title={`Align ${a}`}>
-                          {a === 'left' ? 'L' : a === 'center' ? 'C' : a === 'right' ? 'R' : 'J'}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-1">
-                      {(['top', 'middle', 'bottom'] as const).map(a => (
-                        <button key={a}
-                          className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
-                            (projected.verticalAlign ?? 'top') === a
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
-                          onClick={() => applyChange({ verticalAlign: a })}
-                          title={`V-align ${a}`}>
-                          {a === 'top' ? 'T' : a === 'middle' ? 'M' : 'B'}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex gap-1">
-                      {(['none', 'underline', 'line-through'] as const).map(d => (
-                        <button key={d}
-                          className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
-                            (projected.textDecoration ?? 'none') === d
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
-                          onClick={() => applyChange({ textDecoration: d })}
-                          title={d}>
-                          {d === 'none' ? 'N' : d === 'underline' ? 'U' : 'S'}
-                        </button>
-                      ))}
+                    {/* Alignment row: 3 horizontal + 3 vertical + Settings ⚙ */}
+                    <div>
+                      <SubsectionHeader>Alignment</SubsectionHeader>
+                      <div className="flex items-center gap-1">
+                        <div className="flex-1 grid grid-cols-3 gap-0.5">
+                          {([
+                            ['left', TextAlignStart],
+                            ['center', TextAlignCenter],
+                            ['right', TextAlignEnd],
+                          ] as const).map(([a, Icon]) => (
+                            <button key={a}
+                              className={cn('h-6 flex items-center justify-center rounded transition-colors',
+                                projected.textAlign === a
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+                              onClick={() => applyChange({ textAlign: a })}
+                              title={`Align ${a}`}>
+                              <Icon className="w-3 h-3" />
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex-1 grid grid-cols-3 gap-0.5">
+                          {([
+                            ['top', ArrowUpToLine],
+                            ['middle', SeparatorHorizontal],
+                            ['bottom', ArrowDownToLine],
+                          ] as const).map(([a, Icon]) => (
+                            <button key={a}
+                              className={cn('h-6 flex items-center justify-center rounded transition-colors',
+                                (projected.verticalAlign ?? 'top') === a
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+                              onClick={() => applyChange({ verticalAlign: a })}
+                              title={`V-align ${a}`}>
+                              <Icon className="w-3 h-3" />
+                            </button>
+                          ))}
+                        </div>
+                        <TextSettingsPopover
+                          projected={projected}
+                          applyChange={applyChange}
+                        />
+                      </div>
                     </div>
                   </>
                 )}
@@ -1737,9 +2070,6 @@ export function CanvasPropertyPanel({
             )}
             {isMulti && support.font && (
               <>
-                <ColorRow label="Color"
-                  value={aggregated.color === 'mixed' ? '' : (aggregated.color || '')}
-                  onChange={v => applyToAll({ color: v })} />
                 <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
                   <LabeledNumberInput label="Aa"
                     value={aggregated.fontSize === 'mixed' ? null : (aggregated.fontSize ?? null)} min={1}
@@ -1765,12 +2095,18 @@ export function CanvasPropertyPanel({
             )}
             {isMulti && support.fill && (
               <ColorRow label="Fill"
-                value={aggregated.svgFill === 'mixed' ? '' : (aggregated.svgFill || aggregated.backgroundColor || '')}
+                value={aggregated.svgFill === 'mixed' ? '' : (aggregated.svgFill || aggregated.backgroundColor || aggregated.color || '')}
                 onChange={v => {
-                  const hasSvg = leaves.some(l => l.html.includes('<svg'));
-                  const hasNonSvg = leaves.some(l => !l.html.includes('<svg'));
-                  if (hasSvg) applyToAll({ svgFill: v });
-                  if (hasNonSvg) applyToAll({ backgroundColor: v });
+                  // Text leaves: write color via applyTextFill so the fill maps to text color.
+                  // SVG leaves: write svgFill. Other HTML leaves: write backgroundColor.
+                  const textLeaves = leaves.filter(l => l.html.includes('contenteditable'));
+                  const svgLeaves = leaves.filter(l => l.html.includes('<svg') && !l.html.includes('contenteditable'));
+                  const otherHtmlLeaves = leaves.filter(l => !l.html.includes('<svg') && !l.html.includes('contenteditable'));
+                  if (textLeaves.length > 0) {
+                    textLeaves.forEach(leaf => onUpdateElement(leaf.id, { html: applyTextFill(leaf.html, { kind: 'solid', color: v }) }));
+                  }
+                  if (svgLeaves.length > 0) applyToAll({ svgFill: v });
+                  if (otherHtmlLeaves.length > 0) applyToAll({ backgroundColor: v });
                 }}
               />
             )}
@@ -1823,13 +2159,10 @@ export function CanvasPropertyPanel({
                           }}
                           title={strokeColor || 'Pick stroke color'}
                         />
-                        <input
-                          type="text"
+                        <HexTextInput
                           value={strokeHex}
-                          onChange={e => handleHexCommit(e.target.value)}
-                          onBlur={e => handleHexCommit(e.target.value)}
+                          onCommit={handleHexCommit}
                           className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
-                          spellCheck={false}
                         />
                       </div>
                       <LabeledNumberInput label="" value={strokeAlphaPct} min={0} max={100} step={1} suffix="%" onChange={setStrokeAlpha} />
@@ -1874,13 +2207,10 @@ export function CanvasPropertyPanel({
                           }}
                           title={strokeColor || 'Pick border color'}
                         />
-                        <input
-                          type="text"
+                        <HexTextInput
                           value={strokeHex}
-                          onChange={e => handleHexCommit(e.target.value)}
-                          onBlur={e => handleHexCommit(e.target.value)}
+                          onCommit={handleHexCommit}
                           className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
-                          spellCheck={false}
                         />
                       </div>
                       <div />

@@ -243,7 +243,7 @@ function createTextElement(x: number, y: number, fixedWidth?: number): CanvasEle
     x, y,
     w: isFixedWidth ? fixedWidth : 100,
     h: 32,
-    html: `<div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 24px; font-weight: 400; color: #111827; box-sizing: border-box; ${isFixedWidth ? 'white-space: normal; word-wrap: break-word;' : 'white-space: nowrap;'}" contenteditable="true" data-text-resize="${isFixedWidth ? 'fixed-width' : 'auto'}"></div>`,
+    html: `<div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 24px; font-weight: 400; color: #000000; box-sizing: border-box; ${isFixedWidth ? 'white-space: normal; word-wrap: break-word;' : 'white-space: nowrap;'}" contenteditable="true" data-text-resize="${isFixedWidth ? 'fixed-width' : 'auto'}"></div>`,
   };
 }
 
