@@ -79,6 +79,8 @@ function NumberInput({ label, value, onChange, min, max, step = 1 }: {
  *  inline rename, z-index reorder. */
 function TrackLabel({
   el, isHidden, isLocked, canMoveUp, canMoveDown,
+  hasAnimation, expanded,
+  onToggleExpanded,
   onToggleVisible, onToggleLock, onRename, onMoveUp, onMoveDown,
 }: {
   el: VideoElement;
@@ -86,6 +88,9 @@ function TrackLabel({
   isLocked: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  hasAnimation: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   onToggleVisible: () => void;
   onToggleLock: () => void;
   onRename: (name: string) => void;
@@ -96,6 +101,15 @@ function TrackLabel({
   const [draft, setDraft] = useState('');
   return (
     <div className="w-[200px] shrink-0 px-2 flex items-center gap-1 truncate text-xs">
+      {/* Expand/collapse chevron — only enabled when the element has any
+          animated property worth expanding to. */}
+      <button
+        className={cn('p-0.5 shrink-0 text-muted-foreground hover:text-foreground', !hasAnimation && 'opacity-20')}
+        disabled={!hasAnimation}
+        onClick={(e) => { e.stopPropagation(); onToggleExpanded(); }}
+        title={hasAnimation ? (expanded ? 'Collapse' : 'Expand to per-property keyframes') : 'No animations'}>
+        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      </button>
       <button
         className="p-0.5 shrink-0 text-muted-foreground hover:text-foreground"
         onClick={(e) => { e.stopPropagation(); onToggleVisible(); }}
@@ -354,6 +368,16 @@ export function VideoEditor({
     lastKeyframeTime: number;
     playheadLocal: number;
   } | null>(null);
+
+  // Timeline tracks expanded into per-property sub-rows.
+  const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
+  const toggleTrackExpanded = useCallback((id: string) => {
+    setExpandedTracks(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
 
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -1190,12 +1214,20 @@ export function VideoEditor({
                   const isLocked = !!el.locked;
                   const canMoveUp = idx > 0;            // not at top of list (already highest z)
                   const canMoveDown = idx < sorted.length - 1; // not at bottom
+                  const animatedProps = (Object.keys(el.keyframes ?? {}) as AnimatableProperty[])
+                    .filter(p => (el.keyframes?.[p]?.length ?? 0) > 0);
+                  const hasAnimation = animatedProps.length > 0;
+                  const isExpanded = expandedTracks.has(el.id) && hasAnimation;
                   return (
-                    <div key={el.id} data-timeline-track className={cn("flex items-center h-8 border-b border-border/50", selectedElementId === el.id && "bg-accent/30", isHidden && "opacity-50")}
+                    <React.Fragment key={el.id}>
+                    <div data-timeline-track className={cn("flex items-center h-8 border-b border-border/50", selectedElementId === el.id && "bg-accent/30", isHidden && "opacity-50")}
                       onClick={() => { setSelectedElementId(el.id); setSelectedMarkerTime(null); }}>
                       <TrackLabel
                         el={el} isHidden={isHidden} isLocked={isLocked}
                         canMoveUp={canMoveUp} canMoveDown={canMoveDown}
+                        hasAnimation={hasAnimation}
+                        expanded={isExpanded}
+                        onToggleExpanded={() => toggleTrackExpanded(el.id)}
                         onToggleVisible={() => toggleVisible(el.id)}
                         onToggleLock={() => toggleLock(el.id)}
                         onRename={(name) => renameElement(el.id, name)}
@@ -1237,6 +1269,48 @@ export function VideoEditor({
                         </div>
                       </div>
                     </div>
+                    {/* Expanded sub-rows: one per animated property, showing
+                        only that property's keyframes. */}
+                    {isExpanded && animatedProps.map(prop => {
+                      const list = (el.keyframes?.[prop] ?? []).slice().sort((a, b) => a.t - b.t);
+                      return (
+                        <div key={`${el.id}-${prop}`}
+                          className={cn('flex items-center h-6 border-b border-border/30', isHidden && 'opacity-50')}>
+                          <div className="w-[200px] shrink-0 pl-10 pr-2 flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <span className="truncate">{prop}</span>
+                            <span className="text-muted-foreground/60">({list.length})</span>
+                          </div>
+                          <div className="flex-1 relative h-full">
+                            <div className="absolute top-1 bottom-1 rounded-sm bg-yellow-500/10 border border-yellow-500/20"
+                              style={{
+                                left: `${(el.start / timelineDuration) * 100}%`,
+                                width: `${(el.duration / timelineDuration) * 100}%`,
+                              }}>
+                              {list.map(kf => (
+                                <div
+                                  key={kf.t}
+                                  className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-yellow-400 border border-yellow-600 cursor-pointer z-10"
+                                  style={{ left: `${(kf.t / el.duration) * 100}%`, marginLeft: -4 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedElementId(el.id);
+                                    setSelectedMarkerTime(kf.t);
+                                    setCurrentTime(el.start + kf.t);
+                                  }}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault(); e.stopPropagation();
+                                    if (window.confirm(`Delete the ${prop} keyframe at ${kf.t.toFixed(2)}s? The marker stays.`)) {
+                                      deletePropKeyframe(el.id, prop, kf.t);
+                                    }
+                                  }}
+                                  title={`${prop} = ${kf.value.toFixed(2)} at ${kf.t.toFixed(2)}s${kf.easing ? ` · easing in: ${kf.easing}` : ''}`} />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    </React.Fragment>
                   );
                 })}
               </div>
