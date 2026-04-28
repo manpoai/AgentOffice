@@ -438,99 +438,135 @@ function FillSection({ element, projected, onApply, onUpdateElement }: {
     isSvg ? onApply({ svgFill: next }) : onApply({ backgroundColor: next });
   };
 
+  // Fill alpha (0..100 percent for the UI). Source of truth: SVG → fill-opacity
+  // attr; HTML → rgba() alpha channel on background.
+  const fillAlpha = isSvg
+    ? (projected.svgFillOpacity ?? 1)
+    : (projected.backgroundColorAlpha ?? 1);
+  const fillAlphaPct = Math.round(fillAlpha * 100);
+  const setFillAlpha = (pct: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(pct))) / 100;
+    if (isSvg) onApply({ svgFillOpacity: clamped });
+    else onApply({ backgroundColorAlpha: clamped });
+  };
+
   return (
     <div className="space-y-2 min-w-0">
-      {/* Mode selector — no leading label, three buttons fill the row */}
-      <div className="flex gap-1">
-        {(['solid', 'image', 'none'] as FillMode[]).map(m => (
-          <button key={m}
-            className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
-              fillMode === m ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
-            onClick={() => {
-              if (m === fillMode) return;
-              // When leaving image mode, clear pattern/defs+fill or background-image
-              // FIRST in a synchronous html string, then apply the new color in the
-              // same update — applyChange uses the element.html closure, so a sequence
-              // of two state updates would lose the first one.
-              const wasImage = fillMode === 'image';
-              if (m === 'image') {
-                if (!wasImage) handleUpload();
-                else handleUpload();
-                return;
-              }
-              // Build the cleared html (image -> bare element with default fill)
-              let cleared = element.html;
-              if (wasImage) {
-                if (isSvgHtml) {
-                  cleared = cleared.replace(/<defs>[\s\S]*?<\/defs>/g, '');
-                  cleared = cleared.replace(/fill="url\(#img-fill\)"/, 'fill="#e0e7ff"');
-                } else {
-                  const wrapperStyleMatch = cleared.match(/^<div\s+style="([^"]*)"/);
-                  if (wrapperStyleMatch) {
-                    let style = wrapperStyleMatch[1];
-                    style = style.replace(/background-image:[^;]+;?\s*/g, '');
-                    style = style.replace(/background-size:[^;]+;?\s*/g, '');
-                    style = style.replace(/background-position:[^;]+;?\s*/g, '');
-                    style = style.replace(/background-repeat:[^;]+;?\s*/g, '');
-                    cleared = cleared.replace(wrapperStyleMatch[0], `<div style="${style}"`);
+      {/* Mode selector — three buttons + 24px placeholder for icon column alignment */}
+      <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+        <div className="col-span-2 flex gap-1">
+          {(['solid', 'image', 'none'] as FillMode[]).map(m => (
+            <button key={m}
+              className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+                fillMode === m ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+              onClick={() => {
+                if (m === fillMode) return;
+                const wasImage = fillMode === 'image';
+                if (m === 'image') {
+                  handleUpload();
+                  return;
+                }
+                let cleared = element.html;
+                if (wasImage) {
+                  if (isSvgHtml) {
+                    cleared = cleared.replace(/<defs>[\s\S]*?<\/defs>/g, '');
+                    cleared = cleared.replace(/fill="url\(#img-fill\)"/, 'fill="#e0e7ff"');
+                  } else {
+                    const wrapperStyleMatch = cleared.match(/^<div\s+style="([^"]*)"/);
+                    if (wrapperStyleMatch) {
+                      let style = wrapperStyleMatch[1];
+                      style = style.replace(/background-image:[^;]+;?\s*/g, '');
+                      style = style.replace(/background-size:[^;]+;?\s*/g, '');
+                      style = style.replace(/background-position:[^;]+;?\s*/g, '');
+                      style = style.replace(/background-repeat:[^;]+;?\s*/g, '');
+                      cleared = cleared.replace(wrapperStyleMatch[0], `<div style="${style}"`);
+                    }
                   }
                 }
-              }
-              // Now apply the new color on the cleared html in one update.
-              const targetColor = m === 'none' ? 'none' : (isSvg ? '#e0e7ff' : '#ffffff');
-              const subCssPath = undefined;
-              const next = applyProjection(cleared, isSvg ? { svgFill: targetColor } : { backgroundColor: targetColor }, subCssPath);
-              onUpdateElement(element.id, { html: next });
-            }}>
-            {m.charAt(0).toUpperCase() + m.slice(1)}
-          </button>
-        ))}
+                const targetColor = m === 'none' ? 'none' : (isSvg ? '#e0e7ff' : '#ffffff');
+                const next = applyProjection(cleared, isSvg ? { svgFill: targetColor } : { backgroundColor: targetColor }, undefined);
+                onUpdateElement(element.id, { html: next });
+              }}>
+              {m.charAt(0).toUpperCase() + m.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div />
       </div>
 
       {fillMode === 'solid' && !isGradient && (
-        <div className="flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 hover:bg-muted focus-within:ring-1 focus-within:ring-primary/40 min-w-0">
-          <ColorPicker
-            value={currentColor}
-            onChange={v => isSvg ? onApply({ svgFill: v }) : onApply({ backgroundColor: v })}
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <div className="flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 hover:bg-muted focus-within:ring-1 focus-within:ring-primary/40 min-w-0">
+            {/* Smaller swatch (16px) to match image thumbnail size */}
+            <button
+              className="w-4 h-4 rounded border border-border shrink-0 relative overflow-hidden"
+              style={currentColor && currentColor !== 'none' ? { backgroundColor: currentColor } : undefined}
+              onClick={() => {
+                const inp = document.createElement('input');
+                inp.type = 'color';
+                inp.value = currentColor && currentColor.startsWith('#') ? currentColor : '#000000';
+                inp.onchange = () => isSvg ? onApply({ svgFill: inp.value }) : onApply({ backgroundColor: inp.value });
+                inp.click();
+              }}
+              title={currentColor || 'Pick color'}
+            />
+            <input
+              type="text"
+              value={hexNoHash}
+              onChange={e => handleHexCommit(e.target.value)}
+              onBlur={e => handleHexCommit(e.target.value)}
+              className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
+              spellCheck={false}
+            />
+          </div>
+          <LabeledNumberInput
+            label=""
+            value={fillAlphaPct}
+            min={0} max={100} step={1}
+            suffix="%"
+            onChange={setFillAlpha}
           />
-          <input
-            type="text"
-            value={hexNoHash}
-            onChange={e => handleHexCommit(e.target.value)}
-            onBlur={e => handleHexCommit(e.target.value)}
-            className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
-            spellCheck={false}
-          />
+          <div />
         </div>
       )}
       {fillMode === 'solid' && isGradient && (
-        <div className="flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 text-[10px] text-muted-foreground">
-          <Lock className="w-3 h-3 shrink-0" />
-          <span className="italic">Gradient (edit HTML)</span>
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <div className="col-span-2 flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 text-[10px] text-muted-foreground">
+            <Lock className="w-3 h-3 shrink-0" />
+            <span className="italic">Gradient (edit HTML)</span>
+          </div>
+          <div />
         </div>
       )}
       {fillMode === 'image' && (
-        <>
+        <div className="grid grid-cols-[auto_1fr_1fr_24px] gap-2 items-center">
           <button
             onClick={handleUpload}
-            className="flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 hover:bg-muted w-full min-w-0 text-left"
+            className="w-9 h-6 rounded bg-muted/60 hover:bg-muted flex items-center justify-center"
             title="Click to replace image"
           >
             <div className="w-4 h-4 rounded bg-cover bg-center shrink-0 border border-border"
               style={{ backgroundImage: `url('${currentUrl}')` }} />
-            <span className="flex-1 text-[10px] text-foreground truncate">Image</span>
           </button>
+          <LabeledNumberInput
+            label=""
+            value={fillAlphaPct}
+            min={0} max={100} step={1}
+            suffix="%"
+            onChange={setFillAlpha}
+          />
           <select value={fitMode}
             onChange={e => {
               const newHtml = applyImageFitMode(element.html, e.target.value as ImageFitMode);
               onUpdateElement(element.id, { html: newHtml });
             }}
             className={SELECT_CLASS}>
-            <option value="cover">Fill (crop)</option>
-            <option value="contain">Fit (letterbox)</option>
+            <option value="cover">Fill</option>
+            <option value="contain">Fit</option>
             <option value="stretch">Stretch</option>
           </select>
-        </>
+          <div />
+        </div>
       )}
     </div>
   );

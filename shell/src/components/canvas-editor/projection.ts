@@ -30,6 +30,11 @@ export interface ProjectedProps {
   opacity?: number;
   imageSrc?: string;
   svgFill?: string;
+  /** SVG fill alpha (0..1). Maps to <fill-opacity> attribute. */
+  svgFillOpacity?: number;
+  /** HTML background color alpha (0..1). Stored on the wrapper <div> as the
+   *  4th channel of an rgba() background-color when below 1. */
+  backgroundColorAlpha?: number;
   svgStroke?: string;
   svgStrokeWidth?: number;
   svgStrokeDasharray?: string;
@@ -90,11 +95,22 @@ export function projectElement(html: string, cssPath?: string): ProjectedProps &
 
   const bgRaw = style.background || style.backgroundColor || '';
   let backgroundColor: string | undefined;
+  let backgroundColorAlpha: number | undefined;
   if (bgRaw) {
     const hexMatch = bgRaw.match(/#[0-9a-fA-F]{3,8}/);
     const rgbMatch = bgRaw.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-    if (hexMatch) backgroundColor = hexMatch[0];
-    else if (rgbMatch) {
+    const rgbaMatch = bgRaw.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([0-9.]+)\)/);
+    if (rgbaMatch) {
+      const r = parseInt(rgbaMatch[1]), g = parseInt(rgbaMatch[2]), b = parseInt(rgbaMatch[3]);
+      backgroundColor = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+      backgroundColorAlpha = parseFloat(rgbaMatch[4]);
+    } else if (hexMatch) {
+      const hex = hexMatch[0];
+      backgroundColor = hex.length === 9 ? hex.slice(0, 7) : hex;
+      if (hex.length === 9) {
+        backgroundColorAlpha = parseInt(hex.slice(7, 9), 16) / 255;
+      }
+    } else if (rgbMatch) {
       const r = parseInt(rgbMatch[1]), g = parseInt(rgbMatch[2]), b = parseInt(rgbMatch[3]);
       backgroundColor = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
     }
@@ -111,6 +127,7 @@ export function projectElement(html: string, cssPath?: string): ProjectedProps &
 
   const isSvgShape = html.includes('<svg');
   let svgFill: string | undefined;
+  let svgFillOpacity: number | undefined;
   let svgStroke: string | undefined;
   let svgStrokeWidth: number | undefined;
   if (isSvgShape) {
@@ -119,9 +136,14 @@ export function projectElement(html: string, cssPath?: string): ProjectedProps &
       return c;
     };
     const fillMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sfill="([^"]*)"/);
+    const fillOpacityMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sfill-opacity="([^"]*)"/);
     const strokeMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sstroke="([^"]*)"/);
     const swMatch = html.match(/<(?:path|rect|circle|ellipse|polygon)[^>]*?\sstroke-width="([^"]*)"/);
     svgFill = resolveColor(fillMatch?.[1]);
+    if (fillOpacityMatch) {
+      const v = parseFloat(fillOpacityMatch[1]);
+      if (!isNaN(v)) svgFillOpacity = v;
+    }
     svgStroke = resolveColor(strokeMatch?.[1]);
     if (!svgFill) {
       const svgFillMatch = html.match(/<svg[^>]*?\sfill="([^"]*)"/);
@@ -251,6 +273,8 @@ export function projectElement(html: string, cssPath?: string): ProjectedProps &
     opacity: style.opacity ? parseFloat(style.opacity) : undefined,
     imageSrc,
     svgFill,
+    svgFillOpacity,
+    backgroundColorAlpha,
     svgStroke,
     svgStrokeWidth,
     svgStrokeDasharray,
@@ -302,6 +326,19 @@ export function applyProjection(rawHTML: string, changes: Partial<ProjectedProps
 
   if (changes.svgFill !== undefined) {
     html = replaceAttrOnShapeOrSvg(html, 'fill', changes.svgFill);
+    // Defensive: strip any leftover wrapper background that earlier
+    // iterations may have written. SVG shapes draw via <path fill>; the
+    // wrapper div should never tint behind it.
+    html = html.replace(/(<div\s+[^>]*?style="[^"]*?)(?:background(?:-color)?:[^;"]+;?\s*)+/g, '$1');
+  }
+  if (changes.svgFillOpacity !== undefined) {
+    const v = Math.max(0, Math.min(1, changes.svgFillOpacity));
+    if (v >= 1) {
+      // Drop the attr entirely when fully opaque to keep markup clean.
+      html = html.replace(/(<(?:path|rect|circle|ellipse|polygon)\b[^>]*?)\s+fill-opacity="[^"]*"/, '$1');
+    } else {
+      html = replaceAttrOnShapeOrSvg(html, 'fill-opacity', String(v));
+    }
   }
   if (changes.svgStroke !== undefined) {
     html = replaceAttrOnShapeOrSvg(html, 'stroke', changes.svgStroke);
@@ -404,8 +441,39 @@ export function applyProjection(rawHTML: string, changes: Partial<ProjectedProps
   const el = div.firstElementChild as HTMLElement | null;
   if (!el) return html;
 
-  if (changes.backgroundColor !== undefined) {
-    el.style.background = changes.backgroundColor;
+  if (changes.backgroundColor !== undefined || changes.backgroundColorAlpha !== undefined) {
+    // Determine the resolved hex (current or new) and the resolved alpha.
+    const currentBgRaw = el.style.background || el.style.backgroundColor || '';
+    const currentHex = (() => {
+      const m = currentBgRaw.match(/#[0-9a-fA-F]{3,8}/);
+      if (m) return m[0].length === 9 ? m[0].slice(0, 7) : m[0];
+      const rgba = currentBgRaw.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if (rgba) {
+        const r = parseInt(rgba[1]), g = parseInt(rgba[2]), b = parseInt(rgba[3]);
+        return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+      }
+      return undefined;
+    })();
+    const currentAlpha = (() => {
+      const m = currentBgRaw.match(/rgba\(\d+,\s*\d+,\s*\d+,\s*([0-9.]+)\)/);
+      return m ? parseFloat(m[1]) : 1;
+    })();
+    const nextHex = changes.backgroundColor !== undefined ? changes.backgroundColor : (currentHex ?? 'none');
+    const nextAlpha = changes.backgroundColorAlpha !== undefined
+      ? Math.max(0, Math.min(1, changes.backgroundColorAlpha))
+      : currentAlpha;
+    if (nextHex === 'none' || nextHex === '') {
+      el.style.background = nextHex;
+    } else if (nextAlpha >= 1) {
+      el.style.background = nextHex;
+    } else {
+      const hex = nextHex.replace(/^#/, '');
+      const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex.slice(0, 6);
+      const r = parseInt(full.slice(0, 2), 16);
+      const g = parseInt(full.slice(2, 4), 16);
+      const b = parseInt(full.slice(4, 6), 16);
+      el.style.background = `rgba(${r}, ${g}, ${b}, ${nextAlpha})`;
+    }
   }
   if (changes.color !== undefined) el.style.color = changes.color;
   if (changes.fontSize !== undefined) el.style.fontSize = changes.fontSize + 'px';
