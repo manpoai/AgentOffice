@@ -15,11 +15,14 @@ export interface ProjectedProps {
   textContent?: string;
   backgroundColor?: string;
   color?: string;
+  /** Text color alpha (0..1). When below 1, color is stored as rgba(). */
+  colorAlpha?: number;
   fontSize?: number;
   fontFamily?: string;
   fontWeight?: string;
   textAlign?: 'left' | 'center' | 'right' | 'justify';
   verticalAlign?: 'top' | 'middle' | 'bottom';
+  textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
   lineHeight?: number;
   letterSpacing?: number;
   textDecoration?: 'none' | 'underline' | 'line-through';

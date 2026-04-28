@@ -357,7 +357,11 @@ function readFillMode(element: CanvasElement, projected: ReturnType<typeof proje
   const patternMatch = element.html.match(/href="([^"]+)"/);
   const bgMatch = element.html.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/);
   const currentUrl = (isSvgHtml ? patternMatch?.[1] : bgMatch?.[1]) || '';
-  let mode: FillMode = currentColor === 'none' ? 'none' : 'solid';
+  // Empty / 'none' / 'transparent' all map to None. SVG shapes default to a
+  // visible fill so an absent fill attr is rare; HTML blocks (text, etc.)
+  // commonly have no background and should report None.
+  const noFill = !currentColor || currentColor === 'none' || currentColor === 'transparent';
+  let mode: FillMode = noFill ? 'none' : 'solid';
   if (currentUrl) mode = 'image';
   return mode;
 }
