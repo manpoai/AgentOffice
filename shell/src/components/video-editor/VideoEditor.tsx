@@ -1344,7 +1344,15 @@ export function VideoEditor({
 
       {showComments && !showRevisions && (
         <div className="hidden md:flex w-[304px] bg-sidebar flex-col shrink-0 overflow-hidden h-full">
-          <CommentPanel targetType="video" targetId={contentId} onClose={onCloseComments} focusCommentId={focusCommentId} />
+          <CommentPanel
+            targetType="video"
+            targetId={contentId}
+            onClose={onCloseComments}
+            focusCommentId={focusCommentId}
+            anchorType={selectedElement ? 'element' : undefined}
+            anchorId={selectedElement?.id}
+            anchorMeta={selectedElement ? { node_label: selectedElement.name ?? selectedElement.type ?? 'element' } : undefined}
+          />
         </div>
       )}
       {showRevisions && (
