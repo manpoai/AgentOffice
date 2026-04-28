@@ -22,14 +22,19 @@ import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { ShapePicker, SHAPE_MAP, type ShapeType } from '@/components/shared/ShapeSet';
 import { useUndoRedo } from '../canvas-editor/use-undo-redo';
-import type { VideoData, VideoElement } from './types';
+import type { VideoData, VideoElement, AnimatableProperty, EasingPreset, PropertyChangeOutcome } from './types';
 import {
-  SIZE_PRESETS,
+  SIZE_PRESETS, EASING_PRESETS,
   DEFAULT_VIDEO_WIDTH, DEFAULT_VIDEO_HEIGHT, DEFAULT_FPS,
   TIME_EPSILON,
   computeTotalDuration, migrateVideoData,
   getElementSnapshotAt, getMarkers,
   addMarker as addMarkerToElement, removeMarker as removeMarkerFromElement,
+  applyPropertyChange, applyPostAnimationIntent,
+  isPropertyAnimated, isOnMarker,
+  removeKeyframe as removeKeyframeFromElement,
+  clearAnimation as clearAnimationOnProp,
+  upsertKeyframe,
 } from './types';
 
 // ─── Shared UI Components (matching Canvas style) ────
@@ -64,6 +69,64 @@ function NumberInput({ label, value, onChange, min, max, step = 1 }: {
       <input type="number" value={Math.round(value * 100) / 100} min={min} max={max} step={step}
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
         className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono" />
+    </div>
+  );
+}
+
+/** Animatable property field — number input plus an animation-state indicator
+ *  and a right-click "Remove animation" affordance. The visible value is the
+ *  interpolated snapshot at the current playhead, so changes feel direct. */
+function AnimatableField({
+  label, prop, value, min, max, step = 1,
+  element, playheadLocal,
+  onChange, onRemoveAnimation,
+}: {
+  label: string;
+  prop: import('./types').AnimatableProperty;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  element: VideoElement;
+  playheadLocal: number;
+  onChange: (prop: import('./types').AnimatableProperty, v: number) => void;
+  onRemoveAnimation: (prop: import('./types').AnimatableProperty) => void;
+}) {
+  const animated = isPropertyAnimated(element, prop);
+  // Has THIS property got a keyframe at the current playhead?
+  const propKfs = element.keyframes?.[prop] ?? [];
+  const onPropKf = propKfs.some(k => Math.abs(k.t - playheadLocal) <= TIME_EPSILON);
+  const onMarker = isOnMarker(element, playheadLocal);
+
+  return (
+    <div className="flex items-center gap-2 group"
+      onContextMenu={e => {
+        if (!animated) return;
+        e.preventDefault();
+        if (window.confirm(`Remove animation from ${label}? This deletes all ${label} keyframes (the static value at t=0 is preserved).`)) {
+          onRemoveAnimation(prop);
+        }
+      }}
+      title={animated ? `Right-click to remove ${label} animation` : undefined}
+    >
+      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
+      <input type="number" value={Math.round(value * 100) / 100} min={min} max={max} step={step}
+        onChange={e => onChange(prop, parseFloat(e.target.value) || 0)}
+        className={cn(
+          'flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono',
+          animated && 'border-yellow-500/40',
+        )} />
+      {animated && (
+        <span
+          className={cn(
+            'w-2.5 h-2.5 rotate-45 border shrink-0',
+            onPropKf ? 'bg-yellow-400 border-yellow-600' : 'border-yellow-500/60',
+          )}
+          title={onPropKf
+            ? `Keyframe at ${playheadLocal.toFixed(2)}s`
+            : (onMarker ? `Marker at ${playheadLocal.toFixed(2)}s (no kf for ${label} yet)` : 'Animated, between keyframes')}
+        />
+      )}
     </div>
   );
 }
@@ -205,6 +268,17 @@ export function VideoEditor({
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedMarkerTime, setSelectedMarkerTime] = useState<number | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
+  // Pending post-animation-interval intent dialog. When the dispatcher returns
+  // 'needs-intent', we stash the payload here and surface a modal that lets the
+  // user choose between "modify last keyframe" and "add new keyframe at playhead".
+  const [pendingIntent, setPendingIntent] = useState<{
+    elementId: string;
+    prop: AnimatableProperty;
+    value: number;
+    lastKeyframeTime: number;
+    playheadLocal: number;
+  } | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -411,6 +485,92 @@ export function VideoEditor({
       setSelectedMarkerTime(null);
     }
   }, [data, updateData, selectedMarkerTime]);
+
+  /** Single entry-point for all property panel writes that touch animatable
+   *  properties (X/Y/W/H/Opacity/Scale/Rotation). Routes through the §3 rule
+   *  table; opens the intent dialog when needed. */
+  const changeAnimatableProperty = useCallback((elementId: string, prop: AnimatableProperty, value: number) => {
+    if (!data) return;
+    const el = data.elements.find(e => e.id === elementId);
+    if (!el) return;
+    const playheadLocal = currentTime - el.start;
+    const outcome: PropertyChangeOutcome = applyPropertyChange(el, prop, value, playheadLocal);
+
+    switch (outcome.kind) {
+      case 'rejected':
+        // Out of lifespan — silently drop. (Phase 4 will surface a toast +
+        // "extend lifespan" affordance.)
+        return;
+      case 'static':
+      case 'updated':
+      case 'animated':
+      case 'auto-bend':
+        updateData(d => ({
+          ...d,
+          elements: d.elements.map(e => e.id === elementId ? outcome.element : e),
+        }));
+        return;
+      case 'needs-intent':
+        setPendingIntent({
+          elementId,
+          prop: outcome.prop,
+          value: outcome.value,
+          lastKeyframeTime: outcome.lastKeyframeTime,
+          playheadLocal: outcome.playheadLocal,
+        });
+        return;
+    }
+  }, [data, currentTime, updateData]);
+
+  /** User picked an option in the intent dialog. */
+  const resolveIntent = useCallback((intent: 'modify-last' | 'add-keyframe') => {
+    if (!pendingIntent || !data) return;
+    const el = data.elements.find(e => e.id === pendingIntent.elementId);
+    if (!el) { setPendingIntent(null); return; }
+    const updated = applyPostAnimationIntent(
+      el,
+      pendingIntent.prop,
+      pendingIntent.value,
+      pendingIntent.lastKeyframeTime,
+      pendingIntent.playheadLocal,
+      intent,
+    );
+    updateData(d => ({
+      ...d,
+      elements: d.elements.map(e => e.id === pendingIntent.elementId ? updated : e),
+    }));
+    setPendingIntent(null);
+  }, [pendingIntent, data, updateData]);
+
+  /** Remove all animation from a property (right-click "Remove animation"). */
+  const removeAnimationOnProp = useCallback((elementId: string, prop: AnimatableProperty) => {
+    if (!data) return;
+    const el = data.elements.find(e => e.id === elementId);
+    if (!el) return;
+    const updated = clearAnimationOnProp(el, prop);
+    updateData(d => ({ ...d, elements: d.elements.map(e => e.id === elementId ? updated : e) }));
+  }, [data, updateData]);
+
+  /** Set the easing on an existing keyframe (segment ending at this kf). */
+  const setKeyframeEasing = useCallback((elementId: string, prop: AnimatableProperty, t: number, easing: EasingPreset) => {
+    if (!data) return;
+    const el = data.elements.find(e => e.id === elementId);
+    if (!el) return;
+    const list = el.keyframes?.[prop] ?? [];
+    const kf = list.find(k => Math.abs(k.t - t) <= TIME_EPSILON);
+    if (!kf) return;
+    const updated = upsertKeyframe(el, prop, t, kf.value, easing);
+    updateData(d => ({ ...d, elements: d.elements.map(e => e.id === elementId ? updated : e) }));
+  }, [data, updateData]);
+
+  /** Delete a single property keyframe at time t. */
+  const deletePropKeyframe = useCallback((elementId: string, prop: AnimatableProperty, t: number) => {
+    if (!data) return;
+    const el = data.elements.find(e => e.id === elementId);
+    if (!el) return;
+    const updated = removeKeyframeFromElement(el, prop, t);
+    updateData(d => ({ ...d, elements: d.elements.map(e => e.id === elementId ? updated : e) }));
+  }, [data, updateData]);
 
   // ─── Playback ─────────────────────────
   useEffect(() => {
@@ -922,8 +1082,9 @@ export function VideoEditor({
                             onPointerDown={(e) => handleTimelinePointerDown(e, 'move', el.id, e.currentTarget.parentElement!)} />
                           <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/60 rounded-r-sm"
                             onPointerDown={(e) => handleTimelinePointerDown(e, 'resize-right', el.id, e.currentTarget.parentElement!)} />
-                          {/* Markers (element-level time anchors). Phase 3 will overlay
-                              per-property keyframes on top of these. */}
+                          {/* Markers (element-level time anchors). Each carries
+                              the keyframes of any property that's been animated
+                              at that moment; right-click to delete (cascades). */}
                           {markers.map(t => (
                             <div key={t} className={cn("absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rotate-45 border cursor-pointer z-10",
                               selectedElementId === el.id && selectedMarkerTime !== null && Math.abs(selectedMarkerTime - t) <= TIME_EPSILON
@@ -932,7 +1093,18 @@ export function VideoEditor({
                               style={{ left: `${(t / el.duration) * 100}%`, marginLeft: -5 }}
                               onClick={(e) => { e.stopPropagation(); setSelectedElementId(el.id); setSelectedMarkerTime(t); }}
                               onPointerDown={(e) => handleMarkerDragStart(e, el.id, t, e.currentTarget.parentElement!)}
-                              title={`Marker at ${t.toFixed(2)}s — drag to move, click to select, Backspace to delete`} />
+                              onContextMenu={(e) => {
+                                e.preventDefault(); e.stopPropagation();
+                                if (window.confirm(`Delete marker at ${t.toFixed(2)}s? This also removes any property keyframes at that time.`)) {
+                                  deleteMarker(el.id, t);
+                                }
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                // Jump playhead to this marker time so panel reflects this moment.
+                                setCurrentTime(el.start + t);
+                              }}
+                              title={`Marker at ${t.toFixed(2)}s — drag to move, click to select, dbl-click to seek, right-click to delete`} />
                           ))}
                         </div>
                       </div>
@@ -951,6 +1123,10 @@ export function VideoEditor({
               <ElementPropertyPanel element={selectedElement} totalDuration={totalDuration} currentTime={currentTime}
                 onUpdate={(updates) => updateElement(selectedElement.id, updates)}
                 onUpdateHtml={(html) => updateElement(selectedElement.id, { html })}
+                onChangeAnimatable={(prop, v) => changeAnimatableProperty(selectedElement.id, prop, v)}
+                onRemoveAnimation={(prop) => removeAnimationOnProp(selectedElement.id, prop)}
+                onSetKeyframeEasing={(prop, t, easing) => setKeyframeEasing(selectedElement.id, prop, t, easing)}
+                onDeletePropKeyframe={(prop, t) => deletePropKeyframe(selectedElement.id, prop, t)}
                 onDelete={() => deleteElement(selectedElement.id)}
                 onDuplicate={() => duplicateElement(selectedElement.id)}
                 onAddMarker={() => addMarkerAtPlayhead(selectedElement.id)}
@@ -976,6 +1152,74 @@ export function VideoEditor({
             onRestore={(revisionData) => { const d = migrateVideoData(revisionData); setData(d); scheduleSave(d); setShowRevisions(false); }} />
         </div>
       )}
+
+      {/* Post-animation intent dialog (§3 last row). */}
+      {pendingIntent && (
+        <PostAnimationIntentDialog
+          prop={pendingIntent.prop}
+          value={pendingIntent.value}
+          lastKeyframeTime={pendingIntent.lastKeyframeTime}
+          playheadLocal={pendingIntent.playheadLocal}
+          onPick={resolveIntent}
+          onCancel={() => setPendingIntent(null)} />
+      )}
+    </div>
+  );
+}
+
+// ─── Post-Animation Intent Dialog ────────
+
+function PostAnimationIntentDialog({
+  prop, value, lastKeyframeTime, playheadLocal, onPick, onCancel,
+}: {
+  prop: AnimatableProperty;
+  value: number;
+  lastKeyframeTime: number;
+  playheadLocal: number;
+  onPick: (intent: 'modify-last' | 'add-keyframe') => void;
+  onCancel: () => void;
+}) {
+  // ESC closes
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-[10100] bg-black/40 flex items-center justify-center"
+      onClick={onCancel}>
+      <div className="bg-card rounded-lg shadow-2xl w-[420px] p-5 border border-border"
+        onClick={e => e.stopPropagation()}>
+        <h3 className="text-sm font-semibold mb-1">You changed {prop} at {playheadLocal.toFixed(2)}s</h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          The last <span className="font-mono">{prop}</span> keyframe is at {lastKeyframeTime.toFixed(2)}s.
+          The animation currently settles to that value and holds it. What did you mean?
+        </p>
+        <div className="space-y-2">
+          <button onClick={() => onPick('modify-last')}
+            className="w-full text-left px-3 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-accent/30 transition-colors">
+            <div className="text-sm font-medium">◆ Modify the final value at {lastKeyframeTime.toFixed(2)}s</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              The animation will settle to {value.toFixed(0)} (changes the entire t0→{lastKeyframeTime.toFixed(2)}s curve's destination).
+            </div>
+          </button>
+          <button onClick={() => onPick('add-keyframe')}
+            className="w-full text-left px-3 py-2 rounded-md border border-border hover:border-primary/40 hover:bg-accent/30 transition-colors">
+            <div className="text-sm font-medium">+ Add a new keyframe at {playheadLocal.toFixed(2)}s</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">
+              Extend the animation to this moment. The {prop} value will be {value.toFixed(0)} at {playheadLocal.toFixed(2)}s.
+            </div>
+          </button>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5">
+            Cancel (Esc)
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1004,18 +1248,87 @@ function SettingsPanel({ settings, onUpdate, onClose }: {
   );
 }
 
-// ─── Keyframe Property Panel ────────────
+// ─── Property Animations Section ────────
+
+/** Lists each animated property's keyframes with editable easing. Easing on a
+ *  keyframe defines the segment ENDING at that keyframe (incoming-easing). */
+function PropertyAnimationsSection({
+  element,
+  onSetKeyframeEasing,
+  onDeletePropKeyframe,
+}: {
+  element: VideoElement;
+  onSetKeyframeEasing: (prop: AnimatableProperty, t: number, easing: EasingPreset) => void;
+  onDeletePropKeyframe: (prop: AnimatableProperty, t: number) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const map = element.keyframes ?? {};
+  const animatedProps = (Object.keys(map) as AnimatableProperty[])
+    .filter(p => (map[p]?.length ?? 0) > 0);
+
+  return (
+    <>
+      <SectionHeader collapsed={!open} onToggle={() => setOpen(v => !v)}>
+        Animations ({animatedProps.length})
+      </SectionHeader>
+      {open && (
+        <div className="p-3 space-y-3">
+          {animatedProps.length === 0 && (
+            <p className="text-[11px] text-muted-foreground italic">
+              No animated properties yet. Add a marker (K) at a time, then change a property to animate it.
+            </p>
+          )}
+          {animatedProps.map(prop => {
+            const list = (map[prop] ?? []).slice().sort((a, b) => a.t - b.t);
+            return (
+              <div key={prop}>
+                <div className="text-[11px] font-medium text-foreground mb-1">{prop}</div>
+                <div className="space-y-1">
+                  {list.map(kf => (
+                    <div key={kf.t} className="flex items-center gap-2 text-[11px] bg-muted/30 rounded px-2 py-1">
+                      <Diamond className="w-3 h-3 text-yellow-500 shrink-0" />
+                      <span className="font-mono text-muted-foreground w-12">{kf.t.toFixed(2)}s</span>
+                      <span className="font-mono text-foreground flex-1">{Math.round(kf.value * 100) / 100}</span>
+                      <select
+                        value={kf.easing ?? 'linear'}
+                        onChange={e => onSetKeyframeEasing(prop, kf.t, e.target.value as EasingPreset)}
+                        className="text-[10px] px-1 py-0.5 rounded border bg-background"
+                        title="Incoming easing for the segment ending here">
+                        {EASING_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <button onClick={() => onDeletePropKeyframe(prop, kf.t)}
+                        className="p-0.5 rounded hover:bg-accent text-destructive"
+                        title="Delete this keyframe (marker stays)">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
 
 // ─── Element Property Panel (Canvas-aligned) ─────────────
 
 function ElementPropertyPanel({
   element, totalDuration, currentTime,
-  onUpdate, onUpdateHtml, onDelete, onDuplicate,
+  onUpdate, onUpdateHtml, onChangeAnimatable, onRemoveAnimation,
+  onSetKeyframeEasing, onDeletePropKeyframe,
+  onDelete, onDuplicate,
   onAddMarker, onDeleteMarker, selectedMarkerTime, onSelectMarker,
 }: {
   element: VideoElement; totalDuration: number; currentTime: number;
   onUpdate: (updates: Partial<VideoElement>) => void;
   onUpdateHtml: (html: string) => void;
+  onChangeAnimatable: (prop: AnimatableProperty, value: number) => void;
+  onRemoveAnimation: (prop: AnimatableProperty) => void;
+  onSetKeyframeEasing: (prop: AnimatableProperty, t: number, easing: EasingPreset) => void;
+  onDeletePropKeyframe: (prop: AnimatableProperty, t: number) => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onAddMarker: () => void;
@@ -1029,6 +1342,10 @@ function ElementPropertyPanel({
   const markers = getMarkers(element);
   const playheadLocal = currentTime - element.start;
   const playheadInLifespan = playheadLocal >= 0 && playheadLocal <= element.duration;
+  // Interpolated snapshot at the current playhead — used to populate the X/Y/W/H
+  // and other animatable inputs so the panel reflects what the user is *seeing*
+  // at this moment, not the static-only state.
+  const snap = getElementSnapshotAt(element, Math.max(0, Math.min(element.duration, playheadLocal)));
 
   const isSvg = element.html.includes('<svg');
   const fill = isSvg ? (element.html.match(/fill="([^"]+)"/) ?? [])[1] ?? '#3b82f6' : extractProp(element.html, 'background') || extractProp(element.html, 'background-color') || '#3b82f6';
@@ -1058,14 +1375,34 @@ function ElementPropertyPanel({
         </div>
       </div>
 
-      {/* Position & Size */}
+      {/* Position & Size — animatable. Indicators next to each field show
+          whether the property is animated and whether the playhead is on a
+          marker (filled ◆) or between markers (hollow ◇). */}
       <SectionHeader>Position & Size</SectionHeader>
       <div className="p-3 space-y-2">
-        <NumberInput label="X" value={element.x} onChange={v => onUpdate({ x: v })} />
-        <NumberInput label="Y" value={element.y} onChange={v => onUpdate({ y: v })} />
-        <NumberInput label="W" value={element.w} min={20} onChange={v => onUpdate({ w: v })} />
-        <NumberInput label="H" value={element.h} min={20} onChange={v => onUpdate({ h: v })} />
+        <AnimatableField label="X" prop="x" value={snap.x} element={element} playheadLocal={playheadLocal}
+          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+        <AnimatableField label="Y" prop="y" value={snap.y} element={element} playheadLocal={playheadLocal}
+          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+        <AnimatableField label="W" prop="w" value={snap.w} min={20} element={element} playheadLocal={playheadLocal}
+          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+        <AnimatableField label="H" prop="h" value={snap.h} min={20} element={element} playheadLocal={playheadLocal}
+          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
         <NumberInput label="Z-Index" value={element.z_index ?? 0} onChange={v => onUpdate({ z_index: v })} />
+      </div>
+
+      {/* Transform — animatable. Opacity / Scale / Rotation. */}
+      <SectionHeader>Transform</SectionHeader>
+      <div className="p-3 space-y-2">
+        <AnimatableField label="Opacity" prop="opacity" value={snap.opacity} min={0} max={1} step={0.05}
+          element={element} playheadLocal={playheadLocal}
+          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+        <AnimatableField label="Scale" prop="scale" value={snap.scale} min={0} max={10} step={0.1}
+          element={element} playheadLocal={playheadLocal}
+          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+        <AnimatableField label="Rotation" prop="rotation" value={snap.rotation} step={5}
+          element={element} playheadLocal={playheadLocal}
+          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
       </div>
 
       {/* Timing */}
@@ -1172,6 +1509,12 @@ function ElementPropertyPanel({
           </button>
         </div>
       )}
+
+      {/* Property animations — per-property keyframes with editable easing */}
+      <PropertyAnimationsSection
+        element={element}
+        onSetKeyframeEasing={onSetKeyframeEasing}
+        onDeletePropKeyframe={onDeletePropKeyframe} />
 
       {/* HTML Code */}
       <SectionHeader collapsed={!showHtml} onToggle={() => setShowHtml(v => !v)}>HTML Code</SectionHeader>

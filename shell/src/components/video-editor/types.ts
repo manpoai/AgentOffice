@@ -346,6 +346,112 @@ export function clearAnimation(el: VideoElement, prop: AnimatableProperty): Vide
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Behavior dispatcher (the §3 rule table)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Outcome of routing a property change through the §3 behavior table. */
+export type PropertyChangeOutcome =
+  | { kind: 'static'; element: VideoElement }
+  /** Property was already animated and an existing keyframe at this time was
+   *  updated, OR a brand-new keyframe was added (and we already had a marker
+   *  at this time). */
+  | { kind: 'updated'; element: VideoElement; t: number }
+  /** Property was static or partially animated, and changing on a marker
+   *  promoted it into animated state (a real keyframe was created). */
+  | { kind: 'animated'; element: VideoElement; t: number }
+  /** Inside the animation interval and not on a marker — auto-create marker
+   *  and keyframe. */
+  | { kind: 'auto-bend'; element: VideoElement; t: number }
+  /** Past the last keyframe and not on a marker — caller MUST surface the
+   *  intent dialog and call back with `applyPostAnimationIntent`. */
+  | { kind: 'needs-intent'; previousElement: VideoElement; prop: AnimatableProperty; value: number; lastKeyframeTime: number; playheadLocal: number }
+  /** Playhead is outside the element's lifespan — caller should prompt to
+   *  extend the element first. */
+  | { kind: 'rejected'; reason: 'outside-lifespan' };
+
+/** Single entry-point for all property edits coming from the property panel
+ *  (or any other UI). Implements the complete §3 behavior table.
+ *
+ *  @param el           the element being edited (current state)
+ *  @param prop         which property is being changed
+ *  @param newValue     the value the user typed / dragged
+ *  @param playheadLocal element-local time at the playhead (= globalT - el.start)
+ */
+export function applyPropertyChange(
+  el: VideoElement,
+  prop: AnimatableProperty,
+  newValue: number,
+  playheadLocal: number,
+): PropertyChangeOutcome {
+  // Outside lifespan → reject.
+  if (playheadLocal < -TIME_EPSILON || playheadLocal > el.duration + TIME_EPSILON) {
+    return { kind: 'rejected', reason: 'outside-lifespan' };
+  }
+
+  const animated = isPropertyAnimated(el, prop);
+  const onMarker = playheadLocal > TIME_EPSILON && isOnMarker(el, playheadLocal);
+  const atT0 = playheadLocal <= TIME_EPSILON;
+
+  // Static + (any time) → write static value.
+  if (!animated) {
+    if (onMarker) {
+      // Static + on marker → property enters animated state.
+      const next = upsertKeyframe(el, prop, playheadLocal, newValue);
+      return { kind: 'animated', element: next, t: playheadLocal };
+    }
+    // Static + non-marker time (or t0) → static write.
+    return { kind: 'static', element: { ...el, ...setStaticValue(prop, newValue) } };
+  }
+
+  // Animated branch.
+  // At t0 → updates the implicit static value (equivalent to changing "the value
+  // you start the animation from").
+  if (atT0) {
+    return { kind: 'static', element: { ...el, ...setStaticValue(prop, newValue) } };
+  }
+
+  // On a marker → upsert.
+  if (onMarker) {
+    const next = upsertKeyframe(el, prop, playheadLocal, newValue);
+    return { kind: 'updated', element: next, t: playheadLocal };
+  }
+
+  // Animated, off-marker. Need to know whether playhead is inside the property's
+  // animation interval or past it.
+  const lastKf = getLastKeyframeTime(el, prop)!;
+  if (playheadLocal < lastKf - TIME_EPSILON) {
+    // Inside (t0, t_last) → auto-bend (new marker + new keyframe).
+    const next = upsertKeyframe(el, prop, playheadLocal, newValue);
+    return { kind: 'auto-bend', element: next, t: playheadLocal };
+  }
+
+  // Past last keyframe, not on a marker → needs intent dialog.
+  return {
+    kind: 'needs-intent',
+    previousElement: el,
+    prop,
+    value: newValue,
+    lastKeyframeTime: lastKf,
+    playheadLocal,
+  };
+}
+
+/** Apply the post-animation intent the user picked in the dialog. */
+export function applyPostAnimationIntent(
+  el: VideoElement,
+  prop: AnimatableProperty,
+  value: number,
+  lastKeyframeTime: number,
+  playheadLocal: number,
+  intent: 'modify-last' | 'add-keyframe',
+): VideoElement {
+  if (intent === 'modify-last') {
+    return upsertKeyframe(el, prop, lastKeyframeTime, value);
+  }
+  return upsertKeyframe(el, prop, playheadLocal, value);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Timeline helpers
 // ─────────────────────────────────────────────────────────────────────────
 
