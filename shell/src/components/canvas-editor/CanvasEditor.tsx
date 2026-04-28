@@ -287,7 +287,7 @@ function createShapeElement(shapeType: ShapeType, pageW: number, pageH: number):
   };
 }
 
-function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, onAddSvg, canUndo, canRedo, onUndo, onRedo }: {
+function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, onAddSvg, canUndo, canRedo, onUndo, onRedo, rightOffsetPx = 0 }: {
   pendingInsert: PendingInsert | null;
   onSetPending: (p: PendingInsert | null) => void;
   onAddShape: (shapeType: ShapeType) => void;
@@ -297,6 +297,10 @@ function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, on
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  /** Width occupied on the right side of the canvas viewport (e.g. property
+   *  panel). Toolbar centers itself relative to the *visible* area, so it
+   *  doesn't drift left when the property panel is open. */
+  rightOffsetPx?: number;
 }) {
   const [showShapes, setShowShapes] = useState(false);
   const isFramePending = pendingInsert?.type === 'frame';
@@ -305,7 +309,9 @@ function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, on
   const isPenPending = pendingInsert?.type === 'pen';
   const isLineDrawPending = pendingInsert?.type === 'line-draw';
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-card rounded border border-black/10 dark:border-white/10 px-3 h-10 shadow-[0px_0px_20px_0px_rgba(0,0,0,0.02)]"
+    <div
+      className="absolute top-4 z-20 flex items-center gap-1 bg-card rounded border border-black/10 dark:border-white/10 px-3 h-10 shadow-[0px_0px_20px_0px_rgba(0,0,0,0.02)]"
+      style={{ left: `calc(50% - ${rightOffsetPx / 2}px)`, transform: 'translateX(-50%)' }}
       onMouseDown={e => e.stopPropagation()}>
       <ToolBtn icon={MousePointer2} onClick={() => onSetPending(null)} active={!pendingInsert} title="Select (V)" />
       <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-0.5" />
@@ -435,9 +441,12 @@ function getElementTypeIcon(el: CanvasElement): React.ElementType {
   return Square;
 }
 
-function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onToggleVisible, onToggleLock }: {
+type SelectMode = 'replace' | 'add' | 'range';
+
+function SortableLayerItem({ el, frameId, isSelected, onSelect, onContextMenu, onRename, onToggleVisible, onToggleLock }: {
   el: CanvasElement; frameId: string; isSelected: boolean;
-  onSelect: (frameId: string, elementId: string) => void;
+  onSelect: (frameId: string, elementId: string, mode: SelectMode) => void;
+  onContextMenu?: (e: React.MouseEvent, frameId: string, elementId: string) => void;
   onRename: (elementId: string, name: string) => void;
   onToggleVisible: (elementId: string) => void;
   onToggleLock: (elementId: string) => void;
@@ -448,13 +457,22 @@ function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onTogg
   const defaultLabel = getElementLabel(el);
   const isGroup = el.type === 'group';
   const isHidden = el.visible === false;
+  const pickMode = (e: React.MouseEvent): SelectMode =>
+    e.shiftKey ? 'range' : (e.metaKey || e.ctrlKey) ? 'add' : 'replace';
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <div
-        className={cn('group flex items-center gap-1 pl-6 pr-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:bg-accent/50 text-[11px]',
+        className={cn('group flex items-center gap-1 pl-6 pr-1.5 py-0.5 cursor-grab active:cursor-grabbing hover:bg-accent/50 text-[11px] select-none',
           isSelected && 'bg-primary/10 text-primary',
           isHidden && 'opacity-50')}
-        onClick={() => onSelect(frameId, el.id)}>
+        onMouseDown={(e) => {
+          if (e.shiftKey || e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            window.getSelection()?.removeAllRanges();
+          }
+        }}
+        onClick={(e) => onSelect(frameId, el.id, pickMode(e))}
+        onContextMenu={(e) => onContextMenu?.(e, frameId, el.id)}>
         <button
           className="p-0.5 shrink-0 opacity-0 group-hover:opacity-100 data-[hidden=true]:opacity-100"
           data-hidden={isHidden}
@@ -498,6 +516,7 @@ function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onTogg
               frameId={frameId}
               isSelected={false}
               onSelect={onSelect}
+              onContextMenu={onContextMenu}
               onRename={onRename}
               onToggleVisible={onToggleVisible}
               onToggleLock={onToggleLock}
@@ -509,13 +528,13 @@ function SortableLayerItem({ el, frameId, isSelected, onSelect, onRename, onTogg
   );
 }
 
-function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectElement, onSelectCanvasElement, onClose, onRenameFrame, onRenameElement, onRenameCanvasElement, onReorderElements, onToggleVisible, onToggleLock }: {
+function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectElement, onSelectCanvasElement, onClose, onRenameFrame, onRenameElement, onRenameCanvasElement, onReorderElements, onToggleVisible, onToggleLock, onElementContextMenu, onFrameContextMenu }: {
   data: CanvasData;
   activeFrameId: string | null;
   selectedIds: Set<string>;
   onSelectFrame: (frameId: string) => void;
-  onSelectElement: (frameId: string, elementId: string) => void;
-  onSelectCanvasElement: (elementId: string) => void;
+  onSelectElement: (frameId: string, elementId: string, mode: SelectMode) => void;
+  onSelectCanvasElement: (elementId: string, mode: SelectMode) => void;
   onClose: () => void;
   onRenameFrame: (frameId: string, title: string) => void;
   onRenameElement: (frameId: string, elementId: string, name: string) => void;
@@ -523,6 +542,10 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
   onReorderElements: (frameId: string, activeId: string, overId: string) => void;
   onToggleVisible: (elementId: string) => void;
   onToggleLock: (elementId: string) => void;
+  /** Right-click on an element (frame-scoped or canvas-level). The handler
+   *  is responsible for selecting the element first, then opening the menu. */
+  onElementContextMenu?: (e: React.MouseEvent, frameId: string | null, elementId: string) => void;
+  onFrameContextMenu?: (e: React.MouseEvent, frameId: string) => void;
 }) {
   const [collapsedFrames, setCollapsedFrames] = useState<Set<string>>(new Set());
   const toggleCollapse = (fid: string) => setCollapsedFrames(prev => {
@@ -532,8 +555,11 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
   });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  const pickMode = (e: React.MouseEvent): SelectMode =>
+    e.shiftKey ? 'range' : (e.metaKey || e.ctrlKey) ? 'add' : 'replace';
+
   return (
-    <div className="w-[248px] min-w-[248px] border-r border-border flex flex-col shrink-0 bg-card overflow-y-auto"
+    <div className="w-[240px] min-w-[240px] border-r border-border flex flex-col shrink-0 bg-card overflow-y-auto select-none"
       onMouseDown={e => e.stopPropagation()}>
       <div className="px-2 py-1.5 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-1">
@@ -549,9 +575,16 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
           const defaultLabel = getElementLabel(el);
           return (
             <div key={el.id}
-              className={cn('group flex items-center gap-1 px-3 py-1 cursor-pointer hover:bg-accent/50 text-[11px]',
+              className={cn('group flex items-center gap-1 px-3 py-1 cursor-pointer hover:bg-accent/50 text-[11px] select-none',
                 !activeFrameId && selectedIds.has(el.id) && 'bg-primary/10 text-primary')}
-              onClick={() => onSelectCanvasElement(el.id)}>
+              onMouseDown={(e) => {
+          if (e.shiftKey || e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            window.getSelection()?.removeAllRanges();
+          }
+        }}
+              onClick={(e) => onSelectCanvasElement(el.id, pickMode(e))}
+              onContextMenu={(e) => onElementContextMenu?.(e, null, el.id)}>
               {React.createElement(getElementTypeIcon(el), { className: 'h-3 w-3 shrink-0 text-muted-foreground' })}
               <InlineEdit value={el.name || ''} defaultValue={defaultLabel}
                 onSave={(v) => onRenameCanvasElement(el.id, v === defaultLabel ? '' : v)} />
@@ -577,7 +610,8 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
             <div key={frame.page_id}>
               <div className={cn('flex items-center gap-1 px-1.5 py-1 cursor-pointer hover:bg-accent/50 text-[11px]',
                 isActive && 'bg-primary/5 text-primary')}
-                onClick={() => onSelectFrame(frame.page_id)}>
+                onClick={() => onSelectFrame(frame.page_id)}
+                onContextMenu={(e) => onFrameContextMenu?.(e, frame.page_id)}>
                 <button className="p-0.5" onClick={(e) => { e.stopPropagation(); toggleCollapse(frame.page_id); }}>
                   {collapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
                 </button>
@@ -597,6 +631,7 @@ function LayerPanel({ data, activeFrameId, selectedIds, onSelectFrame, onSelectE
                       <SortableLayerItem key={el.id} el={el} frameId={frame.page_id}
                         isSelected={selectedIds.has(el.id)}
                         onSelect={onSelectElement}
+                        onContextMenu={(e, fid, eid) => onElementContextMenu?.(e, fid, eid)}
                         onRename={(eid, name) => onRenameElement(frame.page_id, eid, name)}
                         onToggleVisible={onToggleVisible}
                         onToggleLock={onToggleLock} />
@@ -639,6 +674,9 @@ export function CanvasEditor({
   const [frameExplicitlySelected, setFrameExplicitlySelected] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Layer panel multi-select anchor: { scope: frameId | '__canvas__', elementId }.
+  // Range select uses [anchor, current] within the same scope; cross-scope shift falls back to replace.
+  const layerAnchorRef = useRef<{ scope: string; elementId: string } | null>(null);
   const [scale, setScale] = useState(0.5);
   const [pan, setPan] = useState({ x: 100, y: 100 });
   const [saveStatus, setSaveStatus] = useState('');
@@ -2699,9 +2737,112 @@ export function CanvasEditor({
           {/* Layers sidebar */}
           {showLayers && data && (
             <LayerPanel data={data} activeFrameId={activeFrameId} selectedIds={selectedIds}
-              onSelectFrame={(fid) => { setActiveFrameId(fid); setFrameExplicitlySelected(true); setSelectedIds(new Set()); }}
-              onSelectElement={(fid, eid) => { setActiveFrameId(fid); setSelectedIds(new Set([eid])); }}
-              onSelectCanvasElement={(eid) => { setActiveFrameId(null); setSelectedIds(new Set([eid])); }}
+              onSelectFrame={(fid) => { setActiveFrameId(fid); setFrameExplicitlySelected(true); setSelectedIds(new Set()); layerAnchorRef.current = null; }}
+              onSelectElement={(fid, eid, mode) => {
+                setFrameExplicitlySelected(false);
+                const scope = fid;
+                if (mode === 'replace') {
+                  setActiveFrameId(fid);
+                  setSelectedIds(new Set([eid]));
+                  layerAnchorRef.current = { scope, elementId: eid };
+                } else if (mode === 'add') {
+                  setActiveFrameId(fid);
+                  setSelectedIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(eid)) next.delete(eid); else next.add(eid);
+                    return next;
+                  });
+                  layerAnchorRef.current = { scope, elementId: eid };
+                } else {
+                  // range — only meaningful within same frame scope (no cross-frame range)
+                  const anchor = layerAnchorRef.current;
+                  const frame = data?.pages.find(p => p.page_id === fid);
+                  if (!anchor || anchor.scope !== scope || !frame) {
+                    setActiveFrameId(fid);
+                    setSelectedIds(new Set([eid]));
+                    layerAnchorRef.current = { scope, elementId: eid };
+                    return;
+                  }
+                  const ordered = frame.elements.slice().sort((a, b) => (b.z_index ?? 0) - (a.z_index ?? 0));
+                  const i = ordered.findIndex(e => e.id === anchor.elementId);
+                  const j = ordered.findIndex(e => e.id === eid);
+                  if (i < 0 || j < 0) {
+                    setActiveFrameId(fid);
+                    setSelectedIds(new Set([eid]));
+                    layerAnchorRef.current = { scope, elementId: eid };
+                    return;
+                  }
+                  const [lo, hi] = i <= j ? [i, j] : [j, i];
+                  const ids = ordered.slice(lo, hi + 1).map(e => e.id);
+                  setActiveFrameId(fid);
+                  setSelectedIds(new Set(ids));
+                  // Anchor stays put for further shift+clicks
+                }
+              }}
+              onSelectCanvasElement={(eid, mode) => {
+                setFrameExplicitlySelected(false);
+                const scope = '__canvas__';
+                if (mode === 'replace') {
+                  setActiveFrameId(null);
+                  setSelectedIds(new Set([eid]));
+                  layerAnchorRef.current = { scope, elementId: eid };
+                } else if (mode === 'add') {
+                  setActiveFrameId(null);
+                  setSelectedIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(eid)) next.delete(eid); else next.add(eid);
+                    return next;
+                  });
+                  layerAnchorRef.current = { scope, elementId: eid };
+                } else {
+                  const anchor = layerAnchorRef.current;
+                  const els = data?.elements ?? [];
+                  if (!anchor || anchor.scope !== scope) {
+                    setActiveFrameId(null);
+                    setSelectedIds(new Set([eid]));
+                    layerAnchorRef.current = { scope, elementId: eid };
+                    return;
+                  }
+                  const ordered = els.slice().sort((a, b) => (b.z_index ?? 0) - (a.z_index ?? 0));
+                  const i = ordered.findIndex(e => e.id === anchor.elementId);
+                  const j = ordered.findIndex(e => e.id === eid);
+                  if (i < 0 || j < 0) {
+                    setActiveFrameId(null);
+                    setSelectedIds(new Set([eid]));
+                    layerAnchorRef.current = { scope, elementId: eid };
+                    return;
+                  }
+                  const [lo, hi] = i <= j ? [i, j] : [j, i];
+                  const ids = ordered.slice(lo, hi + 1).map(e => e.id);
+                  setActiveFrameId(null);
+                  setSelectedIds(new Set(ids));
+                }
+              }}
+              onElementContextMenu={(e, fid, eid) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // If right-clicked element isn't already in the selection, replace selection with just it.
+                if (!selectedIds.has(eid)) {
+                  setActiveFrameId(fid);
+                  setFrameExplicitlySelected(false);
+                  setSelectedIds(new Set([eid]));
+                  layerAnchorRef.current = { scope: fid ?? '__canvas__', elementId: eid };
+                } else if (fid !== activeFrameId) {
+                  setActiveFrameId(fid);
+                }
+                onElementContextMenu(e);
+              }}
+              onFrameContextMenu={(e, fid) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setActiveFrameId(fid);
+                setFrameExplicitlySelected(true);
+                setSelectedIds(new Set());
+                const items = getFrameMenuItems(fid)();
+                if (items.length > 0) {
+                  window.dispatchEvent(new CustomEvent('show-context-menu', { detail: { items, x: e.clientX, y: e.clientY } }));
+                }
+              }}
               onClose={() => setShowLayers(false)}
               onRenameFrame={(fid, title) => updateFrame(fid, p => ({ ...p, title }))}
               onRenameElement={(fid, eid, name) => updateFrame(fid, p => ({ ...p, elements: p.elements.map(e => e.id === eid ? { ...e, name } : e) }))}
@@ -2786,6 +2927,7 @@ export function CanvasEditor({
               onAddSvg={handleAddSvg}
               canUndo={undoRedo.canUndo} canRedo={undoRedo.canRedo}
               onUndo={handleUndo} onRedo={handleRedo}
+              rightOffsetPx={showPropertyPanel && pendingInsert?.type !== 'frame' ? 240 : 0}
             />
             <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageFileSelected} />
             <input ref={svgInputRef} type="file" accept=".svg,image/svg+xml" className="hidden" onChange={handleSvgFileSelected} />
