@@ -11,6 +11,7 @@ import {
   Download,
   MoveHorizontal, MoveVertical, Square,
   SquaresUnite, SquaresSubtract, SquaresIntersect, SquaresExclude,
+  SquareRoundCorner, Loader, Eclipse,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
@@ -131,18 +132,60 @@ function FrameShadowSection({ frame, onUpdateFrame }: {
 }
 
 // ── Section header ────────────────────────────────────────────────────────────
+// Divider sits ABOVE the header (border-t). Title is mixed-case medium foreground.
+// Figma-style: section header reads as a label below the dividing line.
 
 function SectionHeader({ children, collapsed, onToggle }: {
   children: React.ReactNode; collapsed?: boolean; onToggle?: () => void;
 }) {
   return (
-    <div className={cn('px-3 py-1.5 border-b border-border', onToggle && 'cursor-pointer hover:bg-accent/50')}
+    <div className={cn('px-3 pt-3 pb-1.5 border-t border-border', onToggle && 'cursor-pointer hover:bg-accent/30')}
       onClick={onToggle}>
       <div className="flex items-center gap-1">
         {onToggle && (collapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />)}
-        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{children}</span>
+        <span className="text-[11px] font-medium text-foreground">{children}</span>
       </div>
     </div>
+  );
+}
+
+// ── Subsection header (small muted label inside a section) ────────────────────
+
+function SubsectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] text-muted-foreground mt-1 mb-1">{children}</div>
+  );
+}
+
+// ── Labeled number input (icon/letter + value in one rounded box) ─────────────
+// Visual: pale gray fill, no border, only the numeric value is editable.
+// Used for X/Y/W/H/Rotation/Opacity/Radius and similar across sections.
+
+// Tailwind class string used by selects to match LabeledNumberInput visual.
+const SELECT_CLASS = 'w-full text-[10px] px-2 h-6 rounded bg-muted/60 hover:bg-muted border-0 focus:outline-none focus:ring-1 focus:ring-primary/40';
+
+function LabeledNumberInput({
+  label, value, onChange, min, max, step, suffix, placeholder,
+}: {
+  label: React.ReactNode;
+  value: number | null;
+  onChange: (v: number) => void;
+  min?: number; max?: number; step?: number;
+  suffix?: string; placeholder?: string;
+}) {
+  return (
+    <label className="flex items-center gap-1.5 px-2 h-6 rounded bg-muted/60 hover:bg-muted focus-within:ring-1 focus-within:ring-primary/40 cursor-text">
+      <span className="text-[10px] text-muted-foreground shrink-0 select-none">{label}</span>
+      <NumberInput
+        value={value}
+        onChange={onChange}
+        min={min} max={max} step={step}
+        suffix={suffix}
+        placeholder={placeholder}
+        className="flex-1"
+        inputClassName="w-full bg-transparent border-0 px-0 py-0 text-[10px] text-foreground focus:outline-none font-mono tabular-nums"
+      />
+    </label>
   );
 }
 
@@ -383,70 +426,110 @@ function FillSection({ element, projected, onApply, onUpdateElement }: {
     }
   };
 
+  // Display hex without leading '#', uppercase, falls back to empty for non-hex.
+  const hexNoHash = currentColor && currentColor.startsWith('#')
+    ? currentColor.slice(1).toUpperCase()
+    : (currentColor || '').toUpperCase();
+
+  const handleHexCommit = (raw: string) => {
+    const cleaned = raw.trim().replace(/^#+/, '').toUpperCase();
+    if (!/^[0-9A-F]{3}([0-9A-F]{3})?$/.test(cleaned)) return;
+    const next = '#' + cleaned;
+    isSvg ? onApply({ svgFill: next }) : onApply({ backgroundColor: next });
+  };
+
   return (
-    <div className="space-y-2">
-      {/* Mode selector */}
-      <Row label="Fill">
-        <div className="flex gap-1">
-          {(['solid', 'image', 'none'] as FillMode[]).map(m => (
-            <button key={m}
-              className={cn('flex-1 text-[11px] px-1.5 py-0.5 rounded border transition-colors',
-                fillMode === m ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-muted-foreground')}
-              onClick={() => {
-                if (m === 'none') {
-                  isSvg ? onApply({ svgFill: 'none' }) : onApply({ backgroundColor: 'none' });
-                } else if (m === 'solid') {
-                  isSvg ? onApply({ svgFill: '#e0e7ff' }) : onApply({ backgroundColor: '#ffffff' });
+    <div className="space-y-2 min-w-0">
+      {/* Mode selector — no leading label, three buttons fill the row */}
+      <div className="flex gap-1">
+        {(['solid', 'image', 'none'] as FillMode[]).map(m => (
+          <button key={m}
+            className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+              fillMode === m ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+            onClick={() => {
+              if (m === fillMode) return;
+              // When leaving image mode, clear pattern/defs+fill or background-image
+              // FIRST in a synchronous html string, then apply the new color in the
+              // same update — applyChange uses the element.html closure, so a sequence
+              // of two state updates would lose the first one.
+              const wasImage = fillMode === 'image';
+              if (m === 'image') {
+                if (!wasImage) handleUpload();
+                else handleUpload();
+                return;
+              }
+              // Build the cleared html (image -> bare element with default fill)
+              let cleared = element.html;
+              if (wasImage) {
+                if (isSvgHtml) {
+                  cleared = cleared.replace(/<defs>[\s\S]*?<\/defs>/g, '');
+                  cleared = cleared.replace(/fill="url\(#img-fill\)"/, 'fill="#e0e7ff"');
                 } else {
-                  handleUpload();
+                  const wrapperStyleMatch = cleared.match(/^<div\s+style="([^"]*)"/);
+                  if (wrapperStyleMatch) {
+                    let style = wrapperStyleMatch[1];
+                    style = style.replace(/background-image:[^;]+;?\s*/g, '');
+                    style = style.replace(/background-size:[^;]+;?\s*/g, '');
+                    style = style.replace(/background-position:[^;]+;?\s*/g, '');
+                    style = style.replace(/background-repeat:[^;]+;?\s*/g, '');
+                    cleared = cleared.replace(wrapperStyleMatch[0], `<div style="${style}"`);
+                  }
                 }
-              }}>
-              {m.charAt(0).toUpperCase() + m.slice(1)}
-            </button>
-          ))}
-        </div>
-      </Row>
+              }
+              // Now apply the new color on the cleared html in one update.
+              const targetColor = m === 'none' ? 'none' : (isSvg ? '#e0e7ff' : '#ffffff');
+              const subCssPath = undefined;
+              const next = applyProjection(cleared, isSvg ? { svgFill: targetColor } : { backgroundColor: targetColor }, subCssPath);
+              onUpdateElement(element.id, { html: next });
+            }}>
+            {m.charAt(0).toUpperCase() + m.slice(1)}
+          </button>
+        ))}
+      </div>
 
       {fillMode === 'solid' && !isGradient && (
-        <ColorRow label="Color"
-          value={currentColor}
-          onChange={v => isSvg ? onApply({ svgFill: v }) : onApply({ backgroundColor: v })}
-          allowNone onClear={() => isSvg ? onApply({ svgFill: 'none' }) : onApply({ backgroundColor: 'none' })}
-        />
+        <div className="flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 hover:bg-muted focus-within:ring-1 focus-within:ring-primary/40 min-w-0">
+          <ColorPicker
+            value={currentColor}
+            onChange={v => isSvg ? onApply({ svgFill: v }) : onApply({ backgroundColor: v })}
+          />
+          <input
+            type="text"
+            value={hexNoHash}
+            onChange={e => handleHexCommit(e.target.value)}
+            onBlur={e => handleHexCommit(e.target.value)}
+            className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
+            spellCheck={false}
+          />
+        </div>
       )}
       {fillMode === 'solid' && isGradient && (
-        <Row label="Color">
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-muted/50 rounded text-[11px] text-muted-foreground">
-            <Lock className="w-3 h-3 shrink-0" />
-            <span className="italic">Gradient (edit HTML)</span>
-          </div>
-        </Row>
+        <div className="flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 text-[10px] text-muted-foreground">
+          <Lock className="w-3 h-3 shrink-0" />
+          <span className="italic">Gradient (edit HTML)</span>
+        </div>
       )}
       {fillMode === 'image' && (
         <>
-          <Row label="Image">
-            <div className="flex items-center gap-1 min-w-0">
-              <div className="w-6 h-6 rounded border bg-cover bg-center shrink-0"
-                style={{ backgroundImage: `url('${currentUrl}')` }} />
-              <span className="flex-1 text-[11px] text-muted-foreground truncate">{currentUrl.split('/').pop()}</span>
-              <button onClick={() => applyImageFill('')}
-                className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground shrink-0" title="Remove image">
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          </Row>
-          <Row label="Fit">
-            <select value={fitMode}
-              onChange={e => {
-                const newHtml = applyImageFitMode(element.html, e.target.value as ImageFitMode);
-                onUpdateElement(element.id, { html: newHtml });
-              }}
-              className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
-              <option value="cover">Fill (crop)</option>
-              <option value="contain">Fit (letterbox)</option>
-              <option value="stretch">Stretch</option>
-            </select>
-          </Row>
+          <button
+            onClick={handleUpload}
+            className="flex items-center gap-1.5 h-6 px-2 rounded bg-muted/60 hover:bg-muted w-full min-w-0 text-left"
+            title="Click to replace image"
+          >
+            <div className="w-4 h-4 rounded bg-cover bg-center shrink-0 border border-border"
+              style={{ backgroundImage: `url('${currentUrl}')` }} />
+            <span className="flex-1 text-[10px] text-foreground truncate">Image</span>
+          </button>
+          <select value={fitMode}
+            onChange={e => {
+              const newHtml = applyImageFitMode(element.html, e.target.value as ImageFitMode);
+              onUpdateElement(element.id, { html: newHtml });
+            }}
+            className={SELECT_CLASS}>
+            <option value="cover">Fill (crop)</option>
+            <option value="contain">Fit (letterbox)</option>
+            <option value="stretch">Stretch</option>
+          </select>
         </>
       )}
     </div>
@@ -767,7 +850,7 @@ export function CanvasPropertyPanel({
     return (
       <div className={panelClass} onWheel={e => e.stopPropagation()}>
         {/* Header: "1 selected" / "Canvas" + actions on same row, right-aligned */}
-        <div className="px-3 py-2 border-b border-border flex items-center gap-1 shrink-0">
+        <div className="px-3 py-2 flex items-center gap-1 shrink-0">
           <span className="text-[12px] font-medium text-foreground">
             {frame ? '1 selected' : 'Canvas'}
           </span>
@@ -780,30 +863,34 @@ export function CanvasPropertyPanel({
           <>
             {/* §2 Position */}
             <SectionHeader>Position</SectionHeader>
-            <div className="p-3 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <Row label="X"><NumberInput value={frame.frame_x ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_x: v })} /></Row>
-                <Row label="Y"><NumberInput value={frame.frame_y ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_y: v })} /></Row>
+            <div className="px-3 pb-3">
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                <LabeledNumberInput label="X" value={frame.frame_x ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_x: v })} />
+                <LabeledNumberInput label="Y" value={frame.frame_y ?? 0} onChange={v => onUpdateFrame(frame.page_id, { frame_y: v })} />
+                <div />
               </div>
             </div>
             {/* §3 Dimensions */}
             <SectionHeader>Dimensions</SectionHeader>
-            <div className="p-3 space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <Row label="W"><NumberInput value={frame.width} min={100} onChange={w => onUpdateFrame(frame.page_id, { width: w })} /></Row>
-                <Row label="H"><NumberInput value={frame.height} min={100} onChange={h => onUpdateFrame(frame.page_id, { height: h })} /></Row>
+            <div className="px-3 pb-3">
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                <LabeledNumberInput label="W" value={frame.width} min={100} onChange={w => onUpdateFrame(frame.page_id, { width: w })} />
+                <LabeledNumberInput label="H" value={frame.height} min={100} onChange={h => onUpdateFrame(frame.page_id, { height: h })} />
+                <div />
               </div>
             </div>
             {/* §4 Appearance: Radius (frame has no opacity yet) */}
             <SectionHeader>Appearance</SectionHeader>
-            <div className="p-3 space-y-2">
-              <Row label="Radius">
-                <NumberInput value={frame.border_radius ?? 0} min={0} onChange={v => onUpdateFrame(frame.page_id, { border_radius: v })} />
-              </Row>
+            <div className="px-3 pb-3">
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                <LabeledNumberInput label="⌒" value={frame.border_radius ?? 0} min={0} onChange={v => onUpdateFrame(frame.page_id, { border_radius: v })} />
+                <div />
+                <div />
+              </div>
             </div>
             {/* §5 Fill: Solid / Image / None toggle (mirrors element FillSection) */}
             <SectionHeader>Fill</SectionHeader>
-            <div className="p-3 space-y-2">
+            <div className="px-3 pb-3 space-y-2">
               {(() => {
                 const isNone = !frame.background_image && (!frame.background_color || frame.background_color === 'transparent');
                 const fillMode: 'solid' | 'image' | 'none' = frame.background_image
@@ -816,12 +903,11 @@ export function CanvasPropertyPanel({
                     <div className="flex gap-1">
                       {(['solid', 'image', 'none'] as const).map(m => (
                         <button key={m}
-                          className={cn('flex-1 text-[11px] px-2 py-1 rounded border transition-colors',
-                            fillMode === m ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-muted-foreground')}
+                          className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+                            fillMode === m ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
                           onClick={() => {
                             if (m === fillMode) return;
                             if (m === 'solid') {
-                              // From None or Image: pick a usable color (don't keep 'transparent').
                               const next = (frame.background_color && frame.background_color !== 'transparent') ? frame.background_color : '#ffffff';
                               onUpdateFrame(frame.page_id, { background_color: next, background_image: '' });
                             } else if (m === 'image') {
@@ -850,7 +936,7 @@ export function CanvasPropertyPanel({
         {!frame && onUpdateCanvasBackground && (
           <>
             <SectionHeader>Appearance</SectionHeader>
-            <div className="p-3 space-y-2">
+            <div className="px-3 pb-3 space-y-2">
               <ColorRow label="Background" value={canvasBackgroundColor || '#e8e8e8'}
                 onChange={v => onUpdateCanvasBackground(v)} />
             </div>
@@ -859,7 +945,7 @@ export function CanvasPropertyPanel({
         {designTokens.length > 0 && (
           <>
             <SectionHeader>Design Tokens</SectionHeader>
-            <div className="p-3 space-y-2">
+            <div className="px-3 pb-3 space-y-2">
               {designTokens.map(token => (
                 <ColorRow key={token.name} label={token.name.replace('--', '')}
                   value={token.value} onChange={v => onUpdateToken(token.name, v)} />
@@ -870,20 +956,20 @@ export function CanvasPropertyPanel({
         {onExportPng && (
           <>
             <SectionHeader>Export</SectionHeader>
-            <div className="p-3 flex gap-2">
+            <div className="px-3 pb-3 flex gap-2">
               <button
                 onClick={onExportPng}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[10px] font-medium rounded bg-muted/60 hover:bg-muted text-foreground transition-colors"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3 w-3" />
                 PNG
               </button>
               {canExportSvg && onExportSvg && (
                 <button
                   onClick={onExportSvg}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[10px] font-medium rounded bg-muted/60 hover:bg-muted text-foreground transition-colors"
                 >
-                  <Download className="h-3.5 w-3.5" />
+                  <Download className="h-3 w-3" />
                   SVG
                 </button>
               )}
@@ -918,11 +1004,13 @@ export function CanvasPropertyPanel({
           <>
             <SectionHeader>Position</SectionHeader>
             <div className="p-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
                 <Row label="X"><NumberInput value={projected.subLeft ?? 0} onChange={v => applyChange({ subLeft: v })} /></Row>
                 <Row label="Y"><NumberInput value={projected.subTop ?? 0} onChange={v => applyChange({ subTop: v })} /></Row>
+                <div />
                 <Row label="W"><NumberInput value={projected.subWidth ?? 0} min={0} onChange={v => applyChange({ subWidth: v })} /></Row>
                 <Row label="H"><NumberInput value={projected.subHeight ?? 0} min={0} onChange={v => applyChange({ subHeight: v })} /></Row>
+                <div />
               </div>
             </div>
           </>
@@ -948,7 +1036,7 @@ export function CanvasPropertyPanel({
   return (
     <div className={panelClass} onWheel={e => e.stopPropagation()}>
       {/* Header: "N selected" + actions on same row, right-aligned */}
-      <div className="px-3 py-2 border-b border-border flex items-center gap-1 shrink-0">
+      <div className="px-3 py-2 flex items-center gap-1 shrink-0">
         <span className="text-[12px] font-medium text-foreground">
           {selectedCount} selected
         </span>
@@ -972,49 +1060,79 @@ export function CanvasPropertyPanel({
         </div>
       )}
 
-      {/* §3 Position: align (multi) + X/Y + Z + Rotation */}
+      {/* §3 Position: Alignment (multi) / Position (X,Y) / Rotation as 3 subsections */}
       {((isMulti && onAlign) || (isSingle && !subElementSelection && element) || (isMulti && selectionBounds)) && (
         <>
           <SectionHeader>Position</SectionHeader>
-          <div className="p-3 space-y-2">
+          <div className="px-3 pb-3 space-y-2">
             {isMulti && onAlign && (
-              <div className="flex items-center gap-0.5 flex-wrap">
-                <IconBtn icon={AlignStartHorizontal} onClick={() => onAlign('left')} title="Align left" />
-                <IconBtn icon={AlignHorizontalJustifyCenter} onClick={() => onAlign('center-h')} title="Center horizontal" />
-                <IconBtn icon={AlignEndHorizontal} onClick={() => onAlign('right')} title="Align right" />
-                <IconBtn icon={AlignStartVertical} onClick={() => onAlign('top')} title="Align top" />
-                <IconBtn icon={AlignVerticalJustifyCenter} onClick={() => onAlign('center-v')} title="Center vertical" />
-                <IconBtn icon={AlignEndVertical} onClick={() => onAlign('bottom')} title="Align bottom" />
-                {selectedCount >= 3 && (
-                  <>
-                    <IconBtn icon={AlignHorizontalSpaceAround} onClick={() => onAlign('distribute-h')} title="Distribute horizontally" />
-                    <IconBtn icon={AlignVerticalSpaceAround} onClick={() => onAlign('distribute-v')} title="Distribute vertically" />
-                  </>
-                )}
+              <div>
+                <SubsectionHeader>Alignment</SubsectionHeader>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Horizontal alignment group */}
+                  <div className="flex items-center gap-0.5">
+                    <IconBtn icon={AlignStartHorizontal} onClick={() => onAlign('left')} title="Align left" />
+                    <IconBtn icon={AlignHorizontalJustifyCenter} onClick={() => onAlign('center-h')} title="Center horizontal" />
+                    <IconBtn icon={AlignEndHorizontal} onClick={() => onAlign('right')} title="Align right" />
+                  </div>
+                  {/* Vertical alignment group */}
+                  <div className="flex items-center gap-0.5">
+                    <IconBtn icon={AlignStartVertical} onClick={() => onAlign('top')} title="Align top" />
+                    <IconBtn icon={AlignVerticalJustifyCenter} onClick={() => onAlign('center-v')} title="Center vertical" />
+                    <IconBtn icon={AlignEndVertical} onClick={() => onAlign('bottom')} title="Align bottom" />
+                  </div>
+                  {selectedCount >= 3 && (
+                    <div className="flex items-center gap-0.5">
+                      <IconBtn icon={AlignHorizontalSpaceAround} onClick={() => onAlign('distribute-h')} title="Distribute horizontally" />
+                      <IconBtn icon={AlignVerticalSpaceAround} onClick={() => onAlign('distribute-v')} title="Distribute vertically" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {((isSingle && !subElementSelection && element) || (isMulti && selectionBounds)) && (
+              <div>
+                <SubsectionHeader>Position</SubsectionHeader>
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  {isSingle && element && !subElementSelection ? (
+                    <>
+                      <LabeledNumberInput label="X" value={element.x} onChange={v => onUpdateElement(element.id, { x: v })} />
+                      <LabeledNumberInput label="Y" value={element.y} onChange={v => onUpdateElement(element.id, { y: v })} />
+                      <div />
+                    </>
+                  ) : isMulti && selectionBounds ? (
+                    <>
+                      <LabeledNumberInput label="X" value={selectionBounds.x} onChange={v => {
+                        const dx = v - selectionBounds.x;
+                        if (dx !== 0 && onMoveSelection) onMoveSelection(dx, 0);
+                      }} />
+                      <LabeledNumberInput label="Y" value={selectionBounds.y} onChange={v => {
+                        const dy = v - selectionBounds.y;
+                        if (dy !== 0 && onMoveSelection) onMoveSelection(0, dy);
+                      }} />
+                      <div />
+                    </>
+                  ) : null}
+                </div>
               </div>
             )}
             {isSingle && !subElementSelection && element && (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <Row label="X"><NumberInput value={element.x} onChange={v => onUpdateElement(element.id, { x: v })} /></Row>
-                  <Row label="Y"><NumberInput value={element.y} onChange={v => onUpdateElement(element.id, { y: v })} /></Row>
+              <div>
+                <SubsectionHeader>Rotation</SubsectionHeader>
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  <LabeledNumberInput
+                    label="∠"
+                    value={element.rotation ?? 0}
+                    step={1}
+                    suffix="°"
+                    onChange={v => {
+                      const normalized = ((v % 360) + 360) % 360;
+                      onUpdateElement(element.id, { rotation: normalized });
+                    }}
+                  />
+                  <div />
+                  <div />
                 </div>
-                <Row label="Rotation"><NumberInput value={element.rotation ?? 0} step={1} suffix="°" onChange={v => {
-                  const normalized = ((v % 360) + 360) % 360;
-                  onUpdateElement(element.id, { rotation: normalized });
-                }} /></Row>
-              </>
-            )}
-            {isMulti && selectionBounds && (
-              <div className="grid grid-cols-2 gap-2">
-                <Row label="X"><NumberInput value={selectionBounds.x} onChange={v => {
-                  const dx = v - selectionBounds.x;
-                  if (dx !== 0 && onMoveSelection) onMoveSelection(dx, 0);
-                }} /></Row>
-                <Row label="Y"><NumberInput value={selectionBounds.y} onChange={v => {
-                  const dy = v - selectionBounds.y;
-                  if (dy !== 0 && onMoveSelection) onMoveSelection(0, dy);
-                }} /></Row>
               </div>
             )}
           </div>
@@ -1025,11 +1143,11 @@ export function CanvasPropertyPanel({
       {((isSingle && !subElementSelection && element) || (isMulti && selectionBounds)) && (
         <>
           <SectionHeader>Dimensions</SectionHeader>
-          <div className="p-3 space-y-2">
+          <div className="px-3 pb-3 space-y-2">
             {isSingle && !subElementSelection && element && (
               <>
-                <div className="grid grid-cols-2 gap-2">
-                  <Row label="W"><NumberInput value={element.w} min={20} onChange={v => {
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  <LabeledNumberInput label="W" value={element.w} min={20} onChange={v => {
                     const textMode = getTextResizeMode(element.html);
                     const updates: Partial<CanvasElement> = aspectLocked
                       ? { w: v, h: Math.round(v / aspectRatio.current) }
@@ -1055,18 +1173,17 @@ export function CanvasPropertyPanel({
                       }
                     }
                     onUpdateElement(element.id, updates);
-                  }} /></Row>
-                  <Row label="H"><NumberInput value={element.h} min={20} onChange={v => {
+                  }} />
+                  <LabeledNumberInput label="H" value={element.h} min={20} onChange={v => {
                     if (aspectLocked) {
                       onUpdateElement(element.id, { h: v, w: Math.round(v * aspectRatio.current) });
                     } else {
                       onUpdateElement(element.id, { h: v });
                     }
-                  }} /></Row>
-                </div>
-                <div className="flex items-center gap-2">
+                  }} />
                   <button
-                    className={cn('p-0.5 rounded', aspectLocked ? 'text-primary' : 'text-muted-foreground')}
+                    className={cn('w-6 h-6 flex items-center justify-center rounded transition-colors',
+                      aspectLocked ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent/50')}
                     onClick={() => {
                       if (!aspectLocked && element) aspectRatio.current = element.w / element.h;
                       onUpdateElement(element.id, { aspect_locked: !aspectLocked });
@@ -1075,7 +1192,6 @@ export function CanvasPropertyPanel({
                   >
                     {aspectLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
                   </button>
-                  <span className="text-[10px] text-muted-foreground">{aspectLocked ? 'Aspect locked' : 'Aspect unlocked'}</span>
                 </div>
                 {/* Text Resize mode: only for text elements */}
                 {(() => {
@@ -1087,15 +1203,16 @@ export function CanvasPropertyPanel({
                     { key: 'fixed', icon: Square, title: 'Fixed size' },
                   ];
                   return (
-                    <Row label="Resize">
+                    <div>
+                      <SubsectionHeader>Resize mode</SubsectionHeader>
                       <div className="flex gap-1">
                         {modes.map(m => {
                           const Icon = m.icon;
                           const active = mode === m.key;
                           return (
                             <button key={m.key} title={m.title}
-                              className={cn('flex-1 h-7 flex items-center justify-center rounded border transition-colors',
-                                active ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:border-muted-foreground')}
+                              className={cn('flex-1 h-6 flex items-center justify-center rounded transition-colors',
+                                active ? 'bg-primary text-primary-foreground' : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
                               onClick={() => {
                                 const newHtml = setTextResizeMode(element.html, m.key);
                                 const updates: Partial<CanvasElement> = { html: newHtml };
@@ -1117,35 +1234,27 @@ export function CanvasPropertyPanel({
                                 }
                                 onUpdateElement(element.id, updates);
                               }}>
-                              <Icon className="w-3.5 h-3.5" />
+                              <Icon className="w-3 h-3" />
                             </button>
                           );
                         })}
                       </div>
-                    </Row>
-                  );
-                })()}
-                {/* SVG: polygon sides / star points */}
-                {(() => {
-                  const ps = getParametricShape(element.html);
-                  if (!ps) return null;
-                  const label = ps.kind === 'polygon' ? 'Sides' : 'Points';
-                  return (
-                    <Row label={label}>
-                      <NumberInput value={ps.count} min={3} max={60} step={1} onChange={v => {
-                        const clamped = Math.max(3, Math.min(60, Math.round(v)));
-                        const newHtml = updateParametricShape(element.html, ps.kind, clamped, element.w, element.h);
-                        onUpdateElement(element.id, { html: newHtml });
-                      }} />
-                    </Row>
+                    </div>
                   );
                 })()}
               </>
             )}
             {isMulti && selectionBounds && (
-              <div className="grid grid-cols-2 gap-2">
-                <Row label="W"><span className="text-[11px] text-muted-foreground">{Math.round(selectionBounds.w)}</span></Row>
-                <Row label="H"><span className="text-[11px] text-muted-foreground">{Math.round(selectionBounds.h)}</span></Row>
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                <div className="flex items-center gap-1.5 px-2 h-6 rounded bg-muted/60">
+                  <span className="text-[10px] text-muted-foreground select-none">W</span>
+                  <span className="text-[10px] text-foreground font-mono tabular-nums">{Math.round(selectionBounds.w)}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 h-6 rounded bg-muted/60">
+                  <span className="text-[10px] text-muted-foreground select-none">H</span>
+                  <span className="text-[10px] text-foreground font-mono tabular-nums">{Math.round(selectionBounds.h)}</span>
+                </div>
+                <div />
               </div>
             )}
           </div>
@@ -1153,91 +1262,127 @@ export function CanvasPropertyPanel({
       )}
 
       {/* §5 Appearance: opacity + corner radius */}
-      {(isSingle || isMulti) && (
-        <>
-          <SectionHeader>Appearance</SectionHeader>
-          <div className="p-3 space-y-2">
-            <Row label="Opacity">
-              <NumberInput
-                value={isSingle ? (projected?.opacity ?? 1) : (aggregated.opacity === 'mixed' ? null : (aggregated.opacity ?? null))}
-                min={0} max={1} step={0.1}
-                onChange={v => {
-                  const clamped = Math.min(1, Math.max(0, v));
-                  isSingle ? applyChange({ opacity: clamped }) : applyToAll({ opacity: clamped });
-                }}
-                placeholder="Mixed"
-              />
-            </Row>
-            {/* Radius: SVG single (with mixed handling) */}
-            {isSingle && projected?.isSvgShape && (
-              <Row label="Radius">
-                {projected.borderRadius === -1 ? (
-                  <div className="flex items-center gap-1">
-                    <span className="text-[11px] text-muted-foreground italic">mixed</span>
-                    <input type="number" min={0} step={1} placeholder="set all"
-                      className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background"
-                      onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) applyChange({ borderRadius: v }); }} />
+      {(isSingle || isMulti) && (() => {
+        const opacityVal = isSingle ? (projected?.opacity ?? 1) : (aggregated.opacity === 'mixed' ? null : (aggregated.opacity ?? null));
+        // Display in 0-100 percent. Clamp on commit.
+        const opacityPct = opacityVal == null ? null : Math.round(opacityVal * 100);
+        // Detect if a Radius input should render
+        const hasRadius =
+          (isSingle && projected?.isSvgShape) ||
+          (isSingle && projected && !projected.isSvgShape && projected.borderRadius !== undefined) ||
+          isMulti;
+        const radiusValue = !hasRadius ? null
+          : isSingle && projected?.isSvgShape && projected.borderRadius === -1 ? null
+          : isSingle && projected ? (projected.borderRadius ?? 0)
+          : isMulti && aggregated.borderRadius === 'mixed' ? null
+          : (aggregated.borderRadius ?? null);
+        const radiusPlaceholder =
+          (isSingle && projected?.isSvgShape && projected.borderRadius === -1) ||
+          (isMulti && aggregated.borderRadius === 'mixed')
+            ? 'Mixed' : undefined;
+        return (
+          <>
+            <SectionHeader>Appearance</SectionHeader>
+            <div className="px-3 pb-3 space-y-2">
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-end">
+                <div>
+                  <SubsectionHeader>Opacity</SubsectionHeader>
+                  <LabeledNumberInput
+                    label={<Eclipse className="w-3 h-3" />}
+                    value={opacityPct}
+                    min={0} max={100} step={1}
+                    suffix="%"
+                    onChange={v => {
+                      const clamped = Math.min(100, Math.max(0, Math.round(v)));
+                      const asFraction = clamped / 100;
+                      isSingle ? applyChange({ opacity: asFraction }) : applyToAll({ opacity: asFraction });
+                    }}
+                    placeholder="Mixed"
+                  />
+                </div>
+                {hasRadius ? (
+                  <div>
+                    <SubsectionHeader>Corner radius</SubsectionHeader>
+                    <LabeledNumberInput
+                      label={<SquareRoundCorner className="w-3 h-3" />}
+                      value={radiusValue}
+                      min={0}
+                      onChange={v => {
+                        const clamped = Math.max(0, v);
+                        isSingle ? applyChange({ borderRadius: clamped }) : applyToAll({ borderRadius: clamped });
+                      }}
+                      placeholder={radiusPlaceholder}
+                    />
                   </div>
-                ) : (
-                  <NumberInput value={projected.borderRadius ?? 0} min={0} onChange={v => applyChange({ borderRadius: v })} />
-                )}
-              </Row>
-            )}
-            {/* Radius: non-SVG single (HTML block / image / text — when borderRadius defined) */}
-            {isSingle && projected && !projected.isSvgShape && projected.borderRadius !== undefined && (
-              <Row label="Radius"><NumberInput value={projected.borderRadius} min={0} onChange={v => applyChange({ borderRadius: v })} /></Row>
-            )}
-            {/* Radius: multi */}
-            {isMulti && (
-              <Row label="Radius">
-                <NumberInput value={aggregated.borderRadius === 'mixed' ? null : (aggregated.borderRadius ?? null)} min={0}
-                  onChange={v => applyToAll({ borderRadius: v })} placeholder="Mixed" />
-              </Row>
-            )}
-          </div>
-        </>
-      )}
+                ) : <div />}
+                <div />
+              </div>
+              {/* Polygon sides / star points (single SVG only) */}
+              {isSingle && element && (() => {
+                const ps = getParametricShape(element.html);
+                if (!ps) return null;
+                return (
+                  <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-end">
+                    <div>
+                      <SubsectionHeader>Sides</SubsectionHeader>
+                      <LabeledNumberInput
+                        label={<Loader className="w-3 h-3" />}
+                        value={ps.count} min={3} max={60} step={1}
+                        onChange={v => {
+                          const clamped = Math.max(3, Math.min(60, Math.round(v)));
+                          const newHtml = updateParametricShape(element.html, ps.kind, clamped, element.w, element.h);
+                          onUpdateElement(element.id, { html: newHtml });
+                        }}
+                      />
+                    </div>
+                    <div />
+                    <div />
+                  </div>
+                );
+              })()}
+            </div>
+          </>
+        );
+      })()}
 
       {/* §6 Text properties (non-svg single with font, or multi with font support) */}
       {((isSingle && projected && !projected.isSvgShape && projected.fontSize !== undefined) || (isMulti && support.font)) && (
         <>
           <SectionHeader>Text</SectionHeader>
-          <div className="p-3 space-y-2">
+          <div className="px-3 pb-3 space-y-2">
             {isSingle && projected && !projected.isSvgShape && (
               <>
                 <ColorRow label="Color" value={projected.color || ''}
                   onChange={v => applyChange({ color: v })} />
-                {projected.fontSize !== undefined && (
-                  <Row label="Size"><NumberInput value={projected.fontSize} min={1} onChange={v => applyChange({ fontSize: v })} /></Row>
-                )}
                 {projected.fontFamily !== undefined && (
-                  <Row label="Font">
-                    <select
-                      value={projected.fontFamily ?? ''}
-                      onChange={e => {
-                        const family = e.target.value;
-                        if (CANVAS_FONTS.google.includes(family)) loadGoogleFont(family);
-                        applyChange({ fontFamily: family });
-                      }}
-                      className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
-                      <optgroup label="System">
-                        {CANVAS_FONTS.system.map(f => (
-                          <option key={f} value={f}>{f.split(',')[0]}</option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Google Fonts">
-                        {CANVAS_FONTS.google.map(f => (
-                          <option key={f} value={f}>{f}</option>
-                        ))}
-                      </optgroup>
-                    </select>
-                  </Row>
+                  <select
+                    value={projected.fontFamily ?? ''}
+                    onChange={e => {
+                      const family = e.target.value;
+                      if (CANVAS_FONTS.google.includes(family)) loadGoogleFont(family);
+                      applyChange({ fontFamily: family });
+                    }}
+                    className="w-full text-[10px] px-2 h-6 rounded bg-muted/60 hover:bg-muted border-0 focus:outline-none focus:ring-1 focus:ring-primary/40">
+                    <optgroup label="System">
+                      {CANVAS_FONTS.system.map(f => (
+                        <option key={f} value={f}>{f.split(',')[0]}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Google Fonts">
+                      {CANVAS_FONTS.google.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </optgroup>
+                  </select>
                 )}
-                {projected.fontWeight !== undefined && (
-                  <Row label="Weight">
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  {projected.fontSize !== undefined && (
+                    <LabeledNumberInput label="Aa" value={projected.fontSize} min={1} onChange={v => applyChange({ fontSize: v })} />
+                  )}
+                  {projected.fontWeight !== undefined && (
                     <select value={projected.fontWeight || '400'}
                       onChange={e => applyChange({ fontWeight: e.target.value })}
-                      className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                      className="text-[10px] px-2 h-6 rounded bg-muted/60 hover:bg-muted border-0 focus:outline-none focus:ring-1 focus:ring-primary/40">
                       <option value="300">Light</option>
                       <option value="400">Regular</option>
                       <option value="500">Medium</option>
@@ -1245,60 +1390,57 @@ export function CanvasPropertyPanel({
                       <option value="700">Bold</option>
                       <option value="900">Black</option>
                     </select>
-                  </Row>
-                )}
+                  )}
+                  <div />
+                </div>
                 {projected.fontSize !== undefined && (
                   <>
-                    <Row label="Align">
-                      <div className="flex gap-0.5">
-                        {(['left', 'center', 'right', 'justify'] as const).map(a => (
-                          <button key={a}
-                            className={cn('flex-1 text-[10px] px-1 py-0.5 rounded border transition-colors',
-                              projected.textAlign === a
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'border-border hover:border-muted-foreground')}
-                            onClick={() => applyChange({ textAlign: a })}>
-                            {a.charAt(0).toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-                    </Row>
-                    <Row label="V-Align">
-                      <div className="flex gap-0.5">
-                        {(['top', 'middle', 'bottom'] as const).map(a => (
-                          <button key={a}
-                            className={cn('flex-1 text-[10px] px-1 py-0.5 rounded border transition-colors',
-                              (projected.verticalAlign ?? 'top') === a
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'border-border hover:border-muted-foreground')}
-                            onClick={() => applyChange({ verticalAlign: a })}>
-                            {a.charAt(0).toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-                    </Row>
-                    <Row label="Line H">
-                      <NumberInput value={projected.lineHeight ?? 1.4} min={0.5} max={10} step={0.1}
+                    <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                      <LabeledNumberInput label="↕" value={projected.lineHeight ?? 1.4} min={0.5} max={10} step={0.1}
                         onChange={v => applyChange({ lineHeight: v })} />
-                    </Row>
-                    <Row label="Spacing">
-                      <NumberInput value={projected.letterSpacing ?? 0} step={0.5}
+                      <LabeledNumberInput label="↔" value={projected.letterSpacing ?? 0} step={0.5}
                         onChange={v => applyChange({ letterSpacing: v })} suffix="px" />
-                    </Row>
-                    <Row label="Decoration">
-                      <div className="flex gap-0.5">
-                        {(['none', 'underline', 'line-through'] as const).map(d => (
-                          <button key={d}
-                            className={cn('flex-1 text-[10px] px-1 py-0.5 rounded border transition-colors',
-                              (projected.textDecoration ?? 'none') === d
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'border-border hover:border-muted-foreground')}
-                            onClick={() => applyChange({ textDecoration: d })}>
-                            {d === 'none' ? 'N' : d === 'underline' ? 'U' : 'S'}
-                          </button>
-                        ))}
-                      </div>
-                    </Row>
+                      <div />
+                    </div>
+                    <div className="flex gap-1">
+                      {(['left', 'center', 'right', 'justify'] as const).map(a => (
+                        <button key={a}
+                          className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+                            projected.textAlign === a
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+                          onClick={() => applyChange({ textAlign: a })}
+                          title={`Align ${a}`}>
+                          {a === 'left' ? 'L' : a === 'center' ? 'C' : a === 'right' ? 'R' : 'J'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1">
+                      {(['top', 'middle', 'bottom'] as const).map(a => (
+                        <button key={a}
+                          className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+                            (projected.verticalAlign ?? 'top') === a
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+                          onClick={() => applyChange({ verticalAlign: a })}
+                          title={`V-align ${a}`}>
+                          {a === 'top' ? 'T' : a === 'middle' ? 'M' : 'B'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-1">
+                      {(['none', 'underline', 'line-through'] as const).map(d => (
+                        <button key={d}
+                          className={cn('flex-1 h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+                            (projected.textDecoration ?? 'none') === d
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground')}
+                          onClick={() => applyChange({ textDecoration: d })}
+                          title={d}>
+                          {d === 'none' ? 'N' : d === 'underline' ? 'U' : 'S'}
+                        </button>
+                      ))}
+                    </div>
                   </>
                 )}
               </>
@@ -1308,10 +1450,13 @@ export function CanvasPropertyPanel({
                 <ColorRow label="Color"
                   value={aggregated.color === 'mixed' ? '' : (aggregated.color || '')}
                   onChange={v => applyToAll({ color: v })} />
-                <Row label="Size">
-                  <NumberInput value={aggregated.fontSize === 'mixed' ? null : (aggregated.fontSize ?? null)} min={1}
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  <LabeledNumberInput label="Aa"
+                    value={aggregated.fontSize === 'mixed' ? null : (aggregated.fontSize ?? null)} min={1}
                     onChange={v => applyToAll({ fontSize: v })} placeholder="Mixed" />
-                </Row>
+                  <div />
+                  <div />
+                </div>
               </>
             )}
           </div>
@@ -1322,7 +1467,7 @@ export function CanvasPropertyPanel({
       {((isSingle && projected && element) || (isMulti && support.fill)) && (
         <>
           <SectionHeader>Fill</SectionHeader>
-          <div className="p-3 space-y-2">
+          <div className="px-3 pb-3 space-y-2">
             {isSingle && projected && element && (
               <FillSection element={element} projected={projected} onApply={applyChange} onUpdateElement={onUpdateElement} />
             )}
@@ -1345,73 +1490,68 @@ export function CanvasPropertyPanel({
       {((isSingle && projected?.isSvgShape) || (isSingle && isHtmlBlock && projected) || (isMulti && support.stroke)) && (
         <>
           <SectionHeader>Stroke</SectionHeader>
-          <div className="p-3 space-y-2">
+          <div className="px-3 pb-3 space-y-2">
             {isSingle && projected?.isSvgShape && (
               <>
                 <ColorRow label="Color" value={projected.svgStroke || ''}
                   onChange={v => applyChange({ svgStroke: v })}
                   allowNone onClear={() => applyChange({ svgStroke: 'none' })} />
-                <Row label="Width">
-                  <NumberInput value={projected.svgStrokeWidth ?? 2} min={0} step={0.5}
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  <LabeledNumberInput label="W" value={projected.svgStrokeWidth ?? 2} min={0} step={0.5}
                     onChange={v => applyChange({ svgStrokeWidth: v })} />
-                </Row>
-                <Row label="Dash">
                   <select value={projected.svgStrokeDasharray || ''}
                     onChange={e => applyChange({ svgStrokeDasharray: e.target.value })}
-                    className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                    className={SELECT_CLASS}>
                     <option value="">Solid</option>
                     <option value="8 4">Dashed</option>
                     <option value="2 2">Dotted</option>
                     <option value="12 4 4 4">Dash-dot</option>
                   </select>
-                </Row>
-                <Row label="Align">
-                  <select value={projected.svgStrokeAlignment || 'center'}
-                    onChange={e => applyChange({ svgStrokeAlignment: e.target.value as 'center' | 'inside' | 'outside' })}
-                    className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
-                    <option value="center">Center</option>
-                    <option value="inside">Inside</option>
-                    <option value="outside">Outside</option>
-                  </select>
-                </Row>
+                  <div />
+                </div>
+                <select value={projected.svgStrokeAlignment || 'center'}
+                  onChange={e => applyChange({ svgStrokeAlignment: e.target.value as 'center' | 'inside' | 'outside' })}
+                  className={SELECT_CLASS}>
+                  <option value="center">Center</option>
+                  <option value="inside">Inside</option>
+                  <option value="outside">Outside</option>
+                </select>
                 {projected.isOpenPath && (
                   <>
-                    <Row label="Cap">
-                      <select value={projected.svgStrokeLinecap || 'butt'}
-                        onChange={e => {
-                          const cap = e.target.value as 'butt' | 'round' | 'square';
-                          onUpdateElement(element!.id, { html: applyStrokeLinecap(element!.html, cap) });
-                        }}
-                        className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
-                        <option value="butt">Butt</option>
-                        <option value="round">Round</option>
-                        <option value="square">Square</option>
-                      </select>
-                    </Row>
-                    <Row label="Start">
+                    <SubsectionHeader>Endpoints</SubsectionHeader>
+                    <select value={projected.svgStrokeLinecap || 'butt'}
+                      onChange={e => {
+                        const cap = e.target.value as 'butt' | 'round' | 'square';
+                        onUpdateElement(element!.id, { html: applyStrokeLinecap(element!.html, cap) });
+                      }}
+                      className={SELECT_CLASS}>
+                      <option value="butt">Cap: Butt</option>
+                      <option value="round">Cap: Round</option>
+                      <option value="square">Cap: Square</option>
+                    </select>
+                    <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
                       <select value={projected.svgMarkerStart || 'none'}
                         onChange={e => onUpdateElement(element!.id, { html: applySvgMarker(element!.html, 'start', e.target.value as MarkerType) })}
-                        className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
-                        <option value="none">None</option>
-                        <option value="arrow">Arrow</option>
-                        <option value="triangle">Triangle</option>
-                        <option value="triangle-reversed">Triangle Rev.</option>
-                        <option value="circle">Circle</option>
-                        <option value="diamond">Diamond</option>
+                        className={SELECT_CLASS}>
+                        <option value="none">Start: —</option>
+                        <option value="arrow">Start: Arrow</option>
+                        <option value="triangle">Start: Triangle</option>
+                        <option value="triangle-reversed">Start: Triangle Rev.</option>
+                        <option value="circle">Start: Circle</option>
+                        <option value="diamond">Start: Diamond</option>
                       </select>
-                    </Row>
-                    <Row label="End">
                       <select value={projected.svgMarkerEnd || 'none'}
                         onChange={e => onUpdateElement(element!.id, { html: applySvgMarker(element!.html, 'end', e.target.value as MarkerType) })}
-                        className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
-                        <option value="none">None</option>
-                        <option value="arrow">Arrow</option>
-                        <option value="triangle">Triangle</option>
-                        <option value="triangle-reversed">Triangle Rev.</option>
-                        <option value="circle">Circle</option>
-                        <option value="diamond">Diamond</option>
+                        className={SELECT_CLASS}>
+                        <option value="none">End: —</option>
+                        <option value="arrow">End: Arrow</option>
+                        <option value="triangle">End: Triangle</option>
+                        <option value="triangle-reversed">End: Triangle Rev.</option>
+                        <option value="circle">End: Circle</option>
+                        <option value="diamond">End: Diamond</option>
                       </select>
-                    </Row>
+                      <div />
+                    </div>
                   </>
                 )}
               </>
@@ -1421,19 +1561,18 @@ export function CanvasPropertyPanel({
                 <ColorRow label="Color" value={projected.borderColor || ''}
                   onChange={v => applyChange({ borderColor: v })}
                   allowNone onClear={() => applyChange({ borderColor: 'none', borderWidth: 0 })} />
-                <Row label="Width">
-                  <NumberInput value={projected.borderWidth ?? 0} min={0} step={0.5}
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  <LabeledNumberInput label="W" value={projected.borderWidth ?? 0} min={0} step={0.5}
                     onChange={v => applyChange({ borderWidth: v })} />
-                </Row>
-                <Row label="Style">
                   <select value={projected.borderStyle || 'solid'}
                     onChange={e => applyChange({ borderStyle: e.target.value as 'solid' | 'dashed' | 'dotted' })}
-                    className="w-full text-[11px] px-1.5 py-1 rounded border bg-background">
+                    className={SELECT_CLASS}>
                     <option value="solid">Solid</option>
                     <option value="dashed">Dashed</option>
                     <option value="dotted">Dotted</option>
                   </select>
-                </Row>
+                  <div />
+                </div>
               </>
             )}
             {isMulti && support.stroke && (
@@ -1442,10 +1581,13 @@ export function CanvasPropertyPanel({
                   value={aggregated.svgStroke === 'mixed' ? '' : (aggregated.svgStroke || '')}
                   onChange={v => applyToAll({ svgStroke: v })}
                   allowNone onClear={() => applyToAll({ svgStroke: 'none' })} />
-                <Row label="Width">
-                  <NumberInput value={aggregated.svgStrokeWidth === 'mixed' ? null : (aggregated.svgStrokeWidth ?? null)} min={0} step={0.5}
+                <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                  <LabeledNumberInput label="W"
+                    value={aggregated.svgStrokeWidth === 'mixed' ? null : (aggregated.svgStrokeWidth ?? null)} min={0} step={0.5}
                     onChange={v => applyToAll({ svgStrokeWidth: v })} placeholder="Mixed" />
-                </Row>
+                  <div />
+                  <div />
+                </div>
               </>
             )}
           </div>
@@ -1456,12 +1598,12 @@ export function CanvasPropertyPanel({
       {((isSingle && element && projected) || (isMulti && support.shadow)) && (
         <>
           <SectionHeader>Shadow</SectionHeader>
-          <div className="p-3">
+          <div className="px-3 pb-3">
             {isSingle && element && projected && (
               <ShadowSection element={element} projected={projected} onUpdateElement={onUpdateElement} />
             )}
             {isMulti && support.shadow && (
-              <span className="text-[11px] text-muted-foreground italic">Shadow: {aggregated.boxShadow === 'mixed' ? 'Mixed' : (aggregated.boxShadow ? 'Active' : 'None')}</span>
+              <span className="text-[10px] text-muted-foreground italic">Shadow: {aggregated.boxShadow === 'mixed' ? 'Mixed' : (aggregated.boxShadow ? 'Active' : 'None')}</span>
             )}
           </div>
         </>
@@ -1472,11 +1614,11 @@ export function CanvasPropertyPanel({
         <>
           <SectionHeader collapsed={!showCode} onToggle={() => setShowCode(v => !v)}>HTML Code</SectionHeader>
           {showCode && element && (
-            <div className="p-3">
+            <div className="px-3 pb-3">
               <textarea
                 value={element.html}
                 onChange={e => onUpdateElement(element.id, { html: e.target.value })}
-                className="w-full h-40 text-[11px] px-2 py-1.5 rounded border bg-background font-mono resize-y"
+                className="w-full h-40 text-[10px] px-2 py-1.5 rounded bg-muted/60 border-0 focus:outline-none focus:ring-1 focus:ring-primary/40 font-mono resize-y"
                 spellCheck={false}
               />
             </div>
@@ -1488,20 +1630,20 @@ export function CanvasPropertyPanel({
       {onExportPng && (
         <>
           <SectionHeader>Export</SectionHeader>
-          <div className="p-3 flex gap-2">
+          <div className="px-3 pb-3 flex gap-2">
             <button
               onClick={onExportPng}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[10px] font-medium rounded bg-muted/60 hover:bg-muted text-foreground transition-colors"
             >
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3 w-3" />
               PNG
             </button>
             {canExportSvg && onExportSvg && (
               <button
                 onClick={onExportSvg}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium rounded border bg-background hover:bg-accent/50 transition-colors"
+                className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[10px] font-medium rounded bg-muted/60 hover:bg-muted text-foreground transition-colors"
               >
-                <Download className="h-3.5 w-3.5" />
+                <Download className="h-3 w-3" />
                 SVG
               </button>
             )}

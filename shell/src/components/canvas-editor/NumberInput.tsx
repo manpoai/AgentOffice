@@ -12,10 +12,12 @@ export interface NumberInputProps {
   suffix?: string;
   placeholder?: string;
   className?: string;
+  /** Override the inner <input>'s className. Defaults to bordered light input. */
+  inputClassName?: string;
 }
 
 export function NumberInput({
-  value, onChange, min, max, step = 1, suffix, placeholder, className,
+  value, onChange, min, max, step = 1, suffix, placeholder, className, inputClassName,
 }: NumberInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const clamp = useCallback((v: number) => {
@@ -43,7 +45,7 @@ export function NumberInput({
           if (e.key === 'ArrowUp') { e.preventDefault(); onChange(clamp(value + step)); }
           if (e.key === 'ArrowDown') { e.preventDefault(); onChange(clamp(value - step)); }
         }}
-        className="w-full text-[11px] px-1.5 py-1 rounded border bg-background font-mono tabular-nums"
+        className={inputClassName ?? "w-full text-[11px] px-1.5 py-1 rounded border bg-background font-mono tabular-nums"}
       />
       {suffix && <span className="text-[10px] text-muted-foreground ml-0.5 shrink-0">{suffix}</span>}
     </div>
