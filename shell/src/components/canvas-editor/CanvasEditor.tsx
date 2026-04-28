@@ -2142,11 +2142,12 @@ export function CanvasEditor({
         e.preventDefault();
         textItem.getAsString(s => {
           const trimmed = s.trim();
-          if (trimmed.startsWith('<svg') || /<svg[\s>]/.test(trimmed)) {
+          // AOSE JSON first — its `html` field can contain "<svg ...>" embedded,
+          // so don't sniff for <svg substring before we've ruled JSON out.
+          if (tryPasteAoseJson(trimmed)) return;
+          if (trimmed.startsWith('<svg') || trimmed.startsWith('<?xml')) {
             const parsed = parseSvgFileContent(trimmed);
             insertSvgElement(parsed, 'Pasted SVG');
-          } else {
-            tryPasteAoseJson(trimmed);
           }
         });
         return;
