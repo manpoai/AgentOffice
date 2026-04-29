@@ -74,6 +74,20 @@
       "mindmapTool": "思维导图工具",
       "toggleCollapse": "折叠/展开"
     },
+    "canvas": {
+      "group": "组合",
+      "ungroup": "取消组合",
+      "selectTool": "选择工具",
+      "rectTool": "矩形工具",
+      "circleTool": "圆形工具",
+      "textTool": "文字工具",
+      "frameTool": "画框工具",
+      "lineTool": "线条工具"
+    },
+    "video": {
+      "playPause": "播放 / 暂停",
+      "addMarker": "添加关键帧标记"
+    },
     "table": {
       "editCell": "编辑单元格",
       "exitEdit": "退出编辑",
@@ -370,6 +384,7 @@
       "node": "节点",
       "edge": "连线",
       "slide": "幻灯片",
+      "page": "页面",
       "element": "元素",
       "row": "行"
     }

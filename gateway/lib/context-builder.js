@@ -121,15 +121,35 @@ function buildAnchor(db, targetType, targetId, anchorType, anchorId, anchorMeta,
       };
     }
 
+    case 'page': {
+      const pageIdx = Number(anchorId) + 1;
+      return {
+        type: 'page',
+        id: anchorId,
+        label: t('commentContext.anchors.page', { index: pageIdx }),
+        preview: anchorMeta?.page_title || t('commentContext.previews.page', { index: pageIdx }),
+        meta: {
+          page_index: Number(anchorId),
+          page_title: anchorMeta?.page_title || null,
+        },
+      };
+    }
+
     case 'element':
       return {
         type: 'element',
         id: anchorId,
-        label: anchorMeta?.element_type || t('commentContext.anchors.element'),
-        preview: anchorMeta?.preview || anchorMeta?.element_type || t('commentContext.previews.element_fallback'),
+        label: anchorMeta?.element_name || anchorMeta?.element_type || t('commentContext.anchors.element'),
+        preview: anchorMeta?.preview || anchorMeta?.element_name || anchorMeta?.element_type || t('commentContext.previews.element_fallback'),
         meta: {
           slide_index: anchorMeta?.slide_index != null ? anchorMeta.slide_index : null,
           element_type: anchorMeta?.element_type || null,
+          element_name: anchorMeta?.element_name || null,
+          page_index: anchorMeta?.page_index != null ? anchorMeta.page_index : null,
+          page_title: anchorMeta?.page_title || null,
+          scene_id: anchorMeta?.scene_id || null,
+          start: anchorMeta?.start != null ? anchorMeta.start : null,
+          duration: anchorMeta?.duration != null ? anchorMeta.duration : null,
         },
       };
 

@@ -74,6 +74,20 @@
       "mindmapTool": "マインドマップツール",
       "toggleCollapse": "折りたたみの切り替え"
     },
+    "canvas": {
+      "group": "グループ化",
+      "ungroup": "グループ解除",
+      "selectTool": "選択ツール",
+      "rectTool": "矩形ツール",
+      "circleTool": "円ツール",
+      "textTool": "テキストツール",
+      "frameTool": "フレームツール",
+      "lineTool": "線ツール"
+    },
+    "video": {
+      "playPause": "再生 / 一時停止",
+      "addMarker": "キーフレームマーカーを追加"
+    },
     "table": {
       "editCell": "セルを編集",
       "exitEdit": "編集を終了",
@@ -370,6 +384,7 @@
       "node": "ノード",
       "edge": "接続",
       "slide": "スライド",
+      "page": "ページ",
       "element": "要素",
       "row": "行"
     }

@@ -74,6 +74,20 @@
       "mindmapTool": "Mindmap tool",
       "toggleCollapse": "Toggle collapse"
     },
+    "canvas": {
+      "group": "Group",
+      "ungroup": "Ungroup",
+      "selectTool": "Select tool",
+      "rectTool": "Rectangle tool",
+      "circleTool": "Circle tool",
+      "textTool": "Text tool",
+      "frameTool": "Frame tool",
+      "lineTool": "Line tool"
+    },
+    "video": {
+      "playPause": "Play / Pause",
+      "addMarker": "Add keyframe marker"
+    },
     "table": {
       "editCell": "Edit cell",
       "exitEdit": "Exit editing",
@@ -369,6 +383,7 @@
       "node": "Node",
       "edge": "Connection",
       "slide": "Slide",
+      "page": "Page",
       "element": "Element",
       "row": "Row"
     }

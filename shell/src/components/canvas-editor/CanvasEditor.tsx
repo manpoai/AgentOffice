@@ -20,7 +20,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
-import { useT } from '@/lib/i18n';
+import { useT, getT } from '@/lib/i18n';
+import { useKeyboardScope } from '@/lib/keyboard/useKeyboardScope';
+import type { ShortcutDef } from '@/lib/keyboard/types';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
@@ -60,6 +62,69 @@ import { canvasFrameActions, type CanvasFrameCtx } from '@/actions/canvas-frame.
 import { canvasSurfaces } from '@/surfaces/canvas.surfaces';
 import { CanvasFrameExportView, ElementExportView } from './CanvasFrameExportView';
 import { exportFramePng, exportFrameSvg, canExportFrameAsSvg, canExportElementAsSvg } from './exportUtils';
+
+const CANVAS_SHORTCUTS: ShortcutDef[] = [
+  {
+    id: 'canvas-group',
+    key: 'g',
+    modifiers: { meta: true },
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:group')),
+    label: getT()('shortcuts.canvas.group'),
+    category: 'Canvas',
+    priority: 5,
+  },
+  {
+    id: 'canvas-ungroup',
+    key: 'g',
+    modifiers: { meta: true, shift: true },
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:ungroup')),
+    label: getT()('shortcuts.canvas.ungroup'),
+    category: 'Canvas',
+    priority: 6,
+  },
+  {
+    id: 'canvas-select-tool',
+    key: 'v',
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:tool', { detail: 'select' })),
+    label: getT()('shortcuts.canvas.selectTool'),
+    category: 'Canvas',
+  },
+  {
+    id: 'canvas-rect-tool',
+    key: 'r',
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:tool', { detail: 'rect' })),
+    label: getT()('shortcuts.canvas.rectTool'),
+    category: 'Canvas',
+  },
+  {
+    id: 'canvas-circle-tool',
+    key: 'o',
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:tool', { detail: 'circle' })),
+    label: getT()('shortcuts.canvas.circleTool'),
+    category: 'Canvas',
+  },
+  {
+    id: 'canvas-text-tool',
+    key: 't',
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:tool', { detail: 'text' })),
+    label: getT()('shortcuts.canvas.textTool'),
+    category: 'Canvas',
+  },
+  {
+    id: 'canvas-frame-tool',
+    key: 'a',
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:tool', { detail: 'frame' })),
+    label: getT()('shortcuts.canvas.frameTool'),
+    category: 'Canvas',
+  },
+  {
+    id: 'canvas-line-tool',
+    key: 'l',
+    handler: () => window.dispatchEvent(new CustomEvent('canvas:tool', { detail: 'line' })),
+    label: getT()('shortcuts.canvas.lineTool'),
+    category: 'Canvas',
+  },
+];
 
 type PendingInsert = { type: 'text' } | { type: 'shape'; shapeType: ShapeType } | { type: 'frame' } | { type: 'pen'; continueElementId?: string; initialPoints?: PathPoint[]; appendEnd?: 'start' | 'end' } | { type: 'line-draw' };
 
@@ -665,6 +730,7 @@ export function CanvasEditor({
   isPinned, onTogglePin,
 }: CanvasEditorProps) {
   const { t } = useT();
+  useKeyboardScope('canvas', CANVAS_SHORTCUTS);
   const queryClient = useQueryClient();
   const contentId = `canvas:${canvasId}`;
   const containerRef = useRef<HTMLDivElement>(null);

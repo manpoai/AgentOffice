@@ -74,6 +74,20 @@
       "mindmapTool": "마인드맵 도구",
       "toggleCollapse": "접기/펼치기"
     },
+    "canvas": {
+      "group": "그룹화",
+      "ungroup": "그룹 해제",
+      "selectTool": "선택 도구",
+      "rectTool": "사각형 도구",
+      "circleTool": "원 도구",
+      "textTool": "텍스트 도구",
+      "frameTool": "프레임 도구",
+      "lineTool": "선 도구"
+    },
+    "video": {
+      "playPause": "재생 / 일시정지",
+      "addMarker": "키프레임 마커 추가"
+    },
     "table": {
       "editCell": "셀 편집",
       "exitEdit": "편집 종료",
@@ -370,6 +384,7 @@
       "node": "노드",
       "edge": "연결",
       "slide": "슬라이드",
+      "page": "페이지",
       "element": "요소",
       "row": "행"
     }

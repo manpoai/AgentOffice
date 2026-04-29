@@ -1179,6 +1179,7 @@
       "diagram_embed": "流程图",
       "mermaid": "Mermaid 图",
       "slide": "第 {index} 页",
+      "page": "第 {index} 页",
       "element": "元素",
       "node": "节点",
       "edge": "连线",
@@ -1190,6 +1191,7 @@
       "diagram_embed": "嵌入流程图",
       "mermaid": "Mermaid 图",
       "slide": "Slide {index}",
+      "page": "第 {index} 页",
       "element_fallback": "元素",
       "node": "流程图节点",
       "edge": "流程图连线"
@@ -1203,6 +1205,8 @@
         "table": "数据表",
         "presentation": "演示文稿",
         "diagram": "流程图",
+        "canvas": "画布",
+        "video": "视频",
         "content": "内容"
       },
       "anchorKinds": {

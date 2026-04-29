@@ -19,7 +19,9 @@ import { exportVideoToBlob, downloadExport, type ExportFormat } from './videoExp
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { formatRelativeTime } from '@/lib/utils/time';
-import { useT } from '@/lib/i18n';
+import { useT, getT } from '@/lib/i18n';
+import { useKeyboardScope } from '@/lib/keyboard/useKeyboardScope';
+import type { ShortcutDef } from '@/lib/keyboard/types';
 import { readFileAsDataUrl, extractDroppedImageFiles, isSvgFile, createImageHtml, probeImageSize, uploadImageFile, resolveUploadUrl } from '@/components/shared/image-upload';
 import { parseSvgFileContent } from '@/components/shared/svg-import';
 import { parsePath, expandCornerRadii, serializeSubPath, applyCornerRadiiToHtml, parseCornerRadiiFromHtml } from '@/components/shared/svg-path-utils';
@@ -60,6 +62,23 @@ import {
   upsertKeyframe,
   hexToPackedRgb, packedRgbToHex, COLOR_PROPERTIES,
 } from './types';
+
+const VIDEO_SHORTCUTS: ShortcutDef[] = [
+  {
+    id: 'video-play-pause',
+    key: ' ',
+    handler: () => window.dispatchEvent(new CustomEvent('video:play-pause')),
+    label: getT()('shortcuts.video.playPause'),
+    category: 'Video',
+  },
+  {
+    id: 'video-add-marker',
+    key: 'k',
+    handler: () => window.dispatchEvent(new CustomEvent('video:add-marker')),
+    label: getT()('shortcuts.video.addMarker'),
+    category: 'Video',
+  },
+];
 
 // ─── Shared UI Components (Canvas-aligned) ────
 
@@ -648,6 +667,7 @@ export function VideoEditor({
   isPinned, onTogglePin,
 }: VideoEditorProps) {
   const { t } = useT();
+  useKeyboardScope('video', VIDEO_SHORTCUTS);
   const queryClient = useQueryClient();
   const contentId = `video:${videoId}`;
 

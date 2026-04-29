@@ -1179,6 +1179,7 @@
       "diagram_embed": "ダイアグラム",
       "mermaid": "Mermaid ダイアグラム",
       "slide": "スライド {index}",
+      "page": "ページ {index}",
       "element": "要素",
       "node": "ノード",
       "edge": "エッジ",
@@ -1190,6 +1191,7 @@
       "diagram_embed": "埋め込みダイアグラム",
       "mermaid": "Mermaid ダイアグラム",
       "slide": "スライド {index}",
+      "page": "ページ {index}",
       "element_fallback": "要素",
       "node": "ダイアグラムノード",
       "edge": "ダイアグラムエッジ"
@@ -1203,6 +1205,8 @@
         "table": "データテーブル",
         "presentation": "プレゼンテーション",
         "diagram": "ダイアグラム",
+        "canvas": "キャンバス",
+        "video": "ビデオ",
         "content": "コンテンツ"
       },
       "anchorKinds": {

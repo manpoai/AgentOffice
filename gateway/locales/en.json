@@ -1179,6 +1179,7 @@
       "diagram_embed": "Diagram",
       "mermaid": "Mermaid diagram",
       "slide": "Slide {index}",
+      "page": "Page {index}",
       "element": "Element",
       "node": "Node",
       "edge": "Edge",
@@ -1190,6 +1191,7 @@
       "diagram_embed": "Embedded diagram",
       "mermaid": "Mermaid diagram",
       "slide": "Slide {index}",
+      "page": "Page {index}",
       "element_fallback": "Element",
       "node": "Diagram node",
       "edge": "Diagram edge"
@@ -1203,6 +1205,8 @@
         "table": "data table",
         "presentation": "presentation",
         "diagram": "diagram",
+        "canvas": "canvas",
+        "video": "video",
         "content": "content"
       },
       "anchorKinds": {

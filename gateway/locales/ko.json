@@ -1179,6 +1179,7 @@
       "diagram_embed": "다이어그램",
       "mermaid": "Mermaid 다이어그램",
       "slide": "슬라이드 {index}",
+      "page": "페이지 {index}",
       "element": "요소",
       "node": "노드",
       "edge": "엣지",
@@ -1190,6 +1191,7 @@
       "diagram_embed": "임베디드 다이어그램",
       "mermaid": "Mermaid 다이어그램",
       "slide": "슬라이드 {index}",
+      "page": "페이지 {index}",
       "element_fallback": "요소",
       "node": "다이어그램 노드",
       "edge": "다이어그램 엣지"
@@ -1203,6 +1205,8 @@
         "table": "데이터 테이블",
         "presentation": "프레젠테이션",
         "diagram": "다이어그램",
+        "canvas": "캔버스",
+        "video": "비디오",
         "content": "콘텐츠"
       },
       "anchorKinds": {
