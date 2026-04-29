@@ -108,6 +108,10 @@ async function ensureGatewayDeps() {
 async function ensureRuntime() {
   ensureDir(HOME_DIR);
   if (exists(path.join(RUNTIME_DIR, 'cli.js'))) return;
+  if (!process.env.AOSE_ARTIFACT_URL) {
+    const latest = await fetchLatestRelease();
+    if (latest) ARTIFACT_URL = latest.url;
+  }
   if (!ARTIFACT_URL) {
     throw new Error('AOSE_ARTIFACT_URL is required for bootstrap package.');
   }
