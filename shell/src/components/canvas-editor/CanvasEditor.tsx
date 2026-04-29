@@ -1904,7 +1904,6 @@ export function CanvasEditor({
 
   const handleDoubleClick = useCallback((frameId: string | null, id: string) => {
     const el = findElementById(id);
-    console.log('[handleDoubleClick]', { frameId, id, elType: el?.type, elFound: !!el, activeFrameId, activeGroupPath });
     if (!el) return;
     // Group: push into group path (supports nested groups)
     if (el.type === 'group') {
@@ -3308,7 +3307,6 @@ export function CanvasEditor({
                             handleRotateStart(frame.page_id, id, e);
                           }}
                           onDoubleClick={(id) => {
-                            console.log('[frame element onDoubleClick]', { id, activeGroupPath: [...activeGroupPath] });
                             if (activeGroupPath.includes(id)) return;
                             handleDoubleClick(frame.page_id, id);
                           }}

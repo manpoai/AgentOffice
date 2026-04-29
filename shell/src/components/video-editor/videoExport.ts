@@ -272,13 +272,10 @@ async function getFFmpeg(): Promise<import('@ffmpeg/ffmpeg').FFmpeg> {
   _ffmpegPromise = (async () => {
     const { FFmpeg } = await import('@ffmpeg/ffmpeg');
     const ffmpeg = new FFmpeg();
-    ffmpeg.on('log', ({ message }) => console.log('[ffmpeg]', message));
-    console.log('[VideoExport] Loading ffmpeg.wasm...');
     await ffmpeg.load({
       coreURL: '/ffmpeg/ffmpeg-core.js',
       wasmURL: '/ffmpeg/ffmpeg-core.wasm',
     });
-    console.log('[VideoExport] ffmpeg.wasm loaded successfully');
     return ffmpeg;
   })();
   try {
@@ -297,7 +294,6 @@ async function transcodeWebmToMp4(
   onPct: (pct: number) => void,
 ): Promise<Blob> {
   onPct(5);
-  console.log('[VideoExport] Loading ffmpeg.wasm...');
   const ffmpeg = await getFFmpeg();
   const { fetchFile } = await import('@ffmpeg/util');
   onPct(15);
@@ -314,12 +310,10 @@ async function transcodeWebmToMp4(
 
   try {
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    console.log('[VideoExport] Writing webm to ffmpeg FS, size:', webm.size);
     await ffmpeg.writeFile(inName, await fetchFile(webm));
     onPct(20);
 
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    console.log('[VideoExport] Starting transcode webm→mp4...');
     if (!gotRealProgress) onPct(25);
     const exitCode = await ffmpeg.exec([
       '-i', inName,
@@ -330,12 +324,10 @@ async function transcodeWebmToMp4(
       '-movflags', '+faststart',
       outName,
     ]);
-    console.log('[VideoExport] ffmpeg exec exit code:', exitCode);
     onPct(95);
 
     const data = await ffmpeg.readFile(outName);
     const arr = data instanceof Uint8Array ? data : new Uint8Array(0);
-    console.log('[VideoExport] MP4 output size:', arr.byteLength);
     try { await ffmpeg.deleteFile(inName); } catch { /* noop */ }
     try { await ffmpeg.deleteFile(outName); } catch { /* noop */ }
     onPct(100);

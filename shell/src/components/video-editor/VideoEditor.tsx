@@ -1095,14 +1095,12 @@ export function VideoEditor({
     const ac = new AbortController();
     exportAbortRef.current = ac;
     try {
-      console.log('[VideoExport] Starting export:', format, 'elements:', data.elements.length);
       setExportProgress({ pct: 0, label: 'Starting…' });
       const result = await exportVideoToBlob(data, {
         format,
         onProgress: (pct, label) => setExportProgress({ pct, label }),
         signal: ac.signal,
       });
-      console.log('[VideoExport] Export complete, downloading:', result.framesCaptured, 'frames');
       downloadExport(result, title || `video-${videoId}`);
     } catch (e) {
       console.error('[VideoExport] Export error:', e);
