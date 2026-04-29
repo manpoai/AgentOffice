@@ -1680,10 +1680,54 @@ export function VideoEditor({
       });
     };
     const handleUp = () => {
+      const d = timelineDragRef.current;
       timelineDragRef.current = null;
-      setData(prev => { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; });
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
+
+      if (d && (d.type === 'resize-left' || d.type === 'resize-right')) {
+        setData(prev => {
+          if (!prev) return prev;
+          const el = prev.elements.find(x => x.id === d.elId);
+          if (!el) { undoRedo.push(prev); scheduleSave(prev); return prev; }
+
+          const allMarkers = getMarkers(el);
+          const allKfTimes = new Set<number>();
+          for (const list of Object.values(el.keyframes ?? {})) {
+            if (!list) continue;
+            for (const kf of list) allKfTimes.add(kf.t);
+          }
+          const outsideMarkers = allMarkers.filter(t => t > el.duration + TIME_EPSILON);
+          const outsideKfTimes = [...allKfTimes].filter(t => t > el.duration + TIME_EPSILON);
+          const hasOutside = outsideMarkers.length > 0 || outsideKfTimes.length > 0;
+
+          if (!hasOutside) { undoRedo.push(prev); scheduleSave(prev); return prev; }
+
+          const count = new Set([...outsideMarkers, ...outsideKfTimes]).size;
+          const ok = confirm(`${count} keyframe(s) fall outside the new duration and will be removed. Continue?`);
+          if (!ok) {
+            return { ...prev, elements: prev.elements.map(pel =>
+              pel.id !== d.elId ? pel : { ...pel, start: d.origStart, duration: d.origDuration }
+            ) };
+          }
+
+          const cleaned = { ...prev, elements: prev.elements.map(pel => {
+            if (pel.id !== d.elId) return pel;
+            const markers = (pel.markers ?? []).filter(t => t <= pel.duration + TIME_EPSILON);
+            const keyframes: typeof pel.keyframes = {};
+            for (const [prop, list] of Object.entries(pel.keyframes ?? {})) {
+              if (!list) continue;
+              const filtered = list.filter(kf => kf.t <= pel.duration + TIME_EPSILON);
+              if (filtered.length > 0) keyframes[prop as keyof typeof keyframes] = filtered;
+            }
+            return { ...pel, markers, keyframes };
+          }) };
+          undoRedo.push(cleaned); scheduleSave(cleaned);
+          return cleaned;
+        });
+      } else {
+        setData(prev => { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; });
+      }
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
