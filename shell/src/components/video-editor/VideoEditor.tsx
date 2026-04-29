@@ -47,7 +47,7 @@ import {
   DEFAULT_VIDEO_WIDTH, DEFAULT_VIDEO_HEIGHT, DEFAULT_FPS,
   TIME_EPSILON,
   computeTotalDuration, migrateVideoData,
-  getElementSnapshotAt, getMarkers,
+  getElementSnapshotAt, getPropertyValueAt, getMarkers,
   addMarker as addMarkerToElement, removeMarker as removeMarkerFromElement,
   applyPropertyChange, applyPostAnimationIntent,
   isPropertyAnimated, isOnMarker,
@@ -639,6 +639,7 @@ export function VideoEditor({
     value: number;
     lastKeyframeTime: number;
     playheadLocal: number;
+    batch?: { prop: AnimatableProperty; value: number; lastKeyframeTime: number }[];
   } | null>(null);
 
   // Export state.
@@ -920,17 +921,22 @@ export function VideoEditor({
     if (!pendingIntent || !data) return;
     const el = data.elements.find(e => e.id === pendingIntent.elementId);
     if (!el) { setPendingIntent(null); return; }
-    const updated = applyPostAnimationIntent(
-      el,
-      pendingIntent.prop,
-      pendingIntent.value,
-      pendingIntent.lastKeyframeTime,
-      pendingIntent.playheadLocal,
-      intent,
-    );
+    const items = pendingIntent.batch ?? [{ prop: pendingIntent.prop, value: pendingIntent.value, lastKeyframeTime: pendingIntent.lastKeyframeTime }];
+    let current = el;
+    for (const item of items) {
+      current = applyPostAnimationIntent(
+        current,
+        item.prop,
+        item.value,
+        item.lastKeyframeTime,
+        pendingIntent.playheadLocal,
+        intent,
+      );
+    }
+    const result = current;
     updateData(d => ({
       ...d,
-      elements: d.elements.map(e => e.id === pendingIntent.elementId ? updated : e),
+      elements: d.elements.map(e => e.id === pendingIntent.elementId ? result : e),
     }));
     setPendingIntent(null);
   }, [pendingIntent, data, updateData]);
@@ -1221,6 +1227,7 @@ export function VideoEditor({
 
   // ─── Canvas Element Drag ──────────────
   const dragRef = useRef<{ elId: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragIntentRef = useRef<{ prop: AnimatableProperty; value: number; lastKeyframeTime: number; origLastValue: number }[]>([]);
 
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent, elId: string) => {
     if (!data || editingTextId === elId) return;
@@ -1231,6 +1238,7 @@ export function VideoEditor({
     setSelectedMarkerTime(null); setSelectedKfProp(null);
     const snap = getElementSnapshotAt(el, currentTime - el.start);
     dragRef.current = { elId, startX: e.clientX, startY: e.clientY, origX: snap.x, origY: snap.y };
+    dragIntentRef.current = [];
 
     const handleMove = (ev: PointerEvent) => {
       const d = dragRef.current;
@@ -1240,6 +1248,7 @@ export function VideoEditor({
       const newX = Math.round(d.origX + dx);
       const newY = Math.round(d.origY + dy);
       const targetId = d.elId;
+      const intentItems: typeof dragIntentRef.current = [];
       setData(prev => {
         if (!prev) return prev;
         const pel = prev.elements.find(x => x.id === targetId);
@@ -1250,7 +1259,11 @@ export function VideoEditor({
           let updated = pel;
           for (const [prop, value] of [['x', newX], ['y', newY]] as [AnimatableProperty, number][]) {
             const outcome = applyPropertyChange(updated, prop, value, playheadLocal);
-            if (outcome.kind !== 'rejected' && outcome.kind !== 'needs-intent') {
+            if (outcome.kind === 'needs-intent') {
+              const lastKfVal = getPropertyValueAt(updated, outcome.prop, outcome.lastKeyframeTime);
+              intentItems.push({ prop: outcome.prop, value: outcome.value, lastKeyframeTime: outcome.lastKeyframeTime, origLastValue: lastKfVal });
+              updated = applyPostAnimationIntent(updated, outcome.prop, outcome.value, outcome.lastKeyframeTime, outcome.playheadLocal, 'modify-last');
+            } else if (outcome.kind !== 'rejected') {
               updated = outcome.element;
             }
           }
@@ -1258,10 +1271,39 @@ export function VideoEditor({
         }
         return { ...prev, elements: prev.elements.map(e => e.id !== targetId ? e : { ...e, x: newX, y: newY }) };
       });
+      if (intentItems.length > 0) dragIntentRef.current = intentItems;
     };
     const handleUp = () => {
+      const d = dragRef.current;
+      const intentItems = [...dragIntentRef.current];
       dragRef.current = null;
-      setData(prev => { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; });
+      dragIntentRef.current = [];
+      if (d && intentItems.length > 0) {
+        setData(prev => {
+          if (!prev) return prev;
+          const pel = prev.elements.find(x => x.id === d.elId);
+          if (!pel) return prev;
+          const playheadLocal = currentTime - pel.start;
+          // Revert modify-last to original values, so intent dialog applies cleanly
+          let reverted = pel;
+          for (const item of intentItems) {
+            reverted = upsertKeyframe(reverted, item.prop, item.lastKeyframeTime, item.origLastValue);
+          }
+          const next = { ...prev, elements: prev.elements.map(e => e.id === d.elId ? reverted : e) };
+          undoRedo.push(next); scheduleSave(next);
+          setPendingIntent({
+            elementId: d.elId,
+            prop: intentItems[0].prop,
+            value: intentItems[0].value,
+            lastKeyframeTime: intentItems[0].lastKeyframeTime,
+            playheadLocal,
+            batch: intentItems.map(i => ({ prop: i.prop, value: i.value, lastKeyframeTime: i.lastKeyframeTime })),
+          });
+          return next;
+        });
+      } else {
+        setData(prev => { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; });
+      }
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
@@ -1271,6 +1313,7 @@ export function VideoEditor({
 
   // ─── Resize Handles ──────────────────
   const resizeRef = useRef<{ elId: string; handle: string; startX: number; startY: number; origX: number; origY: number; origW: number; origH: number } | null>(null);
+  const resizeIntentRef = useRef<{ prop: AnimatableProperty; value: number; lastKeyframeTime: number; origLastValue: number }[]>([]);
 
   const handleResizeStart = useCallback((e: React.PointerEvent, elId: string, handle: string) => {
     if (!data) return;
@@ -1280,6 +1323,7 @@ export function VideoEditor({
     e.preventDefault();
     const snap = getElementSnapshotAt(el, currentTime - el.start);
     resizeRef.current = { elId, handle, startX: e.clientX, startY: e.clientY, origX: snap.x, origY: snap.y, origW: snap.w, origH: snap.h };
+    resizeIntentRef.current = [];
 
     const handleMove = (ev: PointerEvent) => {
       const r = resizeRef.current;
@@ -1292,6 +1336,7 @@ export function VideoEditor({
       if (r.handle.includes('s')) nH = Math.max(20, r.origH + dy);
       if (r.handle.includes('n')) { nH = Math.max(20, r.origH - dy); nY = r.origY + r.origH - nH; }
       const rX = Math.round(nX), rY = Math.round(nY), rW = Math.round(nW), rH = Math.round(nH);
+      const intentItems: typeof resizeIntentRef.current = [];
       setData(prev => {
         if (!prev) return prev;
         const pel = prev.elements.find(x => x.id === r.elId);
@@ -1302,7 +1347,11 @@ export function VideoEditor({
           let updated = pel;
           for (const [prop, value] of [['x', rX], ['y', rY], ['w', rW], ['h', rH]] as [AnimatableProperty, number][]) {
             const outcome = applyPropertyChange(updated, prop, value, playheadLocal);
-            if (outcome.kind !== 'rejected' && outcome.kind !== 'needs-intent') {
+            if (outcome.kind === 'needs-intent') {
+              const lastKfVal = getPropertyValueAt(updated, outcome.prop, outcome.lastKeyframeTime);
+              intentItems.push({ prop: outcome.prop, value: outcome.value, lastKeyframeTime: outcome.lastKeyframeTime, origLastValue: lastKfVal });
+              updated = applyPostAnimationIntent(updated, outcome.prop, outcome.value, outcome.lastKeyframeTime, outcome.playheadLocal, 'modify-last');
+            } else if (outcome.kind !== 'rejected') {
               updated = outcome.element;
             }
           }
@@ -1310,10 +1359,13 @@ export function VideoEditor({
         }
         return { ...prev, elements: prev.elements.map(e => e.id === r.elId ? { ...e, x: rX, y: rY, w: rW, h: rH } : e) };
       });
+      if (intentItems.length > 0) resizeIntentRef.current = intentItems;
     };
     const handleUp = () => {
       const r = resizeRef.current;
+      const intentItems = [...resizeIntentRef.current];
       resizeRef.current = null;
+      resizeIntentRef.current = [];
       setData(prev => {
         if (!prev || !r) { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; }
         let pel = prev.elements.find(x => x.id === r.elId);
@@ -1337,6 +1389,27 @@ export function VideoEditor({
           }
           document.body.removeChild(measure);
           elements = elements.map(x => x.id === r.elId ? { ...x, html: newHtml, h: newH } : x);
+          pel = elements.find(x => x.id === r.elId)!;
+        }
+
+        if (intentItems.length > 0 && pel) {
+          const playheadLocal = currentTime - pel.start;
+          let reverted = pel;
+          for (const item of intentItems) {
+            reverted = upsertKeyframe(reverted, item.prop, item.lastKeyframeTime, item.origLastValue);
+          }
+          elements = elements.map(e => e.id === r.elId ? reverted : e);
+          const next = { ...prev, elements };
+          undoRedo.push(next); scheduleSave(next);
+          setPendingIntent({
+            elementId: r.elId,
+            prop: intentItems[0].prop,
+            value: intentItems[0].value,
+            lastKeyframeTime: intentItems[0].lastKeyframeTime,
+            playheadLocal,
+            batch: intentItems.map(i => ({ prop: i.prop, value: i.value, lastKeyframeTime: i.lastKeyframeTime })),
+          });
+          return next;
         }
 
         const next = { ...prev, elements };
