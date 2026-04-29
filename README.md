@@ -35,6 +35,8 @@ AOSE is not a viewer for Agent-generated artifacts. Every editor is designed for
 | Databases | Structured data editor with inter-table relationships (Link / Lookup) | 20 field types, 4 views |
 | Slides | Presentation editor with embedded tables and flowchart references, PPTX export | Full rich-text editing |
 | Flowcharts | Node-and-edge diagram editor with full visual customization | 24 node shapes, 4 edge styles |
+| Canvas | Infinite canvas editor for freeform visual design with multi-page support | Shapes, text, images, SVG paths, frames (pages); group/ungroup; vector editing; boolean operations; per-frame PNG/SVG export |
+| Video | Timeline-based motion graphics editor for animated content | Scene-based timeline; keyframe animation with easing; shape/text/image elements; MP4/WebM export via ffmpeg.wasm |
 
 Agents create and edit through MCP tools. Humans use the same editor in the browser. Both operate on the same object — not a copy, not a preview, not a chat message.
 
@@ -42,7 +44,7 @@ Agents create and edit through MCP tools. Humans use the same editor in the brow
 
 ### Comprehensive version history — Agent actions are traceable and reversible
 
-Before any Agent edit — whether on a document, database, presentation, or flowchart — AOSE automatically creates a version snapshot. Every change is attributed to the Agent that made it, with a timestamp.
+Before any Agent edit — whether on a document, database, presentation, flowchart, canvas, or video — AOSE automatically creates a version snapshot. Every change is attributed to the Agent that made it, with a timestamp.
 
 If an Agent makes an unexpected change, you can: browse the full version history, preview any historical state, and restore with one click. Agent actions are not a black box. They are traceable, auditable, and reversible at any time.
 
@@ -160,8 +162,10 @@ If even that isn't possible, you'll need to update the Agent host's MCP configur
 | **Databases** | Structured data editor with multiple field types, views, and inter-table relationships | 20 field types (text, number, single/multi select, date, formula, link, lookup, etc.); 4 views (Grid / Kanban / Gallery / Form); Link + Lookup relationships |
 | **Slides** | Presentation editor for creating, modifying, and reviewing slide content | Text boxes, shapes, images, embedded tables, flowchart references; full rich-text editing; position/fill/border/font/rotation/z-index/opacity controls; PPTX export |
 | **Flowcharts** | Node-and-edge flowchart editor for complex diagram creation and collaboration | 24 node shapes; 4 edge styles (straight / orthogonal / smooth curve / rounded); arrow/width/color/label config; node fill/border/font/size config |
-| **Comments** | Unified commenting system shared across all content types | Precise anchoring to document selections, images, table rows, slide elements, flowchart nodes or edges; `@agent` real-time notifications; events include anchor context and content snippets |
-| **Version History** | Version history and restore capability as a safety net for Agent workflows | Auto snapshot before Agent edits; one-click restore to any version; unified management across docs/databases/slides/flowcharts |
+| **Canvas** | Infinite canvas editor for freeform visual layout across multiple pages | Rectangles, circles, text, images, SVG vector paths, frames (pages); group/ungroup/boolean ops; vector point editing; pen tool; per-frame PNG/SVG export; element and page-level comment anchoring |
+| **Video** | Timeline-based motion graphics editor with keyframe animation | Scene-based timeline with per-element tracks; keyframe markers with 8 easing presets; shape/text/image/line elements; property animation (position, size, rotation, opacity, color); MP4/WebM export via ffmpeg.wasm |
+| **Comments** | Unified commenting system shared across all content types | Precise anchoring to document selections, images, table rows, slide elements, flowchart nodes or edges, canvas elements or pages, video elements; `@agent` real-time notifications; events include anchor context and content snippets |
+| **Version History** | Version history and restore capability as a safety net for Agent workflows | Auto snapshot before Agent edits; one-click restore to any version; unified management across docs/databases/slides/flowcharts/canvas/video |
 | **Agent Management** | Identity and lifecycle management for Agents | Self-registration via onboarding prompt; approval-based activation; platform labeling; online status and last active time; token reset |
 | **Notifications** | Real-time notification system | New comments, comment replies, @mentions, new Agent registration alerts |
 | **Search** | Global search across all major content types | Document title and body search; full-text search (FTS5); keyword highlighting |

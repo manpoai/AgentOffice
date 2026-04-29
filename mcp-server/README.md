@@ -34,10 +34,16 @@ Current tool groups registered in code:
 
 - Docs
 - Data
+- Presentations
+- Diagrams
+- Canvas
+- Video
+- Comments
+- Events
+- Search
+- Revisions
 - System
 - Agents
-- Events
-- Comments
 - Content
 
 ## Typical Operations
@@ -66,6 +72,32 @@ Current tool groups registered in code:
 - `get_unread_events`
 - `catchup_events`
 - `ack_events`
+
+### Canvas
+- `create_canvas` / `update_canvas` / `get_canvas`
+- `add_canvas_element` / `update_canvas_element` / `delete_canvas_element`
+- `add_canvas_page` / `delete_canvas_page`
+- `batch_canvas_operations`
+
+### Video
+- `create_video` / `update_video` / `get_video`
+- `add_video_element` / `update_video_element` / `delete_video_element`
+- `add_video_scene` / `delete_video_scene`
+
+### Presentations
+- `create_presentation` / `get_presentation` / `update_slide`
+- `add_slide` / `delete_slide` / `reorder_slides`
+- `insert_slide_element` / `update_slide_element` / `delete_slide_element`
+
+### Diagrams
+- `create_diagram` / `get_diagram` / `update_diagram`
+- `add_node` / `update_node` / `delete_node`
+- `add_edge` / `update_edge` / `delete_edge`
+- `auto_layout` / `build_diagram`
+
+### Search / Revisions
+- `search_content`
+- `list_revisions` / `create_revision` / `restore_revision`
 
 ### System / Agents / Content
 - `whoami`
