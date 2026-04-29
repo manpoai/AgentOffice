@@ -10,6 +10,7 @@ import { registerContentTools } from './tools/content.js';
 import { registerPresentationTools } from './tools/presentations.js';
 import { registerDiagramTools } from './tools/diagrams.js';
 import { registerCanvasTools } from './tools/canvas.js';
+import { registerVideoTools } from './tools/video.js';
 import { registerSearchTools } from './tools/search.js';
 import { registerRevisionTools } from './tools/revisions.js';
 
@@ -53,6 +54,7 @@ export function buildAoseMcpServer({ baseUrl, token, name = 'aose', version = '0
   registerPresentationTools(server, gw);
   registerDiagramTools(server, gw);
   registerCanvasTools(server, gw);
+  registerVideoTools(server, gw);
   registerSearchTools(server, gw);
   registerRevisionTools(server, gw);
 

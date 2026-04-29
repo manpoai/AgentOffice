@@ -1,5 +1,27 @@
 import { z } from 'zod';
 
+const ElementSchema = z.object({
+  html: z.string().describe('HTML content for the element'),
+  x: z.number().describe('X position in px from left edge'),
+  y: z.number().describe('Y position in px from top edge'),
+  w: z.number().describe('Width in px'),
+  h: z.number().describe('Height in px'),
+  z_index: z.number().optional().describe('Stacking order (higher = on top)'),
+  locked: z.boolean().optional().describe('If true, element cannot be dragged/resized by human'),
+});
+
+function materializeElement(spec, existingElements) {
+  return {
+    id: crypto.randomUUID(),
+    x: spec.x, y: spec.y, w: spec.w, h: spec.h,
+    html: spec.html,
+    locked: spec.locked ?? false,
+    z_index: spec.z_index ?? (existingElements.length > 0
+      ? Math.max(...existingElements.map(e => e.z_index ?? 0)) + 1
+      : 0),
+  };
+}
+
 export function registerCanvasTools(server, gw) {
   server.tool(
     'create_canvas',
@@ -32,14 +54,15 @@ export function registerCanvasTools(server, gw) {
 
   server.tool(
     'add_page',
-    'Add a new empty page to a canvas. New page inherits dimensions from the last page, or uses provided values.',
+    'Add a new page to a canvas, optionally pre-populated with elements. This is the preferred way to create a full page design in one call. New page inherits dimensions from the last page unless overridden.',
     {
       canvas_id: z.string().describe('Canvas ID'),
       title: z.string().optional().describe('Page title'),
       width: z.number().optional().describe('Page width in px'),
       height: z.number().optional().describe('Page height in px'),
+      elements: z.array(ElementSchema).optional().describe('Elements to place on the new page. Each needs html, x, y, w, h.'),
     },
-    async ({ canvas_id, title, width, height }) => {
+    async ({ canvas_id, title, width, height, elements }) => {
       const res = await gw.get(`/canvases/${canvas_id}`);
       const data = res.data;
       const lastPage = data.pages[data.pages.length - 1];
@@ -51,9 +74,17 @@ export function registerCanvasTools(server, gw) {
         head_html: '',
         elements: [],
       };
+      const elementIds = [];
+      if (elements && elements.length > 0) {
+        for (const spec of elements) {
+          const el = materializeElement(spec, newPage.elements);
+          newPage.elements.push(el);
+          elementIds.push(el.id);
+        }
+      }
       data.pages.push(newPage);
       await gw.patch(`/canvases/${canvas_id}`, { data });
-      return { content: [{ type: 'text', text: JSON.stringify({ page_id: newPage.page_id, page_index: data.pages.length - 1 }) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ page_id: newPage.page_id, page_index: data.pages.length - 1, element_count: elementIds.length, element_ids: elementIds }) }] };
     }
   );
 
@@ -78,7 +109,7 @@ export function registerCanvasTools(server, gw) {
 
   server.tool(
     'insert_element',
-    'Insert a new HTML element onto a canvas page. The element is positioned absolutely at (x, y) with size (w, h). The html field accepts any valid HTML — use inline styles for styling (Shadow DOM isolates each element).',
+    'Insert a single HTML element onto a canvas page. For adding many elements at once, prefer batch_insert_elements or add_page with elements.',
     {
       canvas_id: z.string().describe('Canvas ID'),
       page_id: z.string().describe('Target page ID'),
@@ -97,15 +128,60 @@ export function registerCanvasTools(server, gw) {
       if (!page) {
         return { content: [{ type: 'text', text: JSON.stringify({ error: 'Page not found' }) }] };
       }
-      const element = {
-        id: crypto.randomUUID(),
-        x, y, w, h, html,
-        locked: locked ?? false,
-        z_index: z_index ?? (page.elements.length > 0 ? Math.max(...page.elements.map(e => e.z_index ?? 0)) + 1 : 0),
-      };
+      const element = materializeElement({ html, x, y, w, h, z_index, locked }, page.elements);
       page.elements.push(element);
       await gw.patch(`/canvases/${canvas_id}`, { data });
       return { content: [{ type: 'text', text: JSON.stringify({ element_id: element.id, page_id }) }] };
+    }
+  );
+
+  server.tool(
+    'batch_insert_elements',
+    'Insert multiple HTML elements onto a canvas page in one call. More efficient than calling insert_element repeatedly.',
+    {
+      canvas_id: z.string().describe('Canvas ID'),
+      page_id: z.string().describe('Target page ID'),
+      elements: z.array(ElementSchema).describe('Array of elements to insert. Each needs html, x, y, w, h.'),
+    },
+    async ({ canvas_id, page_id, elements }) => {
+      const res = await gw.get(`/canvases/${canvas_id}`);
+      const data = res.data;
+      const page = data.pages.find(p => p.page_id === page_id);
+      if (!page) return { content: [{ type: 'text', text: JSON.stringify({ error: 'Page not found' }) }] };
+      const ids = [];
+      for (const spec of elements) {
+        const el = materializeElement(spec, page.elements);
+        page.elements.push(el);
+        ids.push(el.id);
+      }
+      await gw.patch(`/canvases/${canvas_id}`, { data });
+      return { content: [{ type: 'text', text: JSON.stringify({ inserted: ids.length, element_ids: ids, page_id }) }] };
+    }
+  );
+
+  server.tool(
+    'replace_page_elements',
+    'Replace ALL elements on a canvas page. Use this when redesigning an entire page — more efficient and cleaner than updating individual elements.',
+    {
+      canvas_id: z.string().describe('Canvas ID'),
+      page_id: z.string().describe('Page ID whose elements will be replaced'),
+      elements: z.array(ElementSchema).describe('New elements array. Replaces all existing elements on the page.'),
+    },
+    async ({ canvas_id, page_id, elements }) => {
+      const res = await gw.get(`/canvases/${canvas_id}`);
+      const data = res.data;
+      const page = data.pages.find(p => p.page_id === page_id);
+      if (!page) return { content: [{ type: 'text', text: JSON.stringify({ error: 'Page not found' }) }] };
+      const oldCount = page.elements.length;
+      page.elements = [];
+      const ids = [];
+      for (const spec of elements) {
+        const el = materializeElement(spec, page.elements);
+        page.elements.push(el);
+        ids.push(el.id);
+      }
+      await gw.patch(`/canvases/${canvas_id}`, { data });
+      return { content: [{ type: 'text', text: JSON.stringify({ replaced: true, old_count: oldCount, new_count: ids.length, element_ids: ids, page_id }) }] };
     }
   );
 
