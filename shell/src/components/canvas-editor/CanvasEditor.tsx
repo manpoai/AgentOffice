@@ -326,15 +326,14 @@ function CanvasToolbar({ pendingInsert, onSetPending, onAddShape, onAddImage, on
             <div className="absolute top-full left-0 mt-2 z-50">
               <div className="bg-card rounded-lg border shadow-lg py-1 min-w-[140px]">
                 {([
-                  { type: 'rect' as ShapeType, label: 'Rect', labelCn: '矩形' },
-                  { type: 'circle' as ShapeType, label: 'Circle', labelCn: '圆形' },
-                  { type: 'polygon' as ShapeType, label: 'Polygon', labelCn: '多边形' },
-                  { type: 'star' as ShapeType, label: 'Star', labelCn: '星形' },
-                ] as { type: ShapeType; label: string; labelCn: string }[]).map(({ type, label, labelCn }) => (
+                  { type: 'rect' as ShapeType, label: 'Rect' },
+                  { type: 'circle' as ShapeType, label: 'Circle' },
+                  { type: 'polygon' as ShapeType, label: 'Polygon' },
+                  { type: 'star' as ShapeType, label: 'Star' },
+                ]).map(({ type, label }) => (
                   <button key={type} onClick={() => { onAddShape(type); setShowShapes(false); }}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-foreground hover:bg-accent hover:text-accent-foreground transition-colors text-left">
                     <span className="font-medium">{label}</span>
-                    <span className="text-muted-foreground text-[11px]">{labelCn}</span>
                   </button>
                 ))}
                 <div className="my-1 border-t" />

@@ -13,7 +13,7 @@ import {
   TextAlignStart, TextAlignCenter, TextAlignEnd,
   ArrowUpToLine, SeparatorHorizontal, ArrowDownToLine,
   Underline, Strikethrough, Settings2,
-  Goal, Clock7,
+  Goal, Clock7, Loader,
 } from 'lucide-react';
 import { exportVideoToBlob, downloadExport, type ExportFormat } from './videoExport';
 import { cn } from '@/lib/utils';
@@ -22,6 +22,7 @@ import { formatRelativeTime } from '@/lib/utils/time';
 import { useT } from '@/lib/i18n';
 import { readFileAsDataUrl, extractDroppedImageFiles, isSvgFile, createImageHtml, probeImageSize, uploadImageFile, resolveUploadUrl } from '@/components/shared/image-upload';
 import { parseSvgFileContent } from '@/components/shared/svg-import';
+import { parsePath, expandCornerRadii, serializeSubPath, applyCornerRadiiToHtml, parseCornerRadiiFromHtml } from '@/components/shared/svg-path-utils';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
 import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-common.actions';
@@ -29,7 +30,7 @@ import { getPublicOrigin } from '@/lib/remote-access';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
 import { RevisionPreviewBanner } from '@/components/shared/RevisionPreviewBanner';
-import { SHAPE_MAP, type ShapeType } from '@/components/shared/ShapeSet';
+import { SHAPE_MAP, regularPolygonPath, regularStarPath, type ShapeType } from '@/components/shared/ShapeSet';
 import { useUndoRedo } from '../canvas-editor/use-undo-redo';
 import { CANVAS_FONTS } from '../canvas-editor/fonts';
 import { loadGoogleFont } from '../canvas-editor/fontLoader';
@@ -601,8 +602,41 @@ function formatTime(seconds: number): string {
 function buildShapeHtml(shapeType: ShapeType, w = 200, h = 200): string {
   const shapeDef = SHAPE_MAP.get(shapeType);
   if (!shapeDef) return '<div style="width:100%;height:100%;background:#D9D9D9;border-radius:8px;"></div>';
-  const pathData = shapeDef.renderPath(w, h);
-  return `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${w + 2} ${h + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pathData}" fill="#D9D9D9" stroke="none" stroke-width="0" vector-effect="non-scaling-stroke"/></svg></div>`;
+  let pathData: string;
+  let extraPathAttrs = '';
+  if (shapeType === 'polygon') {
+    pathData = regularPolygonPath(w, h, 5);
+    extraPathAttrs = ' data-shape="polygon" data-sides="5"';
+  } else if (shapeType === 'star') {
+    pathData = regularStarPath(w, h, 5);
+    extraPathAttrs = ' data-shape="star" data-points="5"';
+  } else {
+    pathData = shapeDef.renderPath(w, h);
+  }
+  return `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${w + 2} ${h + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pathData}" fill="#D9D9D9" stroke="none" stroke-width="0" vector-effect="non-scaling-stroke"${extraPathAttrs}/></svg></div>`;
+}
+
+function getSvgViewBoxSize(html: string): { w: number; h: number } {
+  const m = html.match(/viewBox="[^"]*?(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)"/);
+  if (m) return { w: Math.round(parseFloat(m[3]) - 2), h: Math.round(parseFloat(m[4]) - 2) };
+  return { w: 200, h: 200 };
+}
+
+function getParametricShape(html: string): { kind: 'polygon' | 'star'; count: number } | null {
+  const polyMatch = html.match(/<path\b[^>]*\sdata-shape="polygon"[^>]*\sdata-sides="(\d+)"/);
+  if (polyMatch) return { kind: 'polygon', count: parseInt(polyMatch[1], 10) };
+  const starMatch = html.match(/<path\b[^>]*\sdata-shape="star"[^>]*\sdata-points="(\d+)"/);
+  if (starMatch) return { kind: 'star', count: parseInt(starMatch[1], 10) };
+  return null;
+}
+
+function updateParametricShape(html: string, kind: 'polygon' | 'star', count: number, w: number, h: number): string {
+  const n = Math.max(3, Math.min(60, Math.round(count)));
+  const newD = kind === 'polygon' ? regularPolygonPath(w, h, n) : regularStarPath(w, h, n);
+  const attrName = kind === 'polygon' ? 'data-sides' : 'data-points';
+  let result = html.replace(/(<path\b[^>]*?\s)d="[^"]*"/, `$1d="${newD}"`);
+  result = result.replace(new RegExp(`(${attrName})="\\d+"`), `$1="${n}"`);
+  return result;
 }
 
 export function VideoEditor({
@@ -1961,15 +1995,14 @@ export function VideoEditor({
                       <div className="absolute top-full left-0 mt-2 z-50">
                         <div className="bg-card rounded-lg border shadow-lg py-1 min-w-[140px]">
                           {([
-                            { type: 'rect' as ShapeType, label: 'Rect', labelCn: '矩形' },
-                            { type: 'circle' as ShapeType, label: 'Circle', labelCn: '圆形' },
-                            { type: 'polygon' as ShapeType, label: 'Polygon', labelCn: '多边形' },
-                            { type: 'star' as ShapeType, label: 'Star', labelCn: '星形' },
-                          ]).map(({ type, label, labelCn }) => (
+                            { type: 'rect' as ShapeType, label: 'Rect' },
+                            { type: 'circle' as ShapeType, label: 'Circle' },
+                            { type: 'polygon' as ShapeType, label: 'Polygon' },
+                            { type: 'star' as ShapeType, label: 'Star' },
+                          ]).map(({ type, label }) => (
                             <button key={type} onClick={() => { startShapeInsert(type); setShowShapes(false); }}
                               className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-foreground hover:bg-accent hover:text-accent-foreground transition-colors text-left">
                               <span className="font-medium">{label}</span>
-                              <span className="text-muted-foreground text-[11px]">{labelCn}</span>
                             </button>
                           ))}
                           <div className="my-1 border-t" />
@@ -2869,7 +2902,9 @@ function ElementPropertyPanel({
   const markerStart = isSvg ? (element.html.match(/marker-start="url\(#marker-([^-]+)-start\)"/) ?? [])[1] ?? 'none' : 'none';
   const markerEnd = isSvg ? (element.html.match(/marker-end="url\(#marker-([^-]+)-end\)"/) ?? [])[1] ?? 'none' : 'none';
   const strokeAlign = isSvg ? (element.html.match(/data-stroke-align="([^"]+)"/) ?? [])[1] ?? 'center' : 'center';
-  const borderRadius = extractProp(element.html, 'border-radius') || '0';
+  const borderRadius = isSvg
+    ? String(parseCornerRadiiFromHtml(element.html, 0).find(r => r > 0) ?? 0)
+    : extractProp(element.html, 'border-radius') || '0';
   const fontFamily = extractProp(element.html, 'font-family') || 'sans-serif';
   const fontWeight = extractProp(element.html, 'font-weight') || '700';
   const textAlign = extractProp(element.html, 'text-align') || 'center';
@@ -3220,17 +3255,92 @@ function ElementPropertyPanel({
           <CornerRadiusField
             value={parseInt(borderRadius) || 0}
             onChange={v => {
-              let html = setStyleProp(element.html, 'border-radius', `${Math.max(0, v)}px`);
               if (isSvg) {
-                html = v > 0
-                  ? html.replace(/overflow:\s*visible/, 'overflow: hidden')
-                  : html.replace(/overflow:\s*hidden/, 'overflow: visible');
+                const origDMatch = element.html.match(/<path\b[^>]*\sdata-orig-d="([^"]*)"/);
+                const dMatch = element.html.match(/<path\b[^>]*\sd="([^"]*)"/);
+                const sourceD = origDMatch?.[1] || dMatch?.[1];
+                if (!sourceD) return;
+                const parsed = parsePath(sourceD);
+                const subs = parsed.subPaths && parsed.subPaths.length > 0
+                  ? parsed.subPaths
+                  : [{ points: parsed.points, closed: parsed.closed }];
+                const r = Math.max(0, v);
+                const allRadii: (number | undefined)[] = [];
+                for (const sp of subs) {
+                  for (const _pt of sp.points) allRadii.push(r > 0 ? r : undefined);
+                }
+                let html = element.html;
+                if (r > 0) {
+                  const expandedSubs = subs.map(sp => {
+                    const pts = sp.points.map(pt => ({ ...pt, cornerRadius: r }));
+                    return { points: expandCornerRadii({ points: pts, closed: sp.closed }), closed: sp.closed };
+                  });
+                  const expandedD = expandedSubs.map(sp => serializeSubPath(sp)).join('');
+                  const origD = subs.map(sp => serializeSubPath(sp)).join('');
+                  html = html.replace(/<path\b([^>]*?)\sd="[^"]*"/, (_match, attrs) => {
+                    let a = (attrs as string).replace(/\sdata-orig-d="[^"]*"/, '');
+                    a += ` data-orig-d="${origD}"`;
+                    return `<path${a} d="${expandedD}"`;
+                  });
+                } else {
+                  const plainD = subs.map(sp => serializeSubPath(sp)).join('');
+                  html = html.replace(/<path\b([^>]*?)\sd="[^"]*"/, (_match, attrs) => {
+                    let a = (attrs as string).replace(/\sdata-orig-d="[^"]*"/, '');
+                    return `<path${a} d="${plainD}"`;
+                  });
+                }
+                html = applyCornerRadiiToHtml(html, 0, allRadii);
+                onUpdateHtml(html);
+              } else {
+                let html = setStyleProp(element.html, 'border-radius', `${Math.max(0, v)}px`);
+                onUpdateHtml(html);
               }
-              onUpdateHtml(html);
             }}
           />
           <div />
         </div>
+        {(() => {
+          const ps = getParametricShape(element.html);
+          if (!ps) return null;
+          return (
+            <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-end">
+              <div>
+                <SubsectionHeader>Sides</SubsectionHeader>
+                <LabeledNumberInput
+                  label={<Loader className="w-3 h-3" />}
+                  value={ps.count} min={3} max={60} step={1}
+                  onChange={v => {
+                    const clamped = Math.max(3, Math.min(60, Math.round(v)));
+                    const vb = getSvgViewBoxSize(element.html);
+                    let newHtml = updateParametricShape(element.html, ps.kind, clamped, vb.w, vb.h);
+                    newHtml = newHtml.replace(/\sdata-orig-d="[^"]*"/, '');
+                    const existingRadii = parseCornerRadiiFromHtml(newHtml, 0);
+                    const r = existingRadii.find(x => x > 0) ?? 0;
+                    if (r > 0) {
+                      const dMatch = newHtml.match(/<path\b[^>]*\sd="([^"]*)"/);
+                      if (dMatch) {
+                        const parsed = parsePath(dMatch[1]);
+                        const subs = parsed.subPaths?.length ? parsed.subPaths : [{ points: parsed.points, closed: parsed.closed }];
+                        const expandedSubs = subs.map(sp => {
+                          const pts = sp.points.map(pt => ({ ...pt, cornerRadius: r }));
+                          return { points: expandCornerRadii({ points: pts, closed: sp.closed }), closed: sp.closed };
+                        });
+                        const expandedD = expandedSubs.map(sp => serializeSubPath(sp)).join('');
+                        const origD = subs.map(sp => serializeSubPath(sp)).join('');
+                        newHtml = newHtml.replace(/<path\b([^>]*?)\sd="[^"]*"/, (_m, attrs) => {
+                          return `<path${attrs} data-orig-d="${origD}" d="${expandedD}"`;
+                        });
+                      }
+                    }
+                    onUpdateHtml(newHtml);
+                  }}
+                />
+              </div>
+              <div />
+              <div />
+            </div>
+          );
+        })()}
       </div>
 
       {/* §5 Text (text elements only) */}
