@@ -672,7 +672,7 @@ export function VideoEditor({
   const contentId = `video:${videoId}`;
 
   const [data, setData] = useState<VideoData | null>(null);
-  const [title, setTitle] = useState('');
+  const title = breadcrumb?.[breadcrumb.length - 1]?.title ?? '';
   const [saveStatus, setSaveStatus] = useState('');
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [updatedBy, setUpdatedBy] = useState<string | null>(null);
@@ -757,13 +757,6 @@ export function VideoEditor({
       if (videoResp.updated_by) setUpdatedBy(videoResp.updated_by);
     }
   }, [videoResp]);
-
-  useEffect(() => {
-    gw.listContentItems?.().then((items: any[]) => {
-      const item = items.find((i: any) => i.id === videoId || i.content_id === videoId);
-      if (item?.title) setTitle(item.title);
-    }).catch(() => {});
-  }, [videoId]);
 
   // ─── Save ─────────────────────────────
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1290,7 +1283,6 @@ export function VideoEditor({
 
   // ─── Title & Delete ───────────────────
   const handleTitleChange = useCallback(async (newTitle: string) => {
-    setTitle(newTitle);
     try { await gw.updateContentItem(contentId, { title: newTitle }); queryClient.invalidateQueries({ queryKey: ['content-items'] }); }
     catch (e) { showError('Failed to update title', e); }
   }, [contentId, queryClient]);
