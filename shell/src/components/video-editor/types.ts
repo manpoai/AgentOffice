@@ -16,11 +16,41 @@ export type AnimatableProperty =
   | 'x' | 'y' | 'w' | 'h'
   | 'opacity'
   | 'scale'
-  | 'rotation';
+  | 'rotation'
+  | 'fillColor' | 'strokeColor' | 'textColor'
+  | 'fontSize';
 
 export const ANIMATABLE_PROPERTIES: readonly AnimatableProperty[] = [
   'x', 'y', 'w', 'h', 'opacity', 'scale', 'rotation',
+  'fillColor', 'strokeColor', 'textColor', 'fontSize',
 ] as const;
+
+/** Properties whose keyframe values are packed RGB integers (0xRRGGBB). */
+export const COLOR_PROPERTIES: ReadonlySet<AnimatableProperty> = new Set([
+  'fillColor', 'strokeColor', 'textColor',
+]);
+
+/** Pack #RRGGBB hex string → 24-bit integer. Returns 0 for invalid/none. */
+export function hexToPackedRgb(hex: string): number {
+  const cleaned = (hex || '').replace(/^#/, '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(cleaned)) return 0;
+  return parseInt(cleaned, 16);
+}
+
+/** Unpack 24-bit integer → #RRGGBB hex string. */
+export function packedRgbToHex(n: number): string {
+  return '#' + Math.max(0, Math.min(0xFFFFFF, Math.round(n))).toString(16).padStart(6, '0');
+}
+
+/** Interpolate two packed RGB values channel-by-channel. */
+export function lerpColor(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+  const br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const blue = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | blue;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Keyframes & markers
@@ -82,6 +112,14 @@ export interface VideoElement extends CanvasElement {
   opacity?: number;
   /** Static scale (uniform). Defaults to 1. */
   scale?: number;
+  /** Static fill color as packed RGB (0xRRGGBB). Derived from html on first use. */
+  fillColor?: number;
+  /** Static stroke color as packed RGB. SVG elements only. */
+  strokeColor?: number;
+  /** Static text color as packed RGB. Text elements only. */
+  textColor?: number;
+  /** Static font size in px. Text elements only. */
+  fontSize?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -137,6 +175,10 @@ export function getStaticValue(el: VideoElement, prop: AnimatableProperty): numb
     case 'opacity': return el.opacity ?? 1;
     case 'scale': return el.scale ?? 1;
     case 'rotation': return el.rotation ?? 0;
+    case 'fillColor': return el.fillColor ?? 0xD9D9D9;
+    case 'strokeColor': return el.strokeColor ?? 0;
+    case 'textColor': return el.textColor ?? 0x000000;
+    case 'fontSize': return el.fontSize ?? 24;
   }
 }
 
@@ -151,6 +193,10 @@ export function setStaticValue(prop: AnimatableProperty, value: number): Partial
     case 'opacity': return { opacity: value };
     case 'scale': return { scale: value };
     case 'rotation': return { rotation: value };
+    case 'fillColor': return { fillColor: value };
+    case 'strokeColor': return { strokeColor: value };
+    case 'textColor': return { textColor: value };
+    case 'fontSize': return { fontSize: value };
   }
 }
 
@@ -228,30 +274,30 @@ function bezierAt(t: number, c1: number, c2: number) {
  *  - If property has no t>0 keyframes → returns the static value.
  *  - If t < first kf time → returns interpolated from static (t=0) to first kf.
  *  - If t > last kf time → returns the last kf value (held).
- *  - Otherwise interpolates between surrounding keyframes using the previous kf's easing. */
+ *  - Otherwise interpolates between surrounding keyframes using the previous kf's easing.
+ *  Color properties use per-channel RGB interpolation instead of scalar lerp. */
 export function getPropertyValueAt(el: VideoElement, prop: AnimatableProperty, t: number): number {
   const staticValue = getStaticValue(el, prop);
   const kfs = el.keyframes?.[prop];
   if (!kfs || kfs.length === 0) return staticValue;
-  // Sort by t ascending
   const sorted = [...kfs].sort((a, b) => a.t - b.t).filter(k => k.t > TIME_EPSILON);
   if (sorted.length === 0) return staticValue;
 
-  // Synthesize the implicit t=0 keyframe at the head
   const first: Keyframe = { t: 0, value: staticValue, easing: 'linear' };
   const series = [first, ...sorted];
 
   if (t <= series[0].t) return series[0].value;
   if (t >= series[series.length - 1].t) return series[series.length - 1].value;
 
-  // Find surrounding pair. Easing on a segment is taken from the segment's END
-  // keyframe (incoming-easing semantics).
+  const isColor = COLOR_PROPERTIES.has(prop);
+
   for (let i = 0; i < series.length - 1; i++) {
     const a = series[i], b = series[i + 1];
     if (t >= a.t && t <= b.t) {
       const frac = (t - a.t) / (b.t - a.t);
       const easeFn = EASE[b.easing ?? 'linear'] ?? EASE.linear;
       const eased = easeFn(frac);
+      if (isColor) return lerpColor(a.value, b.value, eased);
       return a.value + (b.value - a.value) * eased;
     }
   }
@@ -268,6 +314,10 @@ export function getElementSnapshotAt(el: VideoElement, t: number): Record<Animat
     opacity: getPropertyValueAt(el, 'opacity', t),
     scale: getPropertyValueAt(el, 'scale', t),
     rotation: getPropertyValueAt(el, 'rotation', t),
+    fillColor: getPropertyValueAt(el, 'fillColor', t),
+    strokeColor: getPropertyValueAt(el, 'strokeColor', t),
+    textColor: getPropertyValueAt(el, 'textColor', t),
+    fontSize: getPropertyValueAt(el, 'fontSize', t),
   };
 }
 
@@ -482,6 +532,37 @@ export function globalToLocal(el: VideoElement, globalT: number): number | null 
  *  - preserve element static layout (x, y, w, h, html) so the document is at least
  *    visually recognizable.
  */
+/** Extract a CSS style property value from an inline HTML string. */
+function extractStyleProp(html: string, prop: string): string {
+  const re = new RegExp(`${prop}\\s*:\\s*([^;"\\']+)`);
+  const m = html.match(re);
+  return m?.[1]?.trim() ?? '';
+}
+
+/** Derive initial packed RGB for fillColor from an element's HTML. */
+function deriveFillColor(html: string): number {
+  const isSvg = html.includes('<svg');
+  if (isSvg) {
+    const m = html.match(/fill="([^"]+)"/);
+    return hexToPackedRgb(m?.[1] ?? '#D9D9D9');
+  }
+  const bg = extractStyleProp(html, 'background') || extractStyleProp(html, 'background-color');
+  return hexToPackedRgb(bg || '#D9D9D9');
+}
+
+function deriveStrokeColor(html: string): number {
+  const m = html.match(/stroke="([^"]+)"/);
+  return hexToPackedRgb(m?.[1] ?? '#000000');
+}
+
+function deriveTextColor(html: string): number {
+  return hexToPackedRgb(extractStyleProp(html, 'color') || '#000000');
+}
+
+function deriveFontSize(html: string): number {
+  return parseFloat(extractStyleProp(html, 'font-size') || '24') || 24;
+}
+
 export function migrateVideoData(raw: any): VideoData {
   const settings: VideoSettings = {
     width: raw?.settings?.width ?? raw?.scenes?.[0]?.width ?? DEFAULT_VIDEO_WIDTH,
@@ -520,8 +601,12 @@ export function migrateVideoData(raw: any): VideoData {
       opacity: typeof el.opacity === 'number' ? el.opacity : 1,
       scale: typeof el.scale === 'number' ? el.scale : 1,
       rotation: typeof el.rotation === 'number' ? el.rotation : 0,
-      markers: [],
-      keyframes: {},
+      markers: Array.isArray(el.markers) ? el.markers : [],
+      keyframes: el.keyframes && typeof el.keyframes === 'object' ? el.keyframes : {},
+      fillColor: typeof el.fillColor === 'number' ? el.fillColor : deriveFillColor(typeof el.html === 'string' ? el.html : ''),
+      strokeColor: typeof el.strokeColor === 'number' ? el.strokeColor : deriveStrokeColor(typeof el.html === 'string' ? el.html : ''),
+      textColor: typeof el.textColor === 'number' ? el.textColor : deriveTextColor(typeof el.html === 'string' ? el.html : ''),
+      fontSize: typeof el.fontSize === 'number' ? el.fontSize : deriveFontSize(typeof el.html === 'string' ? el.html : ''),
     };
     return ve;
   });

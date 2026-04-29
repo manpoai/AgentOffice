@@ -9,7 +9,7 @@
 
 import { toCanvas } from 'html-to-image';
 import type { VideoData, VideoElement } from './types';
-import { getElementSnapshotAt, computeTotalDuration, TIME_EPSILON } from './types';
+import { getElementSnapshotAt, computeTotalDuration, TIME_EPSILON, packedRgbToHex } from './types';
 
 export type ExportFormat = 'webm' | 'mp4';
 
@@ -79,13 +79,41 @@ function mountHiddenScene(data: VideoData): { container: HTMLDivElement; render:
       wrap.style.display = visible ? 'block' : 'none';
       if (!visible) continue;
       const snap = getElementSnapshotAt(el, Math.max(0, Math.min(el.duration, localT)));
-      wrap.style.left = `${snap.x}px`;
-      wrap.style.top = `${snap.y}px`;
-      wrap.style.width = `${snap.w}px`;
-      wrap.style.height = `${snap.h}px`;
+      const scaledW = snap.w * snap.scale;
+      const scaledH = snap.h * snap.scale;
+      wrap.style.left = `${snap.x - (scaledW - snap.w) / 2}px`;
+      wrap.style.top = `${snap.y - (scaledH - snap.h) / 2}px`;
+      wrap.style.width = `${scaledW}px`;
+      wrap.style.height = `${scaledH}px`;
       wrap.style.opacity = String(snap.opacity);
-      wrap.style.transform = `scale(${snap.scale}) rotate(${snap.rotation}deg)`;
+      wrap.style.transform = `rotate(${snap.rotation}deg)`;
       wrap.style.zIndex = String(el.z_index ?? 0);
+      // Apply animated color/fontSize overrides to the inner content
+      const inner = wrap.firstElementChild as HTMLElement | null;
+      if (inner) {
+        const isSvg = el.html.includes('<svg');
+        if (isSvg) {
+          const hasImageFill = el.html.includes('url(#img-fill)');
+          if (!hasImageFill) {
+            const paths = inner.querySelectorAll('[fill]');
+            paths.forEach(p => p.setAttribute('fill', packedRgbToHex(snap.fillColor)));
+          }
+          const strokes = inner.querySelectorAll('[stroke]');
+          strokes.forEach(p => p.setAttribute('stroke', packedRgbToHex(snap.strokeColor)));
+        } else {
+          const hasBackgroundImage = /background-image:\s*url\(/.test(el.html);
+          if (!hasBackgroundImage) {
+            inner.style.background = packedRgbToHex(snap.fillColor);
+          }
+          if (el.type === 'text') {
+            const hasTextClip = el.html.includes('background-clip:') || el.html.includes('background-clip :');
+            if (!hasTextClip) {
+              inner.style.color = packedRgbToHex(snap.textColor);
+            }
+            inner.style.fontSize = `${Math.round(snap.fontSize)}px`;
+          }
+        }
+      }
     }
   }
 

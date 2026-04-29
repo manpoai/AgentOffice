@@ -6,15 +6,19 @@ import * as gw from '@/lib/api/gateway';
 import {
   Plus, Minus, Trash2, Play, Pause, SkipBack, SkipForward,
   Type, Minus as LineIcon, ChevronDown, ChevronRight,
-  Undo2, Redo2, X, Settings, Copy, Diamond, Ban,
+  Undo2, Redo2, X, Copy, Diamond, Ban,
   ArrowUp, ArrowDown, Lock, Unlock, Hexagon, ImagePlus,
-  Eye, EyeOff, Download,
+  Eye, EyeOff, Eclipse, SquareRoundCorner,
+  ALargeSmall, Rows3, RulerDimensionLine,
+  TextAlignStart, TextAlignCenter, TextAlignEnd,
+  ArrowUpToLine, SeparatorHorizontal, ArrowDownToLine,
+  Underline, Strikethrough, Settings2,
 } from 'lucide-react';
 import { exportVideoToBlob, downloadExport, type ExportFormat, type ExportPhase } from './videoExport';
 import { cn } from '@/lib/utils';
 import { showError } from '@/lib/utils/error';
 import { useT } from '@/lib/i18n';
-import { readFileAsDataUrl, extractDroppedImageFiles, isSvgFile } from '@/components/shared/image-upload';
+import { readFileAsDataUrl, extractDroppedImageFiles, isSvgFile, createImageHtml, probeImageSize, uploadImageFile, resolveUploadUrl } from '@/components/shared/image-upload';
 import { parseSvgFileContent } from '@/components/shared/svg-import';
 import { ContentTopBar } from '@/components/shared/ContentTopBar';
 import { buildFixedTopBarActionItems, renderFixedTopBarActions } from '@/actions/content-topbar-fixed.actions';
@@ -22,8 +26,21 @@ import { buildContentTopBarCommonMenuItems } from '@/actions/content-topbar-comm
 import { getPublicOrigin } from '@/lib/remote-access';
 import { CommentPanel } from '@/components/shared/CommentPanel';
 import { RevisionHistory } from '@/components/shared/RevisionHistory';
-import { ShapePicker, SHAPE_MAP, type ShapeType } from '@/components/shared/ShapeSet';
+import { SHAPE_MAP, type ShapeType } from '@/components/shared/ShapeSet';
 import { useUndoRedo } from '../canvas-editor/use-undo-redo';
+import { CANVAS_FONTS } from '../canvas-editor/fonts';
+import { loadGoogleFont } from '../canvas-editor/fontLoader';
+import { ColorPicker } from '../canvas-editor/ColorPicker';
+import { applySvgMarker, applyStrokeLinecap, type MarkerType } from '../canvas-editor/projection';
+import {
+  SectionHeader as CanvasSectionHeader,
+  SubsectionHeader,
+  LabeledNumberInput,
+  HexTextInput,
+  CornerRadiusField,
+  IconBtn,
+  SELECT_CLASS,
+} from '../canvas-editor/CanvasPropertyPanel';
 import type { VideoData, VideoElement, AnimatableProperty, EasingPreset, PropertyChangeOutcome } from './types';
 import {
   SIZE_PRESETS, EASING_PRESETS,
@@ -37,42 +54,127 @@ import {
   removeKeyframe as removeKeyframeFromElement,
   clearAnimation as clearAnimationOnProp,
   upsertKeyframe,
+  hexToPackedRgb, packedRgbToHex, COLOR_PROPERTIES,
 } from './types';
 
-// ─── Shared UI Components (matching Canvas style) ────
+// ─── Shared UI Components (Canvas-aligned) ────
 
-function ColorInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const isNone = !value || value === 'none';
+// Re-export SectionHeader from Canvas for local use
+const SectionHeader = CanvasSectionHeader;
+
+// Color swatch + hex input row — uses Canvas's ColorPicker (react-colorful).
+function VideoColorRow({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const isNone = !value || value === 'none' || value === 'transparent';
+  const hex = isNone ? '' : value.replace('#', '').toUpperCase();
   return (
-    <div className="flex items-center gap-2">
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
-      <div className="flex items-center gap-1 flex-1">
-        {isNone ? (
-          <button onClick={() => onChange('#000000')} className="w-6 h-6 rounded border border-dashed border-muted-foreground/30 flex items-center justify-center" title="Set color">
-            <Ban className="h-3 w-3 text-muted-foreground/40" />
-          </button>
-        ) : (
-          <input type="color" value={value} onChange={e => onChange(e.target.value)} className="w-6 h-6 rounded border cursor-pointer" />
-        )}
-        <input type="text" value={isNone ? '' : value} onChange={e => onChange(e.target.value || 'none')}
-          className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono" placeholder="none" />
-        {!isNone && <button onClick={() => onChange('none')} className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground"><X className="h-3 w-3" /></button>}
+    <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+      <div className="flex items-center gap-1.5 h-6 px-2 rounded bg-[#F5F5F5] hover:bg-[#EBEBEB] focus-within:ring-1 focus-within:ring-primary/40 min-w-0 col-span-2">
+        <ColorPicker
+          value={value || '#000000'}
+          onChange={onChange}
+          allowNone
+          onClear={() => onChange('none')}
+        />
+        <HexTextInput
+          value={hex}
+          onCommit={(raw) => {
+            const cleaned = raw.replace(/^#/, '').trim();
+            if (!cleaned) { onChange('none'); return; }
+            const expanded = cleaned.length <= 3
+              ? cleaned.split('').map(c => c + c).join('')
+              : cleaned;
+            if (/^[0-9a-fA-F]{6}$/.test(expanded)) onChange(`#${expanded}`);
+          }}
+          className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
+        />
       </div>
+      <div />
     </div>
   );
 }
 
-function NumberInput({ label, value, onChange, min, max, step = 1 }: {
-  label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number;
+// Simple select matching Canvas muted style
+function VideoSelect({ value, onChange, options }: {
+  value: string; onChange: (v: string) => void; options: { value: string; label: string }[];
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
-      <input type="number" value={Math.round(value * 100) / 100} min={min} max={max} step={step}
-        onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono" />
+    <div className="relative w-full">
+      <select value={value} onChange={e => onChange(e.target.value)} className={SELECT_CLASS}>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
     </div>
   );
+}
+
+// ─── Alpha & Image Fit helpers (aligned with Canvas) ────
+
+function hexOrRgbToRgba(c: string, alpha: number): string {
+  const a = Math.max(0, Math.min(1, alpha));
+  const rgbaM = c.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+  if (rgbaM) return `rgba(${rgbaM[1]}, ${rgbaM[2]}, ${rgbaM[3]}, ${a})`;
+  const hex = c.replace(/^#/, '');
+  const full = hex.length === 3 ? hex.split('').map(ch => ch + ch).join('') : hex.slice(0, 6);
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return c;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+function readAlphaFromRgba(c: string): number {
+  const m = c.match(/rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([0-9.]+)\)/);
+  return m ? parseFloat(m[1]) : 1;
+}
+
+type ImageFitMode = 'cover' | 'contain' | 'stretch';
+
+function getImageFitMode(html: string): ImageFitMode {
+  const imgParMatch = html.match(/<image\b[^>]*\spreserveAspectRatio="([^"]*)"/);
+  if (imgParMatch) {
+    if (imgParMatch[1] === 'none') return 'stretch';
+    if (imgParMatch[1].includes('meet')) return 'contain';
+    return 'cover';
+  }
+  const bgSizeMatch = html.match(/background-size:\s*([\w%-]+)/);
+  if (bgSizeMatch) {
+    if (bgSizeMatch[1] === 'contain') return 'contain';
+    if (bgSizeMatch[1] === '100%') return 'stretch';
+  }
+  return 'cover';
+}
+
+function applyImageFitMode(html: string, mode: ImageFitMode): string {
+  const isSvg = html.includes('<svg');
+  if (isSvg) {
+    const par = mode === 'stretch' ? 'none' : mode === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice';
+    return html.replace(/(<image\b[^>]*?\s)preserveAspectRatio="[^"]*"/, `$1preserveAspectRatio="${par}"`);
+  }
+  const bgSize = mode === 'stretch' ? '100% 100%' : mode === 'contain' ? 'contain' : 'cover';
+  return html.replace(/background-size:[^;]+;?/, `background-size:${bgSize};`);
+}
+
+function applyStrokeAlignment(html: string, newAlign: 'center' | 'inside' | 'outside'): string {
+  let h = html;
+  const oldAlign = (h.match(/data-stroke-align="([^"]+)"/) ?? [])[1] ?? 'center';
+  const oldDoubled = oldAlign === 'inside' || oldAlign === 'outside';
+  const newDoubled = newAlign === 'inside' || newAlign === 'outside';
+  const swMatch = h.match(/stroke-width="([^"]+)"/);
+  const sw = swMatch ? parseFloat(swMatch[1]) : 0;
+  if (sw > 0 && oldDoubled !== newDoubled) {
+    const visible = oldDoubled ? sw / 2 : sw;
+    const physical = newDoubled ? visible * 2 : visible;
+    h = h.replace(/stroke-width="[^"]*"/, `stroke-width="${physical}"`);
+  }
+  h = h.replace(/\s*data-stroke-align="[^"]*"/, '');
+  h = h.replace(/\s*paint-order="[^"]*"/, '');
+  if (newAlign !== 'center') {
+    h = h.replace(/<path /, `<path data-stroke-align="${newAlign}" `);
+    if (newAlign === 'outside') {
+      h = h.replace(/<path /, '<path paint-order="stroke" ');
+    }
+  }
+  return h;
 }
 
 /** Timeline track label cell. Carries the layer-panel responsibilities that
@@ -163,84 +265,127 @@ function TrackLabel({
   );
 }
 
-/** Animatable property field — number input plus an animation-state indicator
- *  and a right-click "Remove animation" affordance. The visible value is the
- *  interpolated snapshot at the current playhead, so changes feel direct. */
+/** Animatable property field — uses Canvas LabeledNumberInput with a keyframe
+ *  indicator diamond in the icon column. Right-click to remove animation. */
 function AnimatableField({
-  label, prop, value, min, max, step = 1,
+  label, prop, value, min, max, step = 1, suffix,
   element, playheadLocal,
   onChange, onRemoveAnimation,
 }: {
-  label: string;
+  label: React.ReactNode;
   prop: import('./types').AnimatableProperty;
   value: number;
   min?: number;
   max?: number;
   step?: number;
+  suffix?: string;
   element: VideoElement;
   playheadLocal: number;
   onChange: (prop: import('./types').AnimatableProperty, v: number) => void;
   onRemoveAnimation: (prop: import('./types').AnimatableProperty) => void;
 }) {
   const animated = isPropertyAnimated(element, prop);
-  // Has THIS property got a keyframe at the current playhead?
   const propKfs = element.keyframes?.[prop] ?? [];
   const onPropKf = propKfs.some(k => Math.abs(k.t - playheadLocal) <= TIME_EPSILON);
   const onMarker = isOnMarker(element, playheadLocal);
+  const labelStr = typeof label === 'string' ? label : String(prop);
 
   return (
-    <div className="flex items-center gap-2 group"
+    <div className="relative"
       onContextMenu={e => {
         if (!animated) return;
         e.preventDefault();
-        if (window.confirm(`Remove animation from ${label}? This deletes all ${label} keyframes (the static value at t=0 is preserved).`)) {
+        if (window.confirm(`Remove animation from ${labelStr}? This deletes all ${labelStr} keyframes (the static value at t=0 is preserved).`)) {
           onRemoveAnimation(prop);
         }
       }}
-      title={animated ? `Right-click to remove ${label} animation` : undefined}
+      title={animated ? `Right-click to remove ${labelStr} animation` : undefined}
     >
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
-      <input type="number" value={Math.round(value * 100) / 100} min={min} max={max} step={step}
-        onChange={e => onChange(prop, parseFloat(e.target.value) || 0)}
-        className={cn(
-          'flex-1 text-[11px] px-1.5 py-1 rounded border bg-background font-mono',
-          animated && 'border-yellow-500/40',
-        )} />
+      <LabeledNumberInput label={label} value={Math.round(value * 100) / 100} min={min} max={max} step={step} suffix={suffix}
+        onChange={v => onChange(prop, v)} />
       {animated && (
         <span
           className={cn(
-            'w-2.5 h-2.5 rotate-45 border shrink-0',
+            'absolute right-1 top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 border shrink-0',
             onPropKf ? 'bg-yellow-400 border-yellow-600' : 'border-yellow-500/60',
           )}
           title={onPropKf
             ? `Keyframe at ${playheadLocal.toFixed(2)}s`
-            : (onMarker ? `Marker at ${playheadLocal.toFixed(2)}s (no kf for ${label} yet)` : 'Animated, between keyframes')}
+            : (onMarker ? `Marker at ${playheadLocal.toFixed(2)}s (no kf for ${labelStr} yet)` : 'Animated, between keyframes')}
         />
       )}
     </div>
   );
 }
 
-function SelectInput({ label, value, onChange, options }: {
-  label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[];
+/** Animatable color field — Canvas ColorPicker + hex input + alpha% + keyframe diamond.
+ *  Value is a packed RGB integer. Right-click to remove animation. */
+function AnimatableColorField({
+  label, prop, value,
+  alphaPct, onAlphaChange,
+  element, playheadLocal,
+  onChange, onRemoveAnimation,
+}: {
+  label: string;
+  prop: AnimatableProperty;
+  value: number;
+  alphaPct?: number;
+  onAlphaChange?: (pct: number) => void;
+  element: VideoElement;
+  playheadLocal: number;
+  onChange: (prop: AnimatableProperty, v: number) => void;
+  onRemoveAnimation: (prop: AnimatableProperty) => void;
 }) {
-  return (
-    <div className="flex items-center gap-2">
-      <label className="text-[11px] text-muted-foreground w-14 shrink-0">{label}</label>
-      <select value={value} onChange={e => onChange(e.target.value)}
-        className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background">
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </div>
-  );
-}
+  const animated = isPropertyAnimated(element, prop);
+  const propKfs = element.keyframes?.[prop] ?? [];
+  const onPropKf = propKfs.some(k => Math.abs(k.t - playheadLocal) <= TIME_EPSILON);
+  const onMarker = isOnMarker(element, playheadLocal);
+  const hex = packedRgbToHex(value);
 
-function SectionHeader({ children, collapsed, onToggle }: { children: React.ReactNode; collapsed?: boolean; onToggle?: () => void }) {
   return (
-    <div className={cn("px-3 py-1.5 border-b border-border", onToggle && "cursor-pointer hover:bg-accent/50")} onClick={onToggle}>
-      <div className="flex items-center gap-1">
-        {onToggle && (collapsed ? <ChevronRight className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />)}
-        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{children}</span>
+    <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+      <div className="flex items-center gap-1.5 h-6 px-2 rounded bg-[#F5F5F5] hover:bg-[#EBEBEB] focus-within:ring-1 focus-within:ring-primary/40 min-w-0">
+        <ColorPicker
+          value={hex}
+          onChange={c => onChange(prop, hexToPackedRgb(c))}
+        />
+        <HexTextInput
+          value={hex.replace('#', '').toUpperCase()}
+          onCommit={(raw) => {
+            const cleaned = raw.replace(/^#/, '').trim();
+            if (!cleaned) return;
+            const expanded = cleaned.length <= 3
+              ? cleaned.split('').map(c => c + c).join('')
+              : cleaned;
+            if (/^[0-9a-fA-F]{6}$/.test(expanded)) onChange(prop, hexToPackedRgb(expanded));
+          }}
+          className="flex-1 min-w-0 bg-transparent border-0 text-[10px] text-foreground font-mono tabular-nums uppercase tracking-wide focus:outline-none"
+        />
+      </div>
+      {onAlphaChange ? (
+        <LabeledNumberInput label="" value={alphaPct ?? 100} min={0} max={100} step={1} suffix="%" onChange={onAlphaChange} />
+      ) : <div />}
+      <div className="flex items-center justify-center"
+        onContextMenu={e => {
+          if (!animated) return;
+          e.preventDefault();
+          if (window.confirm(`Remove animation from ${label}? This deletes all ${label} keyframes.`)) {
+            onRemoveAnimation(prop);
+          }
+        }}
+        title={animated ? `Right-click to remove ${label} animation` : undefined}
+      >
+        {animated && (
+          <span
+            className={cn(
+              'w-2.5 h-2.5 rotate-45 border shrink-0',
+              onPropKf ? 'bg-yellow-400 border-yellow-600' : 'border-yellow-500/60',
+            )}
+            title={onPropKf
+              ? `Keyframe at ${playheadLocal.toFixed(2)}s`
+              : (onMarker ? `Marker at ${playheadLocal.toFixed(2)}s (no kf for ${label} yet)` : 'Animated, between keyframes')}
+          />
+        )}
       </div>
     </div>
   );
@@ -286,6 +431,41 @@ function setStyleProp(html: string, prop: string, value: string): string {
   return html.replace(/style="/, `style="${prop}:${value};`);
 }
 
+/** Apply interpolated color/fontSize from the animation snapshot onto the HTML string.
+ *  This overwrites the static CSS values in the element's HTML at render time. */
+function applyAnimatedStyleOverrides(
+  html: string,
+  snap: Record<string, number>,
+  el: { type: string; html: string },
+): string {
+  let h = html;
+  const isSvg = el.html.includes('<svg');
+  const fillHex = packedRgbToHex(snap.fillColor);
+  const strokeHex = packedRgbToHex(snap.strokeColor);
+  const textHex = packedRgbToHex(snap.textColor);
+  const fs = snap.fontSize;
+
+  if (isSvg) {
+    const hasImageFill = h.includes('url(#img-fill)');
+    if (!hasImageFill) h = h.replace(/fill="[^"]*"/, `fill="${fillHex}"`);
+    h = h.replace(/stroke="[^"]*"/, `stroke="${strokeHex}"`);
+  } else {
+    const hasBackgroundImage = /background-image:\s*url\(/.test(h);
+    if (!hasBackgroundImage) {
+      if (extractProp(h, 'background')) h = setStyleProp(h, 'background', fillHex);
+      else if (extractProp(h, 'background-color')) h = setStyleProp(h, 'background-color', fillHex);
+    }
+    if (el.type === 'text') {
+      const hasTextClip = h.includes('background-clip:') || h.includes('background-clip :');
+      if (!hasTextClip) {
+        h = setStyleProp(h, 'color', textHex);
+      }
+      h = setStyleProp(h, 'font-size', `${Math.round(fs)}px`);
+    }
+  }
+  return h;
+}
+
 // ─── Stable HTML renderer (prevents CSS animation restart during playback) ────
 
 const StableHtml = memo(function StableHtml({ html }: { html: string }) {
@@ -299,6 +479,87 @@ const StableHtml = memo(function StableHtml({ html }: { html: string }) {
   }, [html]);
   return <div ref={ref} className="w-full h-full pointer-events-none" />;
 });
+
+// ─── Text Editing Host (mirrors Canvas EditingOverlay) ────
+
+function EditingHost({ element, zoom, onDone, onSizeChange }: {
+  element: VideoElement;
+  zoom: number;
+  onDone: (newHtml: string | null) => void;
+  onSizeChange: (w: number, h: number) => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const editableRef = useRef<HTMLElement | null>(null);
+  const savedRef = useRef(false);
+  const isAutoWidth = element.html.includes('data-text-resize="auto"');
+
+  const finish = useCallback(() => {
+    if (savedRef.current || !hostRef.current) return;
+    savedRef.current = true;
+    onDone(hostRef.current.innerHTML);
+  }, [onDone]);
+
+  const handleInput = useCallback(() => {
+    const inner = editableRef.current;
+    if (!inner) return;
+    const rect = inner.getBoundingClientRect();
+    const w = Math.max(20, Math.ceil(rect.width / zoom));
+    const h = Math.max(20, Math.ceil(rect.height / zoom));
+    if (isAutoWidth) {
+      onSizeChange(w, h);
+    } else {
+      onSizeChange(element.w, h);
+    }
+  }, [isAutoWidth, zoom, element.w, onSizeChange]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    host.innerHTML = element.html;
+    const inner = host.firstElementChild as HTMLElement | null;
+    if (!inner) return;
+    editableRef.current = inner;
+    if (inner.getAttribute('contenteditable') !== 'true') {
+      inner.setAttribute('contenteditable', 'true');
+    }
+    inner.style.outline = 'none';
+    const onBlur = () => finish();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); finish(); }
+    };
+    const onInputEvt = () => handleInput();
+    inner.addEventListener('blur', onBlur);
+    inner.addEventListener('keydown', onKeyDown);
+    inner.addEventListener('input', onInputEvt);
+    const raf = requestAnimationFrame(() => {
+      inner.focus();
+      const sel = window.getSelection();
+      if (sel) { sel.selectAllChildren(inner); sel.collapseToEnd(); }
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      inner.removeEventListener('blur', onBlur);
+      inner.removeEventListener('keydown', onKeyDown);
+      inner.removeEventListener('input', onInputEvt);
+      if (!savedRef.current) onDone(host.innerHTML);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div ref={hostRef}
+      style={{
+        width: isAutoWidth ? 'auto' : '100%',
+        height: isAutoWidth ? 'auto' : '100%',
+        minWidth: isAutoWidth ? 20 : undefined,
+        outline: 'none',
+        border: `${2 / zoom}px solid #3b82f6`,
+        borderRadius: 2,
+        boxSizing: 'border-box',
+      }}
+    />
+  );
+}
 
 // ─── Main Editor ────
 
@@ -332,10 +593,11 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}.${ms}`;
 }
 
-function buildShapeHtml(shapeType: ShapeType): string {
+function buildShapeHtml(shapeType: ShapeType, w = 200, h = 200): string {
   const shapeDef = SHAPE_MAP.get(shapeType);
-  if (!shapeDef) return '<div style="width:100%;height:100%;background:#3b82f6;border-radius:8px;"></div>';
-  return `<svg viewBox="0 0 100 100" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg"><path d="${shapeDef.renderPath(100, 100)}" fill="#3b82f6" stroke="none" /></svg>`;
+  if (!shapeDef) return '<div style="width:100%;height:100%;background:#D9D9D9;border-radius:8px;"></div>';
+  const pathData = shapeDef.renderPath(w, h);
+  return `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 ${w + 2} ${h + 2}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${pathData}" fill="#D9D9D9" stroke="none" stroke-width="0" vector-effect="non-scaling-stroke"/></svg></div>`;
 }
 
 export function VideoEditor({
@@ -352,12 +614,20 @@ export function VideoEditor({
   const [title, setTitle] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
   const [showRevisions, setShowRevisions] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showShapes, setShowShapes] = useState(false);
 
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedMarkerTime, setSelectedMarkerTime] = useState<number | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
+  // Drag-to-create insertion (Canvas-aligned).
+  type PendingInsert = { type: 'text' } | { type: 'shape'; shapeType: ShapeType } | { type: 'line-draw' };
+  const [pendingInsert, setPendingInsert] = useState<PendingInsert | null>(null);
+  const [createPreview, setCreatePreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const createDragRef = useRef<{ startClientX: number; startClientY: number; origX: number; origY: number; insert: PendingInsert } | null>(null);
+  // Line-draw state (two-click: first click = start, mouse move = preview, second click/up = finish)
+  const [lineDrawStart, setLineDrawStart] = useState<{ x: number; y: number } | null>(null);
+  const [lineDrawEnd, setLineDrawEnd] = useState<{ x: number; y: number } | null>(null);
 
   // Pending post-animation-interval intent dialog. When the dispatcher returns
   // 'needs-intent', we stash the payload here and surface a modal that lets the
@@ -470,67 +740,77 @@ export function VideoEditor({
     updateData(d => ({ ...d, elements: d.elements.map(el => el.id === elementId ? { ...el, ...updates } : el) }));
   }, [updateData]);
 
-  const addTextElement = useCallback(() => {
+  const startTextInsert = useCallback(() => {
     if (!data) return;
-    const s = data.settings;
+    const defaultText = 'Text';
+    const html = `<div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 24px; font-weight: 400; color: #000000; box-sizing: border-box; white-space: nowrap;" contenteditable="true" data-text-resize="auto">${defaultText}</div>`;
+    const measure = document.createElement('div');
+    measure.style.cssText = 'position:fixed;left:-99999px;top:0;white-space:nowrap;visibility:hidden;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:24px;font-weight:400;';
+    measure.textContent = defaultText;
+    document.body.appendChild(measure);
+    const w = Math.max(40, Math.ceil(measure.offsetWidth) + 8);
+    const h = Math.max(20, Math.ceil(measure.offsetHeight) + 4);
+    document.body.removeChild(measure);
     const newEl: VideoElement = {
       id: crypto.randomUUID(), type: 'text',
-      x: s.width / 2 - 150, y: s.height / 2 - 40, w: 300, h: 80,
-      html: '<div style="font-size:48px;color:#ffffff;font-family:sans-serif;font-weight:bold;text-align:center;width:100%;height:100%;display:flex;align-items:center;justify-content:center;">Text</div>',
-      start: currentTime, duration: 3, z_index: data.elements.length + 1, name: 'Text',
+      x: data.settings.width / 2 - w / 2, y: data.settings.height / 2 - h / 2, w, h,
+      html, start: currentTime, duration: 3,
+      z_index: data.elements.length + 1, name: 'Text',
     };
     updateData(d => ({ ...d, elements: [...d.elements, newEl] }));
     setSelectedElementId(newEl.id);
     setSelectedMarkerTime(null);
   }, [data, currentTime, updateData]);
 
-  const addShapeElement = useCallback((shapeType: ShapeType) => {
-    if (!data) return;
-    const s = data.settings;
-    const newEl: VideoElement = {
-      id: crypto.randomUUID(), type: 'shape',
-      x: s.width / 2 - 75, y: s.height / 2 - 75, w: 150, h: 150,
-      html: buildShapeHtml(shapeType),
-      start: currentTime, duration: 3, z_index: data.elements.length + 1,
-      name: SHAPE_MAP.get(shapeType)?.label ?? 'Shape',
-    };
-    updateData(d => ({ ...d, elements: [...d.elements, newEl] }));
-    setSelectedElementId(newEl.id);
+  const startShapeInsert = useCallback((shapeType: ShapeType) => {
+    setPendingInsert({ type: 'shape', shapeType });
     setShowShapes(false);
-  }, [data, currentTime, updateData]);
+    setSelectedElementId(null);
+  }, []);
 
-  const addLineElement = useCallback(() => {
-    if (!data) return;
-    const s = data.settings;
-    const newEl: VideoElement = {
-      id: crypto.randomUUID(), type: 'shape',
-      x: s.width / 2 - 100, y: s.height / 2 - 2, w: 200, h: 4,
-      html: '<div style="width:100%;height:100%;background:#3b82f6;"></div>',
-      start: currentTime, duration: 3, z_index: data.elements.length + 1, name: 'Line',
-    };
-    updateData(d => ({ ...d, elements: [...d.elements, newEl] }));
-    setSelectedElementId(newEl.id);
-  }, [data, currentTime, updateData]);
+  const startLineInsert = useCallback(() => {
+    setPendingInsert({ type: 'line-draw' });
+    setLineDrawStart(null);
+    setLineDrawEnd(null);
+    setSelectedElementId(null);
+  }, []);
 
   const insertImageFromFile = useCallback(async (file: File) => {
     if (!data) return;
-    let html: string, w = 300, h = 200, elType: 'image' | 'shape' = 'image';
+    const newElId = crypto.randomUUID();
+    let html: string, w: number, h: number, elType: 'image' | 'shape' = 'shape';
     if (isSvgFile(file)) {
       const text = await file.text();
       const parsed = parseSvgFileContent(text);
-      html = parsed.html; w = parsed.w; h = parsed.h; elType = 'shape';
+      html = parsed.html; w = parsed.w; h = parsed.h;
     } else {
-      const dataUrl = await readFileAsDataUrl(file);
-      html = `<div style="width:100%;height:100%;border-radius:0;overflow:hidden;"><img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" /></div>`;
+      const MAX_SIZE = 600;
+      const probe = await probeImageSize(file);
+      w = probe.w; h = probe.h;
+      if (w > MAX_SIZE || h > MAX_SIZE) {
+        const ratio = Math.min(MAX_SIZE / w, MAX_SIZE / h);
+        w = Math.round(w * ratio); h = Math.round(h * ratio);
+      }
+      html = createImageHtml(probe.objectUrl, w, h);
+      uploadImageFile(file).then(serverUrl => {
+        const resolved = resolveUploadUrl(serverUrl);
+        updateData(d => ({
+          ...d,
+          elements: d.elements.map(el =>
+            el.id === newElId ? { ...el, html: el.html.replace(probe.objectUrl, resolved) } : el
+          ),
+        }));
+        URL.revokeObjectURL(probe.objectUrl);
+      }).catch(() => {});
     }
     const newEl: VideoElement = {
-      id: crypto.randomUUID(), type: elType,
+      id: newElId, type: elType,
       x: data.settings.width / 2 - w / 2, y: data.settings.height / 2 - h / 2, w, h,
       html, start: currentTime, duration: 3,
       z_index: data.elements.length + 1, name: file.name.replace(/\.[^.]+$/, ''),
     };
     updateData(d => ({ ...d, elements: [...d.elements, newEl] }));
-    setSelectedElementId(newEl.id);
+    setSelectedElementId(newElId);
   }, [data, currentTime, updateData]);
 
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -867,6 +1147,7 @@ export function VideoEditor({
     startRename: () => {}, openIconPicker: () => {},
     togglePin: () => onTogglePin?.(), deleteItem: handleDelete, shareItem: () => {},
     copyLink: () => onCopyLink?.(),
+    downloadItem: () => setShowExportMenu(true),
     showHistory: () => { setShowRevisions(v => !v); onCloseComments(); },
     showComments: () => { onShowComments(); setShowRevisions(false); },
     showHistoryActive: showRevisions, showCommentsActive: showComments,
@@ -948,8 +1229,33 @@ export function VideoEditor({
       });
     };
     const handleUp = () => {
+      const r = resizeRef.current;
       resizeRef.current = null;
-      setData(prev => { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; });
+      setData(prev => {
+        if (!prev || !r) { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; }
+        const pel = prev.elements.find(x => x.id === r.elId);
+        if (pel && pel.type === 'text' && /[ew]/.test(r.handle) && pel.html.includes('data-text-resize="auto"')) {
+          let newHtml = pel.html
+            .replace('data-text-resize="auto"', 'data-text-resize="fixed-width"')
+            .replace(/white-space:\s*nowrap;?\s*/, 'white-space: normal; word-wrap: break-word; ');
+          const measure = document.createElement('div');
+          measure.style.cssText = `position:fixed;left:-99999px;top:0;visibility:hidden;width:${pel.w}px;`;
+          measure.innerHTML = newHtml;
+          document.body.appendChild(measure);
+          const inner = measure.firstElementChild as HTMLElement | null;
+          let newH = pel.h;
+          if (inner) {
+            inner.style.width = `${pel.w}px`;
+            newH = Math.max(20, Math.ceil(inner.getBoundingClientRect().height));
+          }
+          document.body.removeChild(measure);
+          const updated = { ...prev, elements: prev.elements.map(x => x.id === r.elId ? { ...x, html: newHtml, h: newH } : x) };
+          undoRedo.push(updated); scheduleSave(updated);
+          return updated;
+        }
+        undoRedo.push(prev); scheduleSave(prev);
+        return prev;
+      });
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
@@ -965,14 +1271,170 @@ export function VideoEditor({
     setEditingTextId(elId);
   }, [data]);
 
-  const handleTextBlur = useCallback((elId: string, newText: string) => {
-    setEditingTextId(null);
-    if (!data) return;
-    const el = data.elements.find(e => e.id === elId);
-    if (!el) return;
-    const updatedHtml = el.html.replace(/>([^<]*)<\/div>\s*$/, `>${newText}</div>`);
-    updateElement(elId, { html: updatedHtml });
-  }, [data, updateElement]);
+  // ─── Screen→Canvas coordinate conversion ────
+  const canvasOuterRef = useRef<HTMLDivElement>(null);
+  const screenToCanvas = useCallback((clientX: number, clientY: number) => {
+    const el = canvasOuterRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const rect = el.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) / zoom,
+      y: (clientY - rect.top) / zoom,
+    };
+  }, [zoom]);
+
+  // ─── Drag-to-Create (text/shape) ──────
+  const handleCanvasCreatePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!pendingInsert || !data) return;
+    if (pendingInsert.type === 'line-draw') return; // line-draw handled separately
+    e.preventDefault();
+    e.stopPropagation();
+    const pt = screenToCanvas(e.clientX, e.clientY);
+    createDragRef.current = { startClientX: e.clientX, startClientY: e.clientY, origX: pt.x, origY: pt.y, insert: pendingInsert };
+
+    const handleMove = (ev: PointerEvent) => {
+      const d = createDragRef.current;
+      if (!d) return;
+      const cur = screenToCanvas(ev.clientX, ev.clientY);
+      const x = Math.min(d.origX, cur.x);
+      const y = Math.min(d.origY, cur.y);
+      const w = Math.abs(cur.x - d.origX);
+      const h = Math.abs(cur.y - d.origY);
+      setCreatePreview({ x, y, w, h });
+    };
+    const handleUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      const d = createDragRef.current;
+      createDragRef.current = null;
+      setCreatePreview(null);
+      if (!d || !data) return;
+      const cur = screenToCanvas(ev.clientX, ev.clientY);
+      const dist = Math.hypot(ev.clientX - d.startClientX, ev.clientY - d.startClientY);
+      const dragged = dist > 5;
+      let x: number, y: number, w: number, h: number;
+      if (dragged) {
+        x = Math.round(Math.min(d.origX, cur.x));
+        y = Math.round(Math.min(d.origY, cur.y));
+        w = Math.round(Math.max(20, Math.abs(cur.x - d.origX)));
+        h = Math.round(Math.max(20, Math.abs(cur.y - d.origY)));
+      } else {
+        if (d.insert.type === 'text') {
+          w = 100; h = 32;
+        } else if (d.insert.type === 'shape') {
+          const def = SHAPE_MAP.get(d.insert.shapeType);
+          w = (def?.width ?? 100) * 2;
+          h = (def?.height ?? 100) * 2;
+        } else {
+          w = 200; h = 200;
+        }
+        x = Math.round(d.origX - w / 2);
+        y = Math.round(d.origY - h / 2);
+      }
+      let html: string;
+      let elType: string;
+      let name: string;
+      if (d.insert.type === 'text') {
+        const isFixedWidth = dragged && w > 10;
+        html = `<div style="font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 24px; font-weight: 400; color: #000000; box-sizing: border-box; ${isFixedWidth ? 'white-space: normal; word-wrap: break-word;' : 'white-space: nowrap;'}" contenteditable="true" data-text-resize="${isFixedWidth ? 'fixed-width' : 'auto'}"></div>`;
+        elType = 'text'; name = 'Text';
+      } else if (d.insert.type === 'shape') {
+        html = buildShapeHtml(d.insert.shapeType, w, h);
+        elType = 'shape'; name = SHAPE_MAP.get(d.insert.shapeType)?.label ?? 'Shape';
+      } else {
+        return;
+      }
+      const newEl: VideoElement = {
+        id: crypto.randomUUID(), type: elType,
+        x, y, w, h, html,
+        start: currentTime, duration: 3, z_index: data.elements.length + 1, name,
+      };
+      updateData(dd => ({ ...dd, elements: [...dd.elements, newEl] }));
+      setSelectedElementId(newEl.id);
+      setPendingInsert(null);
+      if (d.insert.type === 'text') setEditingTextId(newEl.id);
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  }, [pendingInsert, data, screenToCanvas, currentTime, updateData]);
+
+  // ─── Line Drawing Tool ────────────────
+  const snapAngle = (start: { x: number; y: number }, end: { x: number; y: number }, shiftKey: boolean) => {
+    if (!shiftKey) return end;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const angle = Math.atan2(dy, dx);
+    const snapAngles = [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4, Math.PI, -3 * Math.PI / 4, -Math.PI / 2, -Math.PI / 4];
+    let closest = snapAngles[0];
+    let minDiff = Infinity;
+    for (const sa of snapAngles) {
+      const diff = Math.abs(angle - sa);
+      if (diff < minDiff) { minDiff = diff; closest = sa; }
+    }
+    const len = Math.hypot(dx, dy);
+    return { x: start.x + len * Math.cos(closest), y: start.y + len * Math.sin(closest) };
+  };
+
+  const handleLineDrawPointerDown = useCallback((e: React.PointerEvent) => {
+    if (!pendingInsert || pendingInsert.type !== 'line-draw' || !data) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const pt = screenToCanvas(e.clientX, e.clientY);
+    if (!lineDrawStart) {
+      setLineDrawStart(pt);
+    }
+  }, [pendingInsert, data, screenToCanvas, lineDrawStart]);
+
+  const handleLineDrawPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!lineDrawStart) return;
+    let pt = screenToCanvas(e.clientX, e.clientY);
+    pt = snapAngle(lineDrawStart, pt, e.shiftKey);
+    setLineDrawEnd(pt);
+  }, [lineDrawStart, screenToCanvas]);
+
+  const handleLineDrawPointerUp = useCallback((e: React.PointerEvent) => {
+    if (!lineDrawStart || !data) return;
+    let pt = screenToCanvas(e.clientX, e.clientY);
+    pt = snapAngle(lineDrawStart, pt, e.shiftKey);
+    const x1 = Math.min(lineDrawStart.x, pt.x);
+    const y1 = Math.min(lineDrawStart.y, pt.y);
+    const x2 = Math.max(lineDrawStart.x, pt.x);
+    const y2 = Math.max(lineDrawStart.y, pt.y);
+    const pad = 4;
+    const w = Math.max(x2 - x1 + pad * 2, 1);
+    const h = Math.max(y2 - y1 + pad * 2, 1);
+    const lx1 = lineDrawStart.x - x1 + pad;
+    const ly1 = lineDrawStart.y - y1 + pad;
+    const lx2 = pt.x - x1 + pad;
+    const ly2 = pt.y - y1 + pad;
+    const d = `M${Math.round(lx1)},${Math.round(ly1)} L${Math.round(lx2)},${Math.round(ly2)}`;
+    const html = `<div style="width:100%;height:100%;overflow:visible;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${Math.round(w)} ${Math.round(h)}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;overflow:visible;"><path d="${d}" fill="none" stroke="#000000" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>`;
+    const newEl: VideoElement = {
+      id: crypto.randomUUID(), type: 'shape',
+      x: Math.round(x1 - pad), y: Math.round(y1 - pad), w: Math.round(w), h: Math.round(h),
+      html, start: currentTime, duration: 3, z_index: data.elements.length + 1, name: 'Line',
+    };
+    updateData(dd => ({ ...dd, elements: [...dd.elements, newEl] }));
+    setSelectedElementId(newEl.id);
+    setLineDrawStart(null);
+    setLineDrawEnd(null);
+    setPendingInsert(null);
+  }, [lineDrawStart, data, screenToCanvas, currentTime, updateData]);
+
+  // Escape to cancel pendingInsert
+  useEffect(() => {
+    if (!pendingInsert) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPendingInsert(null);
+        setLineDrawStart(null);
+        setLineDrawEnd(null);
+        setCreatePreview(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingInsert]);
 
   // ─── Timeline Drag ────────────────────
   const timelineDragRef = useRef<{
@@ -1113,66 +1575,64 @@ export function VideoEditor({
         <div className="flex-1 flex min-h-0">
           <div className="flex-1 flex flex-col min-h-0 min-w-0">
             {/* Canvas Preview */}
-            <div ref={canvasContainerRef} className="flex-1 bg-muted/50 flex items-center justify-center overflow-hidden relative"
-              onClick={() => { setSelectedElementId(null); setSelectedMarkerTime(null); setShowShapes(false); }}>
+            <div ref={canvasContainerRef} className="flex-1 flex items-center justify-center overflow-hidden relative"
+              style={{ background: '#F5F7F5', cursor: pendingInsert ? 'crosshair' : 'default' }}
+              onClick={() => { if (!pendingInsert) { setSelectedElementId(null); setSelectedMarkerTime(null); setShowShapes(false); } }}>
 
               {/* Floating Toolbar (Canvas style) */}
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 bg-card rounded border border-black/10 dark:border-white/10 px-3 h-10 shadow-[0px_0px_20px_0px_rgba(0,0,0,0.02)]"
                 onClick={e => e.stopPropagation()}>
                 <div className="relative">
-                  <ToolBtn icon={Hexagon} onClick={() => setShowShapes(v => !v)} active={showShapes} title="Shapes" />
+                  <ToolBtn icon={Hexagon} onClick={() => setShowShapes(v => !v)} active={showShapes || (pendingInsert?.type === 'shape')} title="Shapes" />
                   {showShapes && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setShowShapes(false)} />
                       <div className="absolute top-full left-0 mt-2 z-50">
-                        <ShapePicker onSelect={(type) => addShapeElement(type)} columns={6} />
+                        <div className="bg-card rounded-lg border shadow-lg py-1 min-w-[140px]">
+                          {([
+                            { type: 'rect' as ShapeType, label: 'Rect', labelCn: '矩形' },
+                            { type: 'circle' as ShapeType, label: 'Circle', labelCn: '圆形' },
+                            { type: 'polygon' as ShapeType, label: 'Polygon', labelCn: '多边形' },
+                            { type: 'star' as ShapeType, label: 'Star', labelCn: '星形' },
+                          ]).map(({ type, label, labelCn }) => (
+                            <button key={type} onClick={() => { startShapeInsert(type); setShowShapes(false); }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-foreground hover:bg-accent hover:text-accent-foreground transition-colors text-left">
+                              <span className="font-medium">{label}</span>
+                              <span className="text-muted-foreground text-[11px]">{labelCn}</span>
+                            </button>
+                          ))}
+                          <div className="my-1 border-t" />
+                          <button onClick={() => { fileInputRef.current?.click(); setShowShapes(false); }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-[12px] text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+                            <ImagePlus className="h-3.5 w-3.5" /> Upload SVG
+                          </button>
+                        </div>
                       </div>
                     </>
                   )}
                 </div>
-                <ToolBtn icon={LineIcon} onClick={addLineElement} title="Line" />
-                <ToolBtn icon={Type} onClick={addTextElement} title="Text" />
+                <ToolBtn icon={LineIcon} onClick={startLineInsert} active={pendingInsert?.type === 'line-draw'} title="Line (click two points, Shift for angle snap)" />
+                <ToolBtn icon={Type} onClick={startTextInsert} title="Add Text" />
                 <ToolBtn icon={ImagePlus} onClick={() => fileInputRef.current?.click()} title="Image" />
                 <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-0.5" />
                 <ToolBtn icon={Undo2} onClick={handleUndo} disabled={!undoRedo.canUndo} title="Undo" />
                 <ToolBtn icon={Redo2} onClick={handleRedo} disabled={!undoRedo.canRedo} title="Redo" />
-                <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-0.5" />
-                <ToolBtn icon={Settings} onClick={() => setShowSettings(v => !v)} active={showSettings} title="Canvas Settings" />
-                <div className="w-px h-6 bg-black/10 dark:bg-white/10 mx-0.5" />
-                <div className="relative">
-                  <ToolBtn icon={Download} onClick={() => setShowExportMenu(v => !v)} disabled={!!exportProgress} active={showExportMenu} title="Export video" />
-                  {showExportMenu && !exportProgress && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
-                      <div className="absolute top-full right-0 mt-2 z-50 bg-card rounded border border-border shadow-lg w-44 py-1 text-xs">
-                        <button
-                          onClick={() => handleExport('mp4')}
-                          className="w-full text-left px-3 py-2 hover:bg-accent">
-                          <div className="font-medium">MP4 (H.264)</div>
-                          <div className="text-[10px] text-muted-foreground">Universal · slower</div>
-                        </button>
-                        <button
-                          onClick={() => handleExport('webm')}
-                          className="w-full text-left px-3 py-2 hover:bg-accent">
-                          <div className="font-medium">WebM (VP9)</div>
-                          <div className="text-[10px] text-muted-foreground">Faster · web-friendly</div>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
               </div>
 
               {/* Image upload button (hidden) */}
               <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
 
               {/* Canvas — outer container at screen pixels, inner at native size scaled via CSS transform */}
-              <div style={{
+              <div ref={canvasOuterRef} style={{
                 width: data.settings.width * zoom,
                 height: data.settings.height * zoom,
                 position: 'relative',
+                cursor: pendingInsert ? 'crosshair' : undefined,
               }} className="shadow-2xl overflow-hidden"
-                onDrop={handleVideoDrop} onDragOver={handleVideoDragOver}>
+                onDrop={handleVideoDrop} onDragOver={handleVideoDragOver}
+                onPointerDown={pendingInsert?.type === 'line-draw' ? handleLineDrawPointerDown : pendingInsert ? handleCanvasCreatePointerDown : undefined}
+                onPointerMove={pendingInsert?.type === 'line-draw' ? handleLineDrawPointerMove : undefined}
+                onPointerUp={pendingInsert?.type === 'line-draw' ? handleLineDrawPointerUp : undefined}>
                 <div style={{
                   width: data.settings.width,
                   height: data.settings.height,
@@ -1187,12 +1647,17 @@ export function VideoEditor({
                   const isEditing = editingTextId === el.id;
                   const isSelected = selectedElementId === el.id;
 
+                  const isAutoEditing = isEditing && el.html.includes('data-text-resize="auto"');
                   return (
                     <div key={el.id}
                       className={cn("absolute", !isEditing && "cursor-move")}
                       style={{
-                        left: snap.x, top: snap.y, width: snap.w, height: snap.h, opacity: snap.opacity,
-                        transform: `scale(${snap.scale}) rotate(${snap.rotation}deg)`,
+                        left: snap.x - (snap.w * snap.scale - snap.w) / 2,
+                        top: snap.y - (snap.h * snap.scale - snap.h) / 2,
+                        width: isAutoEditing ? 'auto' : snap.w * snap.scale,
+                        height: isAutoEditing ? 'auto' : snap.h * snap.scale,
+                        opacity: snap.opacity,
+                        transform: `rotate(${snap.rotation}deg)`,
                         transformOrigin: 'center center',
                         zIndex: el.z_index ?? 0,
                       }}
@@ -1201,13 +1666,19 @@ export function VideoEditor({
                       onDoubleClick={() => handleDoubleClick(el.id)}
                     >
                       {isEditing ? (
-                        <div contentEditable suppressContentEditableWarning autoFocus
-                          style={{ width: '100%', height: '100%', outline: 'none' }}
-                          onBlur={(e) => handleTextBlur(el.id, e.currentTarget.textContent ?? '')}
-                          dangerouslySetInnerHTML={{ __html: el.html.replace(/<[^>]+>/g, '') || 'Text' }}
+                        <EditingHost
+                          element={el}
+                          zoom={zoom}
+                          onDone={(newHtml) => {
+                            setEditingTextId(null);
+                            if (newHtml) updateElement(el.id, { html: newHtml });
+                          }}
+                          onSizeChange={(w, h) => {
+                            updateElement(el.id, { w, h, x: el.x + (el.w - w) / 2, y: el.y + (el.h - h) / 2 });
+                          }}
                         />
                       ) : (
-                        <StableHtml html={el.html} />
+                        <StableHtml html={applyAnimatedStyleOverrides(el.html, snap, el)} />
                       )}
                       {/* Selection border + resize handles */}
                       {isSelected && !isEditing && (
@@ -1228,6 +1699,28 @@ export function VideoEditor({
                     </div>
                   );
                 })}
+
+                {/* Create preview rect (drag-to-create) */}
+                {createPreview && (
+                  <div style={{
+                    position: 'absolute',
+                    left: createPreview.x, top: createPreview.y,
+                    width: createPreview.w, height: createPreview.h,
+                    border: '2px dashed #3b82f6',
+                    background: 'rgba(59,130,246,0.08)',
+                    pointerEvents: 'none', zIndex: 9999,
+                  }} />
+                )}
+
+                {/* Line draw preview */}
+                {lineDrawStart && lineDrawEnd && (
+                  <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 9999 }}>
+                    <line x1={lineDrawStart.x} y1={lineDrawStart.y} x2={lineDrawEnd.x} y2={lineDrawEnd.y}
+                      stroke="#3b82f6" strokeWidth={2} strokeDasharray="4 3" />
+                    <circle cx={lineDrawStart.x} cy={lineDrawStart.y} r={4} fill="#3b82f6" stroke="white" strokeWidth={1.5} />
+                    <circle cx={lineDrawEnd.x} cy={lineDrawEnd.y} r={4} fill="#3b82f6" stroke="white" strokeWidth={1.5} />
+                  </svg>
+                )}
                 </div>
               </div>
 
@@ -1381,11 +1874,9 @@ export function VideoEditor({
             </div>
           </div>
 
-          {/* Right Panel — always visible */}
-          <div className="w-[280px] border-l border-border bg-sidebar shrink-0 overflow-y-auto hidden md:block">
-            {showSettings ? (
-              <SettingsPanel settings={data.settings} onUpdate={updateSettings} onClose={() => setShowSettings(false)} />
-            ) : selectedElement ? (
+          {/* Right Panel — always visible, 240px matching Canvas */}
+          <div className="w-[240px] border-l border-border bg-white shrink-0 overflow-y-auto hidden md:block">
+            {selectedElement ? (
               <ElementPropertyPanel element={selectedElement} totalDuration={totalDuration} currentTime={currentTime}
                 onUpdate={(updates) => updateElement(selectedElement.id, updates)}
                 onUpdateHtml={(html) => updateElement(selectedElement.id, { html })}
@@ -1400,7 +1891,7 @@ export function VideoEditor({
                 selectedMarkerTime={selectedMarkerTime}
                 onSelectMarker={setSelectedMarkerTime} />
             ) : (
-              <div className="p-4 text-xs text-muted-foreground">Select an element to edit properties.</div>
+              <SettingsPanel settings={data.settings} onUpdate={updateSettings} />
             )}
           </div>
         </div>
@@ -1436,6 +1927,35 @@ export function VideoEditor({
           playheadLocal={pendingIntent.playheadLocal}
           onPick={resolveIntent}
           onCancel={() => setPendingIntent(null)} />
+      )}
+
+      {/* Export format picker (triggered from more-menu Download) */}
+      {showExportMenu && !exportProgress && (
+        <div className="fixed inset-0 z-[10100] bg-black/40 flex items-center justify-center" onClick={() => setShowExportMenu(false)}>
+          <div className="bg-card rounded-lg shadow-2xl w-[280px] border border-border" onClick={e => e.stopPropagation()}>
+            <div className="px-4 pt-4 pb-2">
+              <h3 className="text-sm font-semibold">Export Video</h3>
+              <p className="text-xs text-muted-foreground mt-1">Choose export format</p>
+            </div>
+            <div className="px-2 pb-2 space-y-1">
+              <button onClick={() => handleExport('mp4')}
+                className="w-full text-left px-3 py-2.5 rounded hover:bg-accent">
+                <div className="text-xs font-medium">MP4 (H.264)</div>
+                <div className="text-[10px] text-muted-foreground">Universal · slower</div>
+              </button>
+              <button onClick={() => handleExport('webm')}
+                className="w-full text-left px-3 py-2.5 rounded hover:bg-accent">
+                <div className="text-xs font-medium">WebM (VP9)</div>
+                <div className="text-[10px] text-muted-foreground">Faster · web-friendly</div>
+              </button>
+            </div>
+            <div className="px-4 pb-3 flex justify-end">
+              <button onClick={() => setShowExportMenu(false)} className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Export progress modal (Phase 6). */}
@@ -1535,25 +2055,203 @@ function PostAnimationIntentDialog({
   );
 }
 
-// ─── Settings Panel ─────────────────────
+// ─── Stroke Settings Popover (mirrors Canvas StrokeSettingsPopover) ─────
+function VideoStrokeSettingsPopover({
+  strokeDash, strokeLinecap, markerStart, markerEnd, isOpenPath,
+  onChangeDash, onChangeCap, onChangeMarkerStart, onChangeMarkerEnd,
+}: {
+  strokeDash: string; strokeLinecap: string; markerStart: string; markerEnd: string;
+  isOpenPath: boolean;
+  onChangeDash: (v: string) => void; onChangeCap: (v: string) => void;
+  onChangeMarkerStart: (v: string) => void; onChangeMarkerEnd: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const popRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      if (btnRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  return (
+    <div className="relative">
+      <button ref={btnRef}
+        className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/50"
+        onClick={() => setOpen(v => !v)} title="Stroke settings">
+        <Settings2 className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div ref={popRef}
+          className="absolute right-0 top-7 z-50 w-[220px] rounded-md border border-border bg-card shadow-lg p-3 space-y-2">
+          <div>
+            <SubsectionHeader>Dash</SubsectionHeader>
+            <select value={strokeDash} onChange={e => onChangeDash(e.target.value)} className={SELECT_CLASS}>
+              <option value="">Solid</option>
+              <option value="8 4">Dashed</option>
+              <option value="2 2">Dotted</option>
+              <option value="12 4 4 4">Dash-dot</option>
+            </select>
+          </div>
+          {isOpenPath && (
+            <>
+              <div>
+                <SubsectionHeader>Cap</SubsectionHeader>
+                <select value={strokeLinecap} onChange={e => onChangeCap(e.target.value)} className={SELECT_CLASS}>
+                  <option value="butt">Butt</option>
+                  <option value="round">Round</option>
+                  <option value="square">Square</option>
+                </select>
+              </div>
+              <div>
+                <SubsectionHeader>Start</SubsectionHeader>
+                <select value={markerStart} onChange={e => onChangeMarkerStart(e.target.value)} className={SELECT_CLASS}>
+                  <option value="none">None</option>
+                  <option value="arrow">Arrow</option>
+                  <option value="triangle">Triangle</option>
+                  <option value="triangle-reversed">Triangle Rev.</option>
+                  <option value="circle">Circle</option>
+                  <option value="diamond">Diamond</option>
+                </select>
+              </div>
+              <div>
+                <SubsectionHeader>End</SubsectionHeader>
+                <select value={markerEnd} onChange={e => onChangeMarkerEnd(e.target.value)} className={SELECT_CLASS}>
+                  <option value="none">None</option>
+                  <option value="arrow">Arrow</option>
+                  <option value="triangle">Triangle</option>
+                  <option value="triangle-reversed">Triangle Rev.</option>
+                  <option value="circle">Circle</option>
+                  <option value="diamond">Diamond</option>
+                </select>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-function SettingsPanel({ settings, onUpdate, onClose }: {
-  settings: gw.VideoSettings; onUpdate: (updates: Partial<gw.VideoSettings>) => void; onClose: () => void;
+// ─── Text Settings Popover (mirrors Canvas TextSettingsPopover) ─────
+function VideoTextSettingsPopover({
+  textAlign, textDecoration,
+  onChangeAlign, onChangeDecoration,
+}: {
+  textAlign: string; textDecoration: string;
+  onChangeAlign: (v: string) => void; onChangeDecoration: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const popRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      if (btnRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDocDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  return (
+    <div className="relative">
+      <button ref={btnRef}
+        className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/50"
+        onClick={() => setOpen(v => !v)} title="Text settings">
+        <Settings2 className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div ref={popRef}
+          className="absolute right-0 top-7 z-50 w-[220px] rounded-md border border-border bg-card shadow-lg p-3 space-y-2">
+          <div>
+            <SubsectionHeader>Justify</SubsectionHeader>
+            <button
+              className={cn('w-full h-6 text-[10px] flex items-center justify-center rounded transition-colors',
+                textAlign === 'justify'
+                  ? 'bg-white text-foreground ring-1 ring-border'
+                  : 'bg-[#F5F5F5] text-muted-foreground hover:bg-muted hover:text-foreground')}
+              onClick={() => onChangeAlign(textAlign === 'justify' ? 'left' : 'justify')}>
+              {textAlign === 'justify' ? 'On' : 'Off'}
+            </button>
+          </div>
+          <div>
+            <SubsectionHeader>Decoration</SubsectionHeader>
+            <div className="grid grid-cols-3 gap-0.5">
+              {([
+                ['none', Minus, 'None'],
+                ['underline', Underline, 'Underline'],
+                ['line-through', Strikethrough, 'Strikethrough'],
+              ] as const).map(([d, Icon, title]) => (
+                <button key={d}
+                  className={cn('h-6 flex items-center justify-center rounded transition-colors',
+                    (textDecoration ?? 'none') === d
+                      ? 'bg-white text-foreground ring-1 ring-border'
+                      : 'bg-[#F5F5F5] text-muted-foreground hover:bg-muted hover:text-foreground')}
+                  onClick={() => onChangeDecoration(d)}
+                  title={title}>
+                  <Icon className="w-3 h-3" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Settings Panel (default when no element selected) ─────────────────────
+
+function SettingsPanel({ settings, onUpdate }: {
+  settings: gw.VideoSettings; onUpdate: (updates: Partial<gw.VideoSettings>) => void;
 }) {
   return (
     <div>
-      <SectionHeader>Video Settings</SectionHeader>
-      <div className="p-3 space-y-2">
-        <SelectInput label="Preset"
-          value={SIZE_PRESETS.some(p => p.width === settings.width && p.height === settings.height) ? `${settings.width}x${settings.height}` : 'custom'}
-          onChange={v => { if (v === 'custom') return; const [w, h] = v.split('x').map(Number); if (w && h) onUpdate({ width: w, height: h }); }}
-          options={[...SIZE_PRESETS.map(p => ({ value: `${p.width}x${p.height}`, label: `${p.label}` })), { value: 'custom', label: 'Custom' }]} />
-        <NumberInput label="Width" value={settings.width} min={100} max={7680} onChange={v => onUpdate({ width: v })} />
-        <NumberInput label="Height" value={settings.height} min={100} max={7680} onChange={v => onUpdate({ height: v })} />
-        <SelectInput label="FPS" value={String(settings.fps)} onChange={v => onUpdate({ fps: Number(v) })}
-          options={[{ value: '24', label: '24 fps' }, { value: '30', label: '30 fps' }, { value: '60', label: '60 fps' }]} />
-        <ColorInput label="BG" value={settings.background_color ?? '#000000'} onChange={v => onUpdate({ background_color: v })} />
-        <button onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground mt-2">Close settings</button>
+      <div className="px-3 py-2 border-b border-border">
+        <span className="text-xs font-medium">Video Settings</span>
+      </div>
+
+      <SectionHeader>Canvas</SectionHeader>
+      <div className="px-3 py-2 space-y-2">
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <div className="col-span-2">
+            <VideoSelect
+              value={SIZE_PRESETS.some(p => p.width === settings.width && p.height === settings.height) ? `${settings.width}x${settings.height}` : 'custom'}
+              onChange={v => { if (v === 'custom') return; const [w, h] = v.split('x').map(Number); if (w && h) onUpdate({ width: w, height: h }); }}
+              options={[...SIZE_PRESETS.map(p => ({ value: `${p.width}x${p.height}`, label: p.label })), { value: 'custom', label: 'Custom' }]} />
+          </div>
+          <div />
+        </div>
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <LabeledNumberInput label="W" value={settings.width} min={100} max={7680} onChange={v => onUpdate({ width: v })} />
+          <LabeledNumberInput label="H" value={settings.height} min={100} max={7680} onChange={v => onUpdate({ height: v })} />
+          <div />
+        </div>
+      </div>
+
+      <SectionHeader>Playback</SectionHeader>
+      <div className="px-3 py-2 space-y-2">
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <div className="col-span-2">
+            <VideoSelect value={String(settings.fps)} onChange={v => onUpdate({ fps: Number(v) })}
+              options={[{ value: '24', label: '24 fps' }, { value: '30', label: '30 fps' }, { value: '60', label: '60 fps' }]} />
+          </div>
+          <div />
+        </div>
+      </div>
+
+      <SectionHeader>Background</SectionHeader>
+      <div className="px-3 py-2">
+        <VideoColorRow value={settings.background_color ?? '#000000'} onChange={v => onUpdate({ background_color: v })} />
       </div>
     </div>
   );
@@ -1647,108 +2345,380 @@ function ElementPropertyPanel({
   selectedMarkerTime: number | null;
   onSelectMarker: (t: number | null) => void;
 }) {
-  const [showAppearance, setShowAppearance] = useState(true);
   const [showMarkers, setShowMarkers] = useState(true);
   const [showHtml, setShowHtml] = useState(false);
   const markers = getMarkers(element);
   const playheadLocal = currentTime - element.start;
   const playheadInLifespan = playheadLocal >= 0 && playheadLocal <= element.duration;
-  // Interpolated snapshot at the current playhead — used to populate the X/Y/W/H
-  // and other animatable inputs so the panel reflects what the user is *seeing*
-  // at this moment, not the static-only state.
   const snap = getElementSnapshotAt(element, Math.max(0, Math.min(element.duration, playheadLocal)));
 
   const isSvg = element.html.includes('<svg');
-  const fill = isSvg ? (element.html.match(/fill="([^"]+)"/) ?? [])[1] ?? '#3b82f6' : extractProp(element.html, 'background') || extractProp(element.html, 'background-color') || '#3b82f6';
-  const stroke = isSvg ? (element.html.match(/stroke="([^"]+)"/) ?? [])[1] ?? 'none' : 'none';
+  const isOpenPath = isSvg && (element.html.includes('<line ') || element.html.includes('<polyline ') || (element.html.includes('<path ') && !element.html.includes(' fill="url(')));
   const strokeWidth = isSvg ? parseFloat((element.html.match(/stroke-width="([^"]+)"/) ?? [])[1] ?? '0') : 0;
   const strokeDash = isSvg ? (element.html.match(/stroke-dasharray="([^"]+)"/) ?? [])[1] ?? '' : '';
+  const strokeLinecap = isSvg ? (element.html.match(/stroke-linecap="([^"]+)"/) ?? [])[1] ?? 'butt' : 'butt';
+  const markerStart = isSvg ? (element.html.match(/marker-start="url\(#marker-([^-]+)-start\)"/) ?? [])[1] ?? 'none' : 'none';
+  const markerEnd = isSvg ? (element.html.match(/marker-end="url\(#marker-([^-]+)-end\)"/) ?? [])[1] ?? 'none' : 'none';
+  const strokeAlign = isSvg ? (element.html.match(/data-stroke-align="([^"]+)"/) ?? [])[1] ?? 'center' : 'center';
   const borderRadius = extractProp(element.html, 'border-radius') || '0';
-  const textColor = extractProp(element.html, 'color') || '#ffffff';
-  const fontSize = parseFloat(extractProp(element.html, 'font-size') || '48');
   const fontFamily = extractProp(element.html, 'font-family') || 'sans-serif';
   const fontWeight = extractProp(element.html, 'font-weight') || '700';
-  const opacity = parseFloat(extractProp(element.html, 'opacity') || '1');
+  const textAlign = extractProp(element.html, 'text-align') || 'center';
+  const verticalAlign = (() => {
+    const ai = extractProp(element.html, 'align-items');
+    if (ai === 'flex-start' || ai === 'start') return 'top';
+    if (ai === 'flex-end' || ai === 'end') return 'bottom';
+    return 'middle';
+  })();
+  const lineHeight = extractProp(element.html, 'line-height');
+  const letterSpacing = extractProp(element.html, 'letter-spacing');
+  const textDecoration = extractProp(element.html, 'text-decoration') || extractProp(element.html, 'text-decoration-line') || 'none';
+
+  // Alpha (opacity) for fill / stroke / text — read from SVG fill-opacity or HTML rgba alpha.
+  const fillAlpha = isSvg
+    ? parseFloat((element.html.match(/fill-opacity="([^"]+)"/) ?? [])[1] ?? '1')
+    : (() => {
+        const bg = extractProp(element.html, 'background') || extractProp(element.html, 'background-color') || '';
+        return readAlphaFromRgba(bg);
+      })();
+  const fillAlphaPct = Math.round(fillAlpha * 100);
+  const setFillAlpha = (pct: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(pct))) / 100;
+    if (isSvg) {
+      let html = element.html;
+      if (/fill-opacity="[^"]*"/.test(html)) {
+        html = html.replace(/fill-opacity="[^"]*"/, `fill-opacity="${clamped}"`);
+      } else {
+        html = html.replace(/<path /, `<path fill-opacity="${clamped}" `);
+      }
+      onUpdateHtml(html);
+    } else {
+      const bg = extractProp(element.html, 'background') || extractProp(element.html, 'background-color') || '#D9D9D9';
+      const baseHex = bg.startsWith('#') ? bg : packedRgbToHex(snap.fillColor);
+      const rgba = hexOrRgbToRgba(baseHex, clamped);
+      onUpdateHtml(setStyleProp(element.html, extractProp(element.html, 'background') ? 'background' : 'background-color', rgba));
+    }
+  };
+  const strokeAlpha = isSvg ? parseFloat((element.html.match(/stroke-opacity="([^"]+)"/) ?? [])[1] ?? '1') : 1;
+  const strokeAlphaPct = Math.round(strokeAlpha * 100);
+  const setStrokeAlpha = (pct: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(pct))) / 100;
+    if (isSvg) {
+      let html = element.html;
+      if (/stroke-opacity="[^"]*"/.test(html)) {
+        html = html.replace(/stroke-opacity="[^"]*"/, `stroke-opacity="${clamped}"`);
+      } else {
+        html = html.replace(/<path /, `<path stroke-opacity="${clamped}" `);
+      }
+      onUpdateHtml(html);
+    }
+  };
+  const textAlpha = (() => {
+    if (element.type !== 'text') return 1;
+    const c = extractProp(element.html, 'color') || '';
+    return readAlphaFromRgba(c);
+  })();
+  const textAlphaPct = Math.round(textAlpha * 100);
+  const setTextAlpha = (pct: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(pct))) / 100;
+    const color = extractProp(element.html, 'color') || packedRgbToHex(snap.textColor);
+    const baseHex = color.startsWith('#') ? color : packedRgbToHex(snap.textColor);
+    const rgba = clamped < 1 ? hexOrRgbToRgba(baseHex, clamped) : baseHex;
+    onUpdateHtml(setStyleProp(element.html, 'color', rgba));
+  };
+
+  const aspectLocked = element.aspect_locked ?? false;
+  const aspectRatio = useRef(element.w / element.h);
 
   const updateSvgAttr = (attr: string, value: string) => {
     const re = new RegExp(`${attr}="[^"]*"`);
     onUpdateHtml(re.test(element.html) ? element.html.replace(re, `${attr}="${value}"`) : element.html.replace(/<path /, `<path ${attr}="${value}" `));
   };
 
+  // Fill mode: detect from html
+  type FillMode = 'solid' | 'image' | 'none';
+  const detectFillMode = (): FillMode => {
+    if (element.type === 'text') {
+      if (element.html.includes('background-clip:') || element.html.includes('background-clip :')) return 'image';
+      const c = extractProp(element.html, 'color');
+      if (c === 'transparent') return 'none';
+      return 'solid';
+    }
+    if (isSvg) {
+      if (element.html.includes('url(#img-fill)')) return 'image';
+      const fillMatch = element.html.match(/fill="([^"]+)"/);
+      if (fillMatch && (fillMatch[1] === 'none' || fillMatch[1] === 'transparent')) return 'none';
+      return 'solid';
+    }
+    if (/background-image:\s*url\(/.test(element.html)) return 'image';
+    const bg = extractProp(element.html, 'background');
+    if (bg === 'none' || bg === 'transparent') return 'none';
+    return 'solid';
+  };
+  const fillMode = detectFillMode();
+
+  const applyTextFillLocal = (html: string, op: { kind: 'solid'; color: string } | { kind: 'none' } | { kind: 'image'; url: string }): string => {
+    const styleMatch = html.match(/^(<div\b[^>]*?\bstyle=")([^"]*)("[^>]*>)/);
+    if (!styleMatch) return html;
+    const [full, head, styleStr, tail] = styleMatch;
+    let s = styleStr;
+    s = s.replace(/(?:^|\s|;)\s*color:\s*[^;]+;?/g, ';');
+    s = s.replace(/(?:^|\s|;)\s*background-image:\s*[^;]+;?/g, ';');
+    s = s.replace(/(?:^|\s|;)\s*background-clip:\s*[^;]+;?/g, ';');
+    s = s.replace(/(?:^|\s|;)\s*-webkit-background-clip:\s*[^;]+;?/g, ';');
+    s = s.replace(/(?:^|\s|;)\s*background-size:\s*[^;]+;?/g, ';');
+    s = s.replace(/(?:^|\s|;)\s*background-position:\s*[^;]+;?/g, ';');
+    s = s.replace(/(?:^|\s|;)\s*background-repeat:\s*[^;]+;?/g, ';');
+    s = s.replace(/;{2,}/g, ';').replace(/^\s*;/, '').trim();
+    if (s && !s.endsWith(';')) s += ';';
+    if (op.kind === 'solid') {
+      s += ` color: ${op.color};`;
+    } else if (op.kind === 'none') {
+      s += ` color: transparent;`;
+    } else {
+      s += ` background-image: url('${op.url}');`;
+      s += ` background-size: cover;`;
+      s += ` background-position: center;`;
+      s += ` -webkit-background-clip: text;`;
+      s += ` background-clip: text;`;
+      s += ` color: transparent;`;
+    }
+    return html.replace(full, `${head}${s.trim()}${tail}`);
+  };
+
+  const handleFillModeChange = async (mode: FillMode) => {
+    if (mode === fillMode) return;
+    if (mode === 'image') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const blobUrl = URL.createObjectURL(file);
+        const applyImage = (url: string) => {
+          let html = element.html;
+          if (element.type === 'text') {
+            html = applyTextFillLocal(html, { kind: 'image', url });
+          } else if (isSvg) {
+            html = html.replace(/<defs>[\s\S]*?<\/defs>/g, '');
+            const defsBlock = `<defs><pattern id="img-fill" patternUnits="objectBoundingBox" width="1" height="1"><image href="${url}" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"/></pattern></defs>`;
+            html = html.replace(/<svg([^>]*)>/, `<svg$1>${defsBlock}`);
+            html = html.replace(/fill="[^"]*"/, 'fill="url(#img-fill)"');
+          } else {
+            html = setStyleProp(html, 'background-image', `url('${url}')`);
+            html = setStyleProp(html, 'background-size', 'cover');
+            html = setStyleProp(html, 'background-position', 'center');
+          }
+          onUpdateHtml(html);
+        };
+        applyImage(blobUrl);
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          const resp = await fetch('/api/gateway/uploads', { method: 'POST', headers: gw.gwAuthHeaders(), body: formData });
+          if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
+          const respData = await resp.json();
+          const rawUrl = respData.url as string;
+          const serverUrl = rawUrl?.startsWith('http') ? rawUrl : `/api/gateway${rawUrl?.replace(/^\/api/, '')}`;
+          applyImage(serverUrl);
+          requestAnimationFrame(() => URL.revokeObjectURL(blobUrl));
+        } catch { /* keep blob url */ }
+      };
+      input.click();
+      return;
+    }
+    let html = element.html;
+    if (fillMode === 'image') {
+      if (element.type === 'text') {
+        html = applyTextFillLocal(html, mode === 'none' ? { kind: 'none' } : { kind: 'solid', color: '#000000' });
+        onUpdateHtml(html);
+        return;
+      }
+      if (isSvg) {
+        html = html.replace(/<defs>[\s\S]*?<\/defs>/g, '');
+        html = html.replace(/fill="url\(#img-fill\)"/, 'fill="#D9D9D9"');
+      } else {
+        html = html.replace(/background-image:[^;]+;?\s*/g, '');
+        html = html.replace(/background-size:[^;]+;?\s*/g, '');
+        html = html.replace(/background-position:[^;]+;?\s*/g, '');
+      }
+    }
+    if (mode === 'none') {
+      if (element.type === 'text') html = applyTextFillLocal(html, { kind: 'none' });
+      else if (isSvg) html = html.replace(/fill="[^"]*"/, 'fill="none"');
+      else html = setStyleProp(html, 'background', 'none');
+    } else {
+      if (element.type === 'text') html = applyTextFillLocal(html, { kind: 'solid', color: '#000000' });
+      else if (isSvg) html = html.replace(/fill="[^"]*"/, 'fill="#D9D9D9"');
+      else html = setStyleProp(html, 'background', '#D9D9D9');
+    }
+    onUpdateHtml(html);
+  };
+
   return (
     <div>
-      {/* Header with actions */}
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <span className="text-xs font-medium truncate">{element.name ?? element.type}</span>
-        <div className="flex items-center gap-0.5">
-          <button onClick={onDuplicate} className="p-1 rounded hover:bg-accent" title="Duplicate"><Copy className="w-3.5 h-3.5" /></button>
-          <button onClick={onDelete} className="p-1 rounded hover:bg-accent text-destructive" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+      {/* Header: element name + Copy / Delete / Lock */}
+      <div className="px-3 py-2 flex items-center gap-1 shrink-0">
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate">{element.name ?? element.type}</span>
+        <div className="flex-1" />
+        <IconBtn icon={Copy} onClick={onDuplicate} title="Duplicate" />
+        <IconBtn icon={Trash2} onClick={onDelete} title="Delete" />
+        <IconBtn icon={element.locked ? Lock : Unlock} onClick={() => onUpdate({ locked: !element.locked })}
+          title={element.locked ? 'Unlock element' : 'Lock element'} />
+      </div>
+
+      {/* §1 Position: X/Y side by side + Rotation subsection */}
+      <SectionHeader>Position</SectionHeader>
+      <div className="px-3 pb-3 space-y-2">
+        <div>
+          <SubsectionHeader>Position</SubsectionHeader>
+          <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+            <AnimatableField label="X" prop="x" value={snap.x} element={element} playheadLocal={playheadLocal}
+              onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+            <AnimatableField label="Y" prop="y" value={snap.y} element={element} playheadLocal={playheadLocal}
+              onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+            <div />
+          </div>
+        </div>
+        <div>
+          <SubsectionHeader>Rotation</SubsectionHeader>
+          <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+            <AnimatableField label="∠" prop="rotation" value={snap.rotation} step={1} suffix="°"
+              element={element} playheadLocal={playheadLocal}
+              onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+            <div />
+            <div />
+          </div>
         </div>
       </div>
 
-      {/* Position & Size — animatable. Indicators next to each field show
-          whether the property is animated and whether the playhead is on a
-          marker (filled ◆) or between markers (hollow ◇). */}
-      <SectionHeader>Position & Size</SectionHeader>
-      <div className="p-3 space-y-2">
-        <AnimatableField label="X" prop="x" value={snap.x} element={element} playheadLocal={playheadLocal}
-          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
-        <AnimatableField label="Y" prop="y" value={snap.y} element={element} playheadLocal={playheadLocal}
-          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
-        <AnimatableField label="W" prop="w" value={snap.w} min={20} element={element} playheadLocal={playheadLocal}
-          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
-        <AnimatableField label="H" prop="h" value={snap.h} min={20} element={element} playheadLocal={playheadLocal}
-          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
-        <NumberInput label="Z-Index" value={element.z_index ?? 0} onChange={v => onUpdate({ z_index: v })} />
+      {/* §2 Dimensions: W/H + aspect lock */}
+      <SectionHeader>Dimensions</SectionHeader>
+      <div className="px-3 pb-3 space-y-2">
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <AnimatableField label="W" prop="w" value={snap.w} min={20} element={element} playheadLocal={playheadLocal}
+            onChange={(p, v) => {
+              if (aspectLocked) {
+                onChangeAnimatable('w', v);
+                onChangeAnimatable('h', Math.round(v / aspectRatio.current));
+              } else {
+                onChangeAnimatable(p, v);
+              }
+            }} onRemoveAnimation={onRemoveAnimation} />
+          <AnimatableField label="H" prop="h" value={snap.h} min={20} element={element} playheadLocal={playheadLocal}
+            onChange={(p, v) => {
+              if (aspectLocked) {
+                onChangeAnimatable('h', v);
+                onChangeAnimatable('w', Math.round(v * aspectRatio.current));
+              } else {
+                onChangeAnimatable(p, v);
+              }
+            }} onRemoveAnimation={onRemoveAnimation} />
+          <button
+            className={cn('w-6 h-6 flex items-center justify-center rounded transition-colors',
+              aspectLocked ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-accent/50')}
+            onClick={() => {
+              if (!aspectLocked) aspectRatio.current = element.w / element.h;
+              onUpdate({ aspect_locked: !aspectLocked });
+            }}
+            title={aspectLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+          >
+            {aspectLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+          </button>
+        </div>
+        <div>
+          <SubsectionHeader>Scale</SubsectionHeader>
+          <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+            <AnimatableField label="S" prop="scale" value={snap.scale} min={0} max={10} step={0.1}
+              element={element} playheadLocal={playheadLocal}
+              onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+            <div />
+            <div />
+          </div>
+        </div>
       </div>
 
-      {/* Transform — animatable. Opacity / Scale / Rotation. */}
-      <SectionHeader>Transform</SectionHeader>
-      <div className="p-3 space-y-2">
-        <AnimatableField label="Opacity" prop="opacity" value={snap.opacity} min={0} max={1} step={0.05}
-          element={element} playheadLocal={playheadLocal}
-          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
-        <AnimatableField label="Scale" prop="scale" value={snap.scale} min={0} max={10} step={0.1}
-          element={element} playheadLocal={playheadLocal}
-          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
-        <AnimatableField label="Rotation" prop="rotation" value={snap.rotation} step={5}
-          element={element} playheadLocal={playheadLocal}
-          onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+      {/* §3 Appearance: Opacity + Corner radius */}
+      <SectionHeader>Appearance</SectionHeader>
+      <div className="px-3 pb-3 space-y-2">
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-end">
+          <div>
+            <SubsectionHeader>Opacity</SubsectionHeader>
+            <AnimatableField
+              label={<Eclipse className="w-3 h-3" />}
+              prop="opacity" value={Math.round(snap.opacity * 100)} min={0} max={100} step={1} suffix="%"
+              element={element} playheadLocal={playheadLocal}
+              onChange={(p, v) => onChangeAnimatable(p, Math.min(1, Math.max(0, v / 100)))}
+              onRemoveAnimation={onRemoveAnimation} />
+          </div>
+          <CornerRadiusField
+            value={parseInt(borderRadius) || 0}
+            onChange={v => {
+              let html = setStyleProp(element.html, 'border-radius', `${Math.max(0, v)}px`);
+              if (isSvg) {
+                html = v > 0
+                  ? html.replace(/overflow:\s*visible/, 'overflow: hidden')
+                  : html.replace(/overflow:\s*hidden/, 'overflow: visible');
+              }
+              onUpdateHtml(html);
+            }}
+          />
+          <div />
+        </div>
       </div>
 
-      {/* Timing */}
+      {/* §4 Timing (Video-specific) */}
       <SectionHeader>Timing</SectionHeader>
-      <div className="p-3 space-y-2">
-        <NumberInput label="Start" value={element.start} min={0} step={0.1} onChange={v => onUpdate({ start: v })} />
-        <NumberInput label="Duration" value={element.duration} min={0.1} step={0.1} onChange={v => onUpdate({ duration: v })} />
-        <div className="flex items-center gap-2">
-          <label className="text-[11px] text-muted-foreground w-14 shrink-0">Name</label>
-          <input type="text" value={element.name ?? ''} onChange={e => onUpdate({ name: e.target.value })}
-            className="flex-1 text-[11px] px-1.5 py-1 rounded border bg-background" />
+      <div className="px-3 pb-3 space-y-2">
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <LabeledNumberInput label="Start" value={element.start} min={0} step={0.1} suffix="s" onChange={v => onUpdate({ start: v })} />
+          <LabeledNumberInput label="Dur" value={element.duration} min={0.1} step={0.1} suffix="s" onChange={v => onUpdate({ duration: v })} />
+          <div />
+        </div>
+        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+          <div className="flex items-center gap-1.5 px-2 h-6 rounded bg-[#F5F5F5] hover:bg-[#EBEBEB] focus-within:ring-1 focus-within:ring-primary/40 cursor-text">
+            <span className="text-[10px] text-muted-foreground shrink-0 select-none">Name</span>
+            <input type="text" value={element.name ?? ''} onChange={e => onUpdate({ name: e.target.value })}
+              className="flex-1 min-w-0 bg-transparent border-0 px-0 py-0 text-[10px] text-foreground focus:outline-none font-mono tabular-nums" />
+          </div>
+          <div /><div />
         </div>
       </div>
 
-      {/* Appearance */}
-      <SectionHeader collapsed={!showAppearance} onToggle={() => setShowAppearance(v => !v)}>Appearance</SectionHeader>
-      {showAppearance && (
-        <div className="p-3 space-y-2">
-          {element.type === 'text' ? (
-            <>
-              <ColorInput label="Fill" value={extractProp(element.html, 'background') || extractProp(element.html, 'background-color') || 'none'}
-                onChange={v => onUpdateHtml(setStyleProp(element.html, 'background', v))} />
-              <ColorInput label="Text" value={textColor} onChange={v => onUpdateHtml(setStyleProp(element.html, 'color', v))} />
-              <NumberInput label="Font Size" value={fontSize} min={1} onChange={v => onUpdateHtml(setStyleProp(element.html, 'font-size', `${v}px`))} />
-              <SelectInput label="Font" value={fontFamily.replace(/['"]/g, '')} onChange={v => onUpdateHtml(setStyleProp(element.html, 'font-family', v))}
-                options={[
-                  { value: '-apple-system, BlinkMacSystemFont, sans-serif', label: 'System' },
-                  { value: 'sans-serif', label: 'Sans Serif' },
-                  { value: 'serif', label: 'Serif' },
-                  { value: 'monospace', label: 'Monospace' },
-                  { value: 'Georgia', label: 'Georgia' },
-                  { value: 'Arial', label: 'Arial' },
-                  { value: 'Verdana', label: 'Verdana' },
-                ]} />
-              <SelectInput label="Weight" value={fontWeight} onChange={v => onUpdateHtml(setStyleProp(element.html, 'font-weight', v))}
+      {/* §5 Text (text elements only) */}
+      {element.type === 'text' && (
+        <>
+          <SectionHeader>Text</SectionHeader>
+          <div className="px-3 pb-3 space-y-2">
+            {/* Font family — with System + Google Fonts optgroups */}
+            <div className="grid grid-cols-[1fr_24px] gap-2 items-center">
+              <select
+                value={fontFamily.replace(/['"]/g, '')}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (CANVAS_FONTS.google.includes(v)) loadGoogleFont(v);
+                  onUpdateHtml(setStyleProp(element.html, 'font-family', v));
+                }}
+                className={SELECT_CLASS}
+              >
+                <optgroup label="System">
+                  {CANVAS_FONTS.system.map(f => (
+                    <option key={f} value={f}>{f.split(',')[0]}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Google Fonts">
+                  {CANVAS_FONTS.google.map(f => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </optgroup>
+              </select>
+              <div />
+            </div>
+
+            {/* Weight + Font size (animatable) */}
+            <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+              <VideoSelect value={fontWeight} onChange={v => onUpdateHtml(setStyleProp(element.html, 'font-weight', v))}
                 options={[
                   { value: '300', label: 'Light' },
                   { value: '400', label: 'Regular' },
@@ -1757,44 +2727,191 @@ function ElementPropertyPanel({
                   { value: '700', label: 'Bold' },
                   { value: '900', label: 'Black' },
                 ]} />
-            </>
-          ) : isSvg ? (
-            <>
-              <ColorInput label="Fill" value={fill} onChange={v => updateSvgAttr('fill', v)} />
-              <ColorInput label="Stroke" value={stroke} onChange={v => updateSvgAttr('stroke', v)} />
-              <NumberInput label="Stroke W" value={strokeWidth} min={0} step={0.5} onChange={v => updateSvgAttr('stroke-width', String(v))} />
-              <SelectInput label="Dash" value={strokeDash} onChange={v => updateSvgAttr('stroke-dasharray', v)}
-                options={[
-                  { value: '', label: 'Solid' },
-                  { value: '8 4', label: 'Dashed' },
-                  { value: '2 2', label: 'Dotted' },
-                  { value: '12 4 4 4', label: 'Dash-dot' },
-                ]} />
-              <NumberInput label="Radius" value={parseInt(borderRadius) || 0} min={0}
-                onChange={v => onUpdateHtml(setStyleProp(element.html, 'border-radius', `${v}px`))} />
-            </>
-          ) : (
-            <>
-              <ColorInput label="Fill" value={fill} onChange={v => onUpdateHtml(setStyleProp(element.html, 'background', v))} />
-              <NumberInput label="Radius" value={parseInt(borderRadius) || 0} min={0}
-                onChange={v => onUpdateHtml(setStyleProp(element.html, 'border-radius', `${v}px`))} />
-            </>
-          )}
-          <NumberInput label="Opacity" value={opacity} min={0} max={1} step={0.1}
-            onChange={v => onUpdateHtml(setStyleProp(element.html, 'opacity', String(v)))} />
-        </div>
+              <AnimatableField label={<ALargeSmall className="w-3 h-3" />} prop="fontSize" value={snap.fontSize} min={1}
+                element={element} playheadLocal={playheadLocal}
+                onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+              <div />
+            </div>
+
+            {/* Line height + Letter spacing */}
+            <div>
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 mb-1">
+                <SubsectionHeader>Line height</SubsectionHeader>
+                <SubsectionHeader>Letter spacing</SubsectionHeader>
+                <div />
+              </div>
+              <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+                <LabeledNumberInput
+                  label={<Rows3 className="w-3 h-3" />}
+                  value={lineHeight ? parseFloat(lineHeight) : null}
+                  min={0.5} max={10} step={0.1}
+                  onChange={v => onUpdateHtml(setStyleProp(element.html, 'line-height', String(v)))}
+                  placeholder="Auto"
+                />
+                <LabeledNumberInput
+                  label={<RulerDimensionLine className="w-3 h-3" />}
+                  value={letterSpacing ? parseFloat(letterSpacing) : 0}
+                  step={0.5}
+                  onChange={v => onUpdateHtml(setStyleProp(element.html, 'letter-spacing', `${v}px`))}
+                  suffix="px"
+                />
+                <div />
+              </div>
+            </div>
+
+            {/* Alignment: 3 horizontal + 3 vertical + settings popover */}
+            <div>
+              <SubsectionHeader>Alignment</SubsectionHeader>
+              <div className="flex items-center gap-1">
+                <div className="flex-1 grid grid-cols-3 gap-0.5">
+                  {([
+                    ['left', TextAlignStart],
+                    ['center', TextAlignCenter],
+                    ['right', TextAlignEnd],
+                  ] as const).map(([a, Icon]) => (
+                    <button key={a}
+                      className={cn('h-6 flex items-center justify-center rounded transition-colors',
+                        textAlign === a
+                          ? 'bg-white text-foreground ring-1 ring-border'
+                          : 'bg-[#F5F5F5] text-muted-foreground hover:bg-muted hover:text-foreground')}
+                      onClick={() => onUpdateHtml(setStyleProp(element.html, 'text-align', a))}
+                      title={`Align ${a}`}>
+                      <Icon className="w-3 h-3" />
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 grid grid-cols-3 gap-0.5">
+                  {([
+                    ['top', ArrowUpToLine, 'flex-start'],
+                    ['middle', SeparatorHorizontal, 'center'],
+                    ['bottom', ArrowDownToLine, 'flex-end'],
+                  ] as const).map(([a, Icon, cssVal]) => (
+                    <button key={a}
+                      className={cn('h-6 flex items-center justify-center rounded transition-colors',
+                        verticalAlign === a
+                          ? 'bg-white text-foreground ring-1 ring-border'
+                          : 'bg-[#F5F5F5] text-muted-foreground hover:bg-muted hover:text-foreground')}
+                      onClick={() => onUpdateHtml(setStyleProp(element.html, 'align-items', cssVal))}
+                      title={`V-align ${a}`}>
+                      <Icon className="w-3 h-3" />
+                    </button>
+                  ))}
+                </div>
+                <VideoTextSettingsPopover
+                  textAlign={textAlign}
+                  textDecoration={textDecoration}
+                  onChangeAlign={v => onUpdateHtml(setStyleProp(element.html, 'text-align', v))}
+                  onChangeDecoration={v => onUpdateHtml(setStyleProp(element.html, 'text-decoration', v))}
+                />
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
-      {/* Markers (element-level time anchors). Property keyframes will appear on
-          per-property sub-rows once Phase 3 lands; for now this section just lets
-          you add / remove markers. */}
+      {/* §6 Fill */}
+      <SectionHeader trailing={
+        <select value={fillMode} onChange={e => handleFillModeChange(e.target.value as FillMode)}
+          className="text-[10px] pl-1.5 pr-1 h-6 rounded bg-transparent hover:bg-accent/30 border-0 text-foreground focus:outline-none cursor-pointer">
+          <option value="solid">Solid</option>
+          <option value="image">Image</option>
+          <option value="none">None</option>
+        </select>
+      }>Fill</SectionHeader>
+      <div className="px-3 pb-3 space-y-2">
+        {fillMode === 'solid' && (
+          element.type === 'text' ? (
+            <AnimatableColorField label="Fill" prop="textColor" value={snap.textColor}
+              alphaPct={textAlphaPct} onAlphaChange={setTextAlpha}
+              element={element} playheadLocal={playheadLocal}
+              onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+          ) : (
+            <AnimatableColorField label="Fill" prop="fillColor" value={snap.fillColor}
+              alphaPct={fillAlphaPct} onAlphaChange={setFillAlpha}
+              element={element} playheadLocal={playheadLocal}
+              onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+          )
+        )}
+        {fillMode === 'image' && (() => {
+          const patternMatch = element.html.match(/href="([^"]+)"/);
+          const bgMatch = element.html.match(/background-image:\s*url\(["']?([^"')]+)["']?\)/);
+          const currentUrl = (isSvg ? patternMatch?.[1] : bgMatch?.[1]) || '';
+          const fitMode = currentUrl ? getImageFitMode(element.html) : 'cover';
+          return (
+            <div className="grid grid-cols-[auto_1fr_1fr_24px] gap-2 items-center">
+              <button
+                onClick={() => handleFillModeChange('image')}
+                className="w-9 h-6 rounded bg-[#F5F5F5] hover:bg-[#EBEBEB] flex items-center justify-center"
+                title="Click to replace image"
+              >
+                {currentUrl ? (
+                  <div className="w-4 h-4 rounded bg-cover bg-center shrink-0"
+                    style={{ backgroundImage: `url('${currentUrl}')` }} />
+                ) : (
+                  <ImagePlus className="w-3 h-3 text-muted-foreground" />
+                )}
+              </button>
+              <LabeledNumberInput label="" value={fillAlphaPct} min={0} max={100} step={1} suffix="%" onChange={setFillAlpha} />
+              <select value={fitMode}
+                onChange={e => onUpdateHtml(applyImageFitMode(element.html, e.target.value as ImageFitMode))}
+                className={SELECT_CLASS}>
+                <option value="cover">Fill</option>
+                <option value="contain">Fit</option>
+                <option value="stretch">Stretch</option>
+              </select>
+              <div />
+            </div>
+          );
+        })()}
+        {fillMode === 'none' && null}
+      </div>
+
+      {/* §7 Stroke (SVG elements) */}
+      {isSvg && (
+        <>
+          <SectionHeader>Stroke</SectionHeader>
+          <div className="px-3 pb-3 space-y-2">
+            <AnimatableColorField label="Stroke" prop="strokeColor" value={snap.strokeColor}
+              alphaPct={strokeAlphaPct} onAlphaChange={setStrokeAlpha}
+              element={element} playheadLocal={playheadLocal}
+              onChange={onChangeAnimatable} onRemoveAnimation={onRemoveAnimation} />
+            <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
+              <select value={strokeAlign}
+                onChange={e => onUpdateHtml(applyStrokeAlignment(element.html, e.target.value as 'center' | 'inside' | 'outside'))}
+                className={SELECT_CLASS}>
+                <option value="center">Center</option>
+                <option value="inside">Inside</option>
+                <option value="outside">Outside</option>
+              </select>
+              <LabeledNumberInput label="W" value={strokeAlign === 'center' ? strokeWidth : strokeWidth / 2} min={0} step={0.5}
+                onChange={v => {
+                  const physical = (strokeAlign === 'inside' || strokeAlign === 'outside') ? v * 2 : v;
+                  updateSvgAttr('stroke-width', String(physical));
+                }} />
+              <VideoStrokeSettingsPopover
+                strokeDash={strokeDash}
+                strokeLinecap={strokeLinecap}
+                markerStart={markerStart}
+                markerEnd={markerEnd}
+                isOpenPath={isOpenPath}
+                onChangeDash={v => updateSvgAttr('stroke-dasharray', v)}
+                onChangeCap={v => onUpdateHtml(applyStrokeLinecap(element.html, v as 'butt' | 'round' | 'square'))}
+                onChangeMarkerStart={v => onUpdateHtml(applySvgMarker(element.html, 'start', v as MarkerType))}
+                onChangeMarkerEnd={v => onUpdateHtml(applySvgMarker(element.html, 'end', v as MarkerType))}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* §8 Markers */}
       <SectionHeader collapsed={!showMarkers} onToggle={() => setShowMarkers(v => !v)}>
         Markers ({markers.length})
       </SectionHeader>
       {showMarkers && (
-        <div className="p-3 space-y-1">
+        <div className="px-3 pb-3 space-y-1">
           {markers.length === 0 && (
-            <p className="text-[11px] text-muted-foreground italic">No markers yet. Press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">K</kbd> at a point in time to add one.</p>
+            <p className="text-[11px] text-muted-foreground italic">No markers yet. Press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">K</kbd> to add one.</p>
           )}
           {markers.map(t => (
             <div key={t}
@@ -1806,7 +2923,7 @@ function ElementPropertyPanel({
               onClick={() => onSelectMarker(t)}>
               <Diamond className="w-3 h-3 text-yellow-500 shrink-0" />
               <span className="font-mono text-muted-foreground flex-1">{t.toFixed(2)}s</span>
-              <button onClick={(e) => { e.stopPropagation(); onDeleteMarker(t); }} className="p-0.5 rounded hover:bg-accent text-destructive" title="Delete marker (cascades any property keyframes here)">
+              <button onClick={(e) => { e.stopPropagation(); onDeleteMarker(t); }} className="p-0.5 rounded hover:bg-accent text-destructive" title="Delete marker">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -1821,18 +2938,18 @@ function ElementPropertyPanel({
         </div>
       )}
 
-      {/* Property animations — per-property keyframes with editable easing */}
+      {/* §9 Property animations */}
       <PropertyAnimationsSection
         element={element}
         onSetKeyframeEasing={onSetKeyframeEasing}
         onDeletePropKeyframe={onDeletePropKeyframe} />
 
-      {/* HTML Code */}
+      {/* §10 HTML Code */}
       <SectionHeader collapsed={!showHtml} onToggle={() => setShowHtml(v => !v)}>HTML Code</SectionHeader>
       {showHtml && (
-        <div className="p-3">
+        <div className="px-3 pb-3">
           <textarea value={element.html} onChange={e => onUpdateHtml(e.target.value)} rows={6}
-            className="w-full text-[11px] px-1.5 py-1 rounded border bg-background font-mono resize-y" />
+            className="w-full text-[10px] px-2 py-1.5 rounded bg-[#F5F5F5] border-0 focus:outline-none focus:ring-1 focus:ring-primary/40 font-mono resize-y" />
         </div>
       )}
     </div>
