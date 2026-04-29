@@ -618,6 +618,7 @@ export function VideoEditor({
 
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedMarkerTime, setSelectedMarkerTime] = useState<number | null>(null);
+  const [selectedKfProp, setSelectedKfProp] = useState<string | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
 
   // Drag-to-create insertion (Canvas-aligned).
@@ -662,6 +663,12 @@ export function VideoEditor({
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(0.5);
+
+  // Timeline zoom: pixels per second. Default 80, range 20..400.
+  const [pxPerSec, setPxPerSec] = useState(80);
+  // Resizable timeline height. Default 220, min 120.
+  const [timelineHeight, setTimelineHeight] = useState(220);
+  const timelineResizeRef = useRef<{ startY: number; origH: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const undoRedo = useUndoRedo<VideoData>(DEFAULT_DATA);
@@ -759,7 +766,7 @@ export function VideoEditor({
     };
     updateData(d => ({ ...d, elements: [...d.elements, newEl] }));
     setSelectedElementId(newEl.id);
-    setSelectedMarkerTime(null);
+    setSelectedMarkerTime(null); setSelectedKfProp(null);
   }, [data, currentTime, updateData]);
 
   const startShapeInsert = useCallback((shapeType: ShapeType) => {
@@ -833,7 +840,7 @@ export function VideoEditor({
 
   const deleteElement = useCallback((elementId: string) => {
     updateData(d => ({ ...d, elements: d.elements.filter(el => el.id !== elementId) }));
-    if (selectedElementId === elementId) { setSelectedElementId(null); setSelectedMarkerTime(null); }
+    if (selectedElementId === elementId) { setSelectedElementId(null); setSelectedMarkerTime(null); setSelectedKfProp(null); }
   }, [updateData, selectedElementId]);
 
   const duplicateElement = useCallback((elementId: string) => {
@@ -867,7 +874,7 @@ export function VideoEditor({
     const updated = removeMarkerFromElement(el, t);
     updateData(d => ({ ...d, elements: d.elements.map(e => e.id === elementId ? updated : e) }));
     if (selectedMarkerTime != null && Math.abs(selectedMarkerTime - t) <= TIME_EPSILON) {
-      setSelectedMarkerTime(null);
+      setSelectedMarkerTime(null); setSelectedKfProp(null);
     }
   }, [data, updateData, selectedMarkerTime]);
 
@@ -906,6 +913,7 @@ export function VideoEditor({
         return;
     }
   }, [data, currentTime, updateData]);
+
 
   /** User picked an option in the intent dialog. */
   const resolveIntent = useCallback((intent: 'modify-last' | 'add-keyframe') => {
@@ -1064,6 +1072,47 @@ export function VideoEditor({
     setZoom(Math.min(sx, sy, 1));
   }, [data?.settings.width, data?.settings.height]);
 
+  // ─── Pinch / Ctrl+Wheel Zoom (canvas + timeline) ───
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const editorRootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const rootEl = editorRootRef.current;
+    const canvasEl = canvasContainerRef.current;
+    const timelineEl = timelineScrollRef.current;
+    const canvasHandler = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(z => Math.max(0.1, Math.min(5, z * factor)));
+    };
+    const timelineHandler = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setPxPerSec(p => Math.max(20, Math.min(400, p * factor)));
+    };
+    // Prevent browser zoom on the entire editor area
+    const preventBrowserZoom = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
+    };
+    // Safari gesture events
+    const preventGesture = (e: Event) => e.preventDefault();
+    rootEl?.addEventListener('wheel', preventBrowserZoom, { passive: false });
+    rootEl?.addEventListener('gesturestart', preventGesture, { passive: false } as any);
+    rootEl?.addEventListener('gesturechange', preventGesture, { passive: false } as any);
+    canvasEl?.addEventListener('wheel', canvasHandler, { passive: false });
+    timelineEl?.addEventListener('wheel', timelineHandler, { passive: false });
+    return () => {
+      rootEl?.removeEventListener('wheel', preventBrowserZoom);
+      rootEl?.removeEventListener('gesturestart', preventGesture);
+      rootEl?.removeEventListener('gesturechange', preventGesture);
+      canvasEl?.removeEventListener('wheel', canvasHandler);
+      timelineEl?.removeEventListener('wheel', timelineHandler);
+    };
+    // Re-run when data loads so refs are attached (early return hides them when data is null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!data]);
+
   // ─── Clipboard ───────────────────
   const VIDEO_CLIPBOARD_KEY = 'aose-video-clipboard';
   const videoPasteCountRef = useRef(0);
@@ -1115,7 +1164,18 @@ export function VideoEditor({
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target as HTMLElement).isContentEditable) return;
       if (e.key === ' ') { e.preventDefault(); setPlaying(p => !p); }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) { e.preventDefault(); deleteElement(selectedElementId); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedElementId) {
+        e.preventDefault();
+        if (selectedMarkerTime !== null && selectedKfProp !== null) {
+          deletePropKeyframe(selectedElementId, selectedKfProp as AnimatableProperty, selectedMarkerTime);
+          setSelectedMarkerTime(null); setSelectedKfProp(null);
+        } else if (selectedMarkerTime !== null) {
+          deleteMarker(selectedElementId, selectedMarkerTime);
+          setSelectedMarkerTime(null); setSelectedKfProp(null);
+        } else {
+          deleteElement(selectedElementId);
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); e.shiftKey ? handleRedo() : handleUndo(); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'd' && selectedElementId) { e.preventDefault(); duplicateElement(selectedElementId); }
       if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !e.shiftKey) { e.preventDefault(); handleCopy(); }
@@ -1131,7 +1191,7 @@ export function VideoEditor({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [selectedElementId, deleteElement, duplicateElement, handleUndo, handleRedo, handleCopy, handlePaste, handleCut, addMarkerAtPlayhead]);
+  }, [selectedElementId, selectedMarkerTime, selectedKfProp, deleteElement, deleteMarker, deletePropKeyframe, duplicateElement, handleUndo, handleRedo, handleCopy, handlePaste, handleCut, addMarkerAtPlayhead]);
 
   // ─── Title & Delete ───────────────────
   const handleTitleChange = useCallback(async (newTitle: string) => {
@@ -1168,9 +1228,7 @@ export function VideoEditor({
     if (!el || el.locked) return;
     e.stopPropagation();
     setSelectedElementId(elId);
-    setSelectedMarkerTime(null);
-    // For Phase 2 we always drag the static x/y. Phase 3 will route through the
-    // §3 behavior table (animated property + on-marker → keyframe; etc).
+    setSelectedMarkerTime(null); setSelectedKfProp(null);
     const snap = getElementSnapshotAt(el, currentTime - el.start);
     dragRef.current = { elId, startX: e.clientX, startY: e.clientY, origX: snap.x, origY: snap.y };
 
@@ -1184,12 +1242,21 @@ export function VideoEditor({
       const targetId = d.elId;
       setData(prev => {
         if (!prev) return prev;
-        return {
-          ...prev,
-          elements: prev.elements.map(pel =>
-            pel.id !== targetId ? pel : { ...pel, x: newX, y: newY },
-          ),
-        };
+        const pel = prev.elements.find(x => x.id === targetId);
+        if (!pel) return prev;
+        const playheadLocal = currentTime - pel.start;
+        const hasMarkers = pel.markers && pel.markers.length > 0;
+        if (hasMarkers) {
+          let updated = pel;
+          for (const [prop, value] of [['x', newX], ['y', newY]] as [AnimatableProperty, number][]) {
+            const outcome = applyPropertyChange(updated, prop, value, playheadLocal);
+            if (outcome.kind !== 'rejected' && outcome.kind !== 'needs-intent') {
+              updated = outcome.element;
+            }
+          }
+          return { ...prev, elements: prev.elements.map(e => e.id === targetId ? updated : e) };
+        }
+        return { ...prev, elements: prev.elements.map(e => e.id !== targetId ? e : { ...e, x: newX, y: newY }) };
       });
     };
     const handleUp = () => {
@@ -1211,7 +1278,8 @@ export function VideoEditor({
     if (!el) return;
     e.stopPropagation();
     e.preventDefault();
-    resizeRef.current = { elId, handle, startX: e.clientX, startY: e.clientY, origX: el.x, origY: el.y, origW: el.w, origH: el.h };
+    const snap = getElementSnapshotAt(el, currentTime - el.start);
+    resizeRef.current = { elId, handle, startX: e.clientX, startY: e.clientY, origX: snap.x, origY: snap.y, origW: snap.w, origH: snap.h };
 
     const handleMove = (ev: PointerEvent) => {
       const r = resizeRef.current;
@@ -1223,9 +1291,24 @@ export function VideoEditor({
       if (r.handle.includes('w')) { nW = Math.max(20, r.origW - dx); nX = r.origX + r.origW - nW; }
       if (r.handle.includes('s')) nH = Math.max(20, r.origH + dy);
       if (r.handle.includes('n')) { nH = Math.max(20, r.origH - dy); nY = r.origY + r.origH - nH; }
+      const rX = Math.round(nX), rY = Math.round(nY), rW = Math.round(nW), rH = Math.round(nH);
       setData(prev => {
         if (!prev) return prev;
-        return { ...prev, elements: prev.elements.map(pel => pel.id === r.elId ? { ...pel, x: Math.round(nX), y: Math.round(nY), w: Math.round(nW), h: Math.round(nH) } : pel) };
+        const pel = prev.elements.find(x => x.id === r.elId);
+        if (!pel) return prev;
+        const playheadLocal = currentTime - pel.start;
+        const hasMarkers = pel.markers && pel.markers.length > 0;
+        if (hasMarkers) {
+          let updated = pel;
+          for (const [prop, value] of [['x', rX], ['y', rY], ['w', rW], ['h', rH]] as [AnimatableProperty, number][]) {
+            const outcome = applyPropertyChange(updated, prop, value, playheadLocal);
+            if (outcome.kind !== 'rejected' && outcome.kind !== 'needs-intent') {
+              updated = outcome.element;
+            }
+          }
+          return { ...prev, elements: prev.elements.map(e => e.id === r.elId ? updated : e) };
+        }
+        return { ...prev, elements: prev.elements.map(e => e.id === r.elId ? { ...e, x: rX, y: rY, w: rW, h: rH } : e) };
       });
     };
     const handleUp = () => {
@@ -1233,8 +1316,12 @@ export function VideoEditor({
       resizeRef.current = null;
       setData(prev => {
         if (!prev || !r) { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; }
-        const pel = prev.elements.find(x => x.id === r.elId);
-        if (pel && pel.type === 'text' && /[ew]/.test(r.handle) && pel.html.includes('data-text-resize="auto"')) {
+        let pel = prev.elements.find(x => x.id === r.elId);
+        if (!pel) { undoRedo.push(prev); scheduleSave(prev); return prev; }
+        let elements = prev.elements;
+
+        // Text auto-resize → fixed-width conversion
+        if (pel.type === 'text' && /[ew]/.test(r.handle) && pel.html.includes('data-text-resize="auto"')) {
           let newHtml = pel.html
             .replace('data-text-resize="auto"', 'data-text-resize="fixed-width"')
             .replace(/white-space:\s*nowrap;?\s*/, 'white-space: normal; word-wrap: break-word; ');
@@ -1249,19 +1336,19 @@ export function VideoEditor({
             newH = Math.max(20, Math.ceil(inner.getBoundingClientRect().height));
           }
           document.body.removeChild(measure);
-          const updated = { ...prev, elements: prev.elements.map(x => x.id === r.elId ? { ...x, html: newHtml, h: newH } : x) };
-          undoRedo.push(updated); scheduleSave(updated);
-          return updated;
+          elements = elements.map(x => x.id === r.elId ? { ...x, html: newHtml, h: newH } : x);
         }
-        undoRedo.push(prev); scheduleSave(prev);
-        return prev;
+
+        const next = { ...prev, elements };
+        undoRedo.push(next); scheduleSave(next);
+        return next;
       });
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
-  }, [data, zoom, undoRedo, scheduleSave]);
+  }, [data, zoom, currentTime, undoRedo, scheduleSave]);
 
   // ─── Text Double-Click ────────────────
   const handleDoubleClick = useCallback((elId: string) => {
@@ -1436,6 +1523,35 @@ export function VideoEditor({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [pendingInsert]);
 
+  // ─── Snap Helper ──────────────────────
+  const getSnapTargets = useCallback((): number[] => {
+    if (!data) return [];
+    const targets: number[] = [];
+    for (let i = 0; i <= Math.ceil(timelineDuration); i++) targets.push(i);
+    for (const el of data.elements) {
+      targets.push(el.start);
+      targets.push(el.start + el.duration);
+      for (const m of getMarkers(el)) targets.push(el.start + m);
+      for (const list of Object.values(el.keyframes ?? {})) {
+        if (!list) continue;
+        for (const kf of list) targets.push(el.start + kf.t);
+      }
+    }
+    return [...new Set(targets)].sort((a, b) => a - b);
+  }, [data, timelineDuration]);
+
+  const snapTime = useCallback((t: number, thresholdPx: number = 6): number => {
+    const targets = getSnapTargets();
+    const thresholdSec = thresholdPx / pxPerSec;
+    let best = t;
+    let bestDist = thresholdSec;
+    for (const s of targets) {
+      const dist = Math.abs(t - s);
+      if (dist < bestDist) { bestDist = dist; best = s; }
+    }
+    return best;
+  }, [getSnapTargets, pxPerSec]);
+
   // ─── Timeline Drag ────────────────────
   const timelineDragRef = useRef<{
     type: 'move' | 'resize-left' | 'resize-right' | 'marker';
@@ -1448,8 +1564,8 @@ export function VideoEditor({
     const el = data.elements.find(x => x.id === elId);
     if (!el) return;
     e.stopPropagation(); e.preventDefault();
-    setSelectedElementId(elId); setSelectedMarkerTime(null);
-    const tw = barEl.closest('[data-timeline-track]')?.getBoundingClientRect().width ?? barEl.parentElement!.getBoundingClientRect().width;
+    setSelectedElementId(elId); setSelectedMarkerTime(null); setSelectedKfProp(null);
+    const tw = timelineDuration * pxPerSec;
     timelineDragRef.current = { type, elId, startX: e.clientX, origStart: el.start, origDuration: el.duration, timelineWidth: tw };
 
     const handleMove = (ev: PointerEvent) => {
@@ -1460,12 +1576,18 @@ export function VideoEditor({
         if (!prev) return prev;
         return { ...prev, elements: prev.elements.map(pel => {
           if (pel.id !== d.elId) return pel;
-          if (d.type === 'move') return { ...pel, start: Math.round(Math.max(0, d.origStart + dxTime) * 10) / 10 };
-          if (d.type === 'resize-left') {
-            const ns = Math.max(0, Math.min(d.origStart + d.origDuration - 0.1, d.origStart + dxTime));
-            return { ...pel, start: Math.round(ns * 10) / 10, duration: Math.round((d.origDuration - (ns - d.origStart)) * 10) / 10 };
+          if (d.type === 'move') {
+            const raw = Math.max(0, d.origStart + dxTime);
+            return { ...pel, start: Math.round(snapTime(raw) * 100) / 100 };
           }
-          return { ...pel, duration: Math.round(Math.max(0.1, d.origDuration + dxTime) * 10) / 10 };
+          if (d.type === 'resize-left') {
+            const rawNs = Math.max(0, Math.min(d.origStart + d.origDuration - 0.1, d.origStart + dxTime));
+            const ns = Math.round(snapTime(rawNs) * 100) / 100;
+            return { ...pel, start: ns, duration: Math.round((d.origDuration - (ns - d.origStart)) * 100) / 100 };
+          }
+          const rawEnd = d.origStart + Math.max(0.1, d.origDuration + dxTime);
+          const snappedEnd = snapTime(rawEnd);
+          return { ...pel, duration: Math.round(Math.max(0.1, snappedEnd - d.origStart) * 100) / 100 };
         }) };
       });
     };
@@ -1477,43 +1599,45 @@ export function VideoEditor({
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
-  }, [data, timelineDuration, undoRedo, scheduleSave]);
+  }, [data, timelineDuration, pxPerSec, undoRedo, scheduleSave, snapTime]);
 
   /** Drag an existing marker along its element's local timeline. Cascades any
    *  property keyframes at that marker time so they follow the marker. */
-  const handleMarkerDragStart = useCallback((e: React.PointerEvent, elId: string, markerTime: number, trackEl: HTMLElement) => {
+  const markerDragState = useRef<{ elId: string; currentT: number; lastX: number; duration: number }>({ elId: '', currentT: 0, lastX: 0, duration: 1 });
+  const handleMarkerDragStart = useCallback((e: React.PointerEvent, elId: string, markerTime: number, _trackEl: HTMLElement) => {
     if (!data) return;
     const el = data.elements.find(x => x.id === elId);
     if (!el) return;
     e.stopPropagation(); e.preventDefault();
-    const tw = trackEl.getBoundingClientRect().width;
-    timelineDragRef.current = {
-      type: 'marker', elId, startX: e.clientX,
-      origStart: el.start, origDuration: el.duration,
-      origMarkerTime: markerTime, timelineWidth: tw,
-    };
+    markerDragState.current = { elId, currentT: markerTime, lastX: e.clientX, duration: el.duration };
     setSelectedMarkerTime(markerTime);
 
     const handleMove = (ev: PointerEvent) => {
-      const d = timelineDragRef.current;
-      if (!d || d.origMarkerTime === undefined) return;
-      const dxTime = ((ev.clientX - d.startX) / d.timelineWidth) * d.origDuration;
-      const newTime = Math.max(TIME_EPSILON, Math.min(d.origDuration, d.origMarkerTime + dxTime));
-      const rounded = Math.round(newTime * 100) / 100;
+      const s = markerDragState.current;
+      const dxPx = ev.clientX - s.lastX;
+      const dxTime = dxPx / pxPerSec;
+      if (Math.abs(dxTime) < 0.001) return;
+      const rawLocal = Math.max(TIME_EPSILON, Math.min(s.duration, s.currentT + dxTime));
+      const elObj = data.elements.find(x => x.id === s.elId);
+      const snappedGlobal = snapTime(rawLocal + (elObj?.start ?? 0));
+      const newT = Math.max(TIME_EPSILON, Math.min(s.duration, Math.round((snappedGlobal - (elObj?.start ?? 0)) * 100) / 100));
+      const oldT = s.currentT;
+      if (Math.abs(newT - oldT) < TIME_EPSILON) return;
+      s.currentT = newT;
+      s.lastX = ev.clientX;
+      setSelectedMarkerTime(newT);
       setData(prev => {
         if (!prev) return prev;
         return { ...prev, elements: prev.elements.map(pel => {
-          if (pel.id !== d.elId) return pel;
-          // Move marker
+          if (pel.id !== s.elId) return pel;
           const markers = (pel.markers ?? []).map(m =>
-            Math.abs(m - d.origMarkerTime!) <= TIME_EPSILON ? rounded : m,
+            Math.abs(m - oldT) <= TIME_EPSILON ? newT : m,
           ).sort((a, b) => a - b);
-          // Cascade: any property keyframes at the old time follow to the new time
           const keyframes: typeof pel.keyframes = {};
           for (const [prop, list] of Object.entries(pel.keyframes ?? {})) {
             if (!list) continue;
             keyframes[prop as keyof typeof keyframes] = list
-              .map(k => Math.abs(k.t - d.origMarkerTime!) <= TIME_EPSILON ? { ...k, t: rounded } : k)
+              .map(k => Math.abs(k.t - oldT) <= TIME_EPSILON ? { ...k, t: newT } : k)
               .sort((a, b) => a.t - b.t);
           }
           return { ...pel, markers, keyframes };
@@ -1521,25 +1645,109 @@ export function VideoEditor({
       });
     };
     const handleUp = () => {
-      const d = timelineDragRef.current;
-      timelineDragRef.current = null;
-      setData(prev => {
-        if (prev) { undoRedo.push(prev); scheduleSave(prev); }
-        return prev;
-      });
-      // Find current marker time after rounding for selection
-      if (d && d.origMarkerTime !== undefined) {
-        const el = data.elements.find(x => x.id === d.elId);
-        if (el) {
-          // selection update happens on next render via the markers array — leave as-is
-        }
-      }
+      setData(prev => { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; });
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
-  }, [data, undoRedo, scheduleSave]);
+  }, [data, pxPerSec, undoRedo, scheduleSave, snapTime]);
+
+  // ─── Playhead Drag ────────────────────
+  const playheadDragRef = useRef<{ startX: number; startTime: number; trackWidth: number } | null>(null);
+  const handlePlayheadDragStart = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const tw = timelineDuration * pxPerSec;
+    playheadDragRef.current = { startX: e.clientX, startTime: currentTime, trackWidth: tw };
+    const handleMove = (ev: PointerEvent) => {
+      const d = playheadDragRef.current;
+      if (!d) return;
+      const dxSec = ((ev.clientX - d.startX) / d.trackWidth) * timelineDuration;
+      const raw = Math.max(0, Math.min(totalDuration, d.startTime + dxSec));
+      setCurrentTime(snapTime(raw));
+    };
+    const handleUp = () => {
+      playheadDragRef.current = null;
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  }, [currentTime, timelineDuration, pxPerSec, totalDuration, snapTime]);
+
+  // ─── Property Keyframe Drag ───────────
+  const propKfDragState = useRef<{
+    elId: string; prop: AnimatableProperty; currentT: number;
+    lastX: number; duration: number; elStart: number;
+  }>({ elId: '', prop: 'x', currentT: 0, lastX: 0, duration: 1, elStart: 0 });
+
+  const handlePropKfDragStart = useCallback((e: React.PointerEvent, elId: string, prop: AnimatableProperty, kfTime: number, _barEl: HTMLElement) => {
+    if (!data) return;
+    const el = data.elements.find(x => x.id === elId);
+    if (!el) return;
+    e.stopPropagation(); e.preventDefault();
+    propKfDragState.current = {
+      elId, prop, currentT: kfTime,
+      lastX: e.clientX, duration: el.duration, elStart: el.start,
+    };
+    setSelectedElementId(elId);
+    setSelectedMarkerTime(kfTime);
+
+    const handleMove = (ev: PointerEvent) => {
+      const s = propKfDragState.current;
+      const dxPx = ev.clientX - s.lastX;
+      const dxTime = dxPx / pxPerSec;
+      if (Math.abs(dxTime) < 0.001) return;
+      const rawLocal = Math.max(TIME_EPSILON, Math.min(s.duration, s.currentT + dxTime));
+      const snappedGlobal = snapTime(rawLocal + s.elStart);
+      const newT = Math.max(TIME_EPSILON, Math.min(s.duration, Math.round((snappedGlobal - s.elStart) * 100) / 100));
+      const oldT = s.currentT;
+      if (Math.abs(newT - oldT) < TIME_EPSILON) return;
+      s.currentT = newT;
+      s.lastX = ev.clientX;
+      setSelectedMarkerTime(newT);
+      setData(prev => {
+        if (!prev) return prev;
+        return { ...prev, elements: prev.elements.map(pel => {
+          if (pel.id !== s.elId) return pel;
+          const markers = pel.markers ?? [];
+          const propsAtOldTime = Object.entries(pel.keyframes ?? {}).filter(
+            ([, list]) => list?.some(k => Math.abs(k.t - oldT) <= TIME_EPSILON)
+          );
+          const onlyOnePropAtTime = propsAtOldTime.length <= 1;
+          if (onlyOnePropAtTime) {
+            const newMarkers = markers.map(m => Math.abs(m - oldT) <= TIME_EPSILON ? newT : m).sort((a, b) => a - b);
+            const newKf: typeof pel.keyframes = {};
+            for (const [p, list] of Object.entries(pel.keyframes ?? {})) {
+              if (!list) continue;
+              newKf[p as keyof typeof newKf] = list
+                .map(k => Math.abs(k.t - oldT) <= TIME_EPSILON ? { ...k, t: newT } : k)
+                .sort((a, b) => a.t - b.t);
+            }
+            return { ...pel, markers: newMarkers, keyframes: newKf };
+          }
+          const newKf: typeof pel.keyframes = { ...(pel.keyframes ?? {}) };
+          const propList = (newKf[s.prop] ?? []).map(k =>
+            Math.abs(k.t - oldT) <= TIME_EPSILON ? { ...k, t: newT } : k
+          ).sort((a, b) => a.t - b.t);
+          newKf[s.prop] = propList;
+          let newMarkers = [...markers];
+          if (!newMarkers.some(m => Math.abs(m - newT) <= TIME_EPSILON)) {
+            newMarkers.push(newT);
+            newMarkers.sort((a, b) => a - b);
+          }
+          return { ...pel, markers: newMarkers, keyframes: newKf };
+        }) };
+      });
+    };
+    const handleUp = () => {
+      setData(prev => { if (prev) { undoRedo.push(prev); scheduleSave(prev); } return prev; });
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  }, [data, pxPerSec, snapTime, undoRedo, scheduleSave]);
 
   // ─── Render ───────────────────────────
   if (!data) {
@@ -1559,7 +1767,7 @@ export function VideoEditor({
   const handleSize = 8 / zoom;
 
   return (
-    <div className="flex-1 flex flex-row min-h-0">
+    <div ref={editorRootRef} className="flex-1 flex flex-row min-h-0" style={{ touchAction: 'pan-x pan-y' }}>
       <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-card md:rounded-lg md:shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] md:overflow-hidden relative z-[1]">
         {/* Top Bar */}
         <div className="flex items-center border-b border-border shrink-0 shadow-[0px_0px_20px_0px_rgba(0,0,0,0.02)]">
@@ -1577,7 +1785,7 @@ export function VideoEditor({
             {/* Canvas Preview */}
             <div ref={canvasContainerRef} className="flex-1 flex items-center justify-center overflow-hidden relative"
               style={{ background: '#F5F7F5', cursor: pendingInsert ? 'crosshair' : 'default' }}
-              onClick={() => { if (!pendingInsert) { setSelectedElementId(null); setSelectedMarkerTime(null); setShowShapes(false); } }}>
+              onClick={() => { if (!pendingInsert) { setSelectedElementId(null); setSelectedMarkerTime(null); setSelectedKfProp(null); setShowShapes(false); } }}>
 
               {/* Floating Toolbar (Canvas style) */}
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 bg-card rounded border border-black/10 dark:border-white/10 px-3 h-10 shadow-[0px_0px_20px_0px_rgba(0,0,0,0.02)]"
@@ -1661,7 +1869,7 @@ export function VideoEditor({
                         transformOrigin: 'center center',
                         zIndex: el.z_index ?? 0,
                       }}
-                      onClick={(e) => { e.stopPropagation(); setSelectedElementId(el.id); setSelectedMarkerTime(null); }}
+                      onClick={(e) => { e.stopPropagation(); setSelectedElementId(el.id); setSelectedMarkerTime(null); setSelectedKfProp(null); }}
                       onPointerDown={(e) => handleCanvasPointerDown(e, el.id)}
                       onDoubleClick={() => handleDoubleClick(el.id)}
                     >
@@ -1741,36 +1949,90 @@ export function VideoEditor({
             </div>
 
             {/* Timeline */}
-            <div className="h-[220px] border-t border-border flex flex-col shrink-0 bg-card">
-              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
+            <div style={{ height: timelineHeight }} className="border-t border-border flex flex-col shrink-0 bg-card relative">
+              {/* Resize handle at top */}
+              <div className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-20 hover:bg-primary/10"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  timelineResizeRef.current = { startY: e.clientY, origH: timelineHeight };
+                  const move = (ev: PointerEvent) => {
+                    const d = timelineResizeRef.current;
+                    if (!d) return;
+                    setTimelineHeight(Math.max(120, d.origH - (ev.clientY - d.startY)));
+                  };
+                  const up = () => {
+                    timelineResizeRef.current = null;
+                    window.removeEventListener('pointermove', move);
+                    window.removeEventListener('pointerup', up);
+                  };
+                  window.addEventListener('pointermove', move);
+                  window.addEventListener('pointerup', up);
+                }} />
+              {/* Playback controls */}
+              <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border shrink-0">
                 <button onClick={() => { setCurrentTime(0); setPlaying(false); }} className="p-1 rounded hover:bg-accent"><SkipBack className="w-3.5 h-3.5" /></button>
                 <button onClick={() => setPlaying(p => !p)} className="p-1 rounded hover:bg-accent">
                   {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                 </button>
                 <button onClick={() => { setCurrentTime(totalDuration); setPlaying(false); }} className="p-1 rounded hover:bg-accent"><SkipForward className="w-3.5 h-3.5" /></button>
                 <span className="text-xs text-muted-foreground font-mono">{formatTime(currentTime)} / {formatTime(totalDuration)}</span>
+                {selectedElementId && selectedMarkerTime !== null && (
+                  <button onClick={() => {
+                    if (selectedKfProp) deletePropKeyframe(selectedElementId, selectedKfProp as AnimatableProperty, selectedMarkerTime);
+                    else deleteMarker(selectedElementId, selectedMarkerTime);
+                    setSelectedMarkerTime(null); setSelectedKfProp(null);
+                  }}
+                    className="p-1 rounded hover:bg-destructive/20 text-destructive" title={selectedKfProp ? `Delete ${selectedKfProp} keyframe (Del)` : "Delete all keyframes at this time (Del)"}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <div className="flex-1" />
+                <button onClick={() => setPxPerSec(p => Math.max(20, p * 0.8))} className="p-1 rounded hover:bg-accent"><Minus className="w-3 h-3" /></button>
+                <span className="text-[10px] text-muted-foreground w-8 text-center">{Math.round(pxPerSec)}px</span>
+                <button onClick={() => setPxPerSec(p => Math.min(400, p * 1.25))} className="p-1 rounded hover:bg-accent"><Plus className="w-3 h-3" /></button>
               </div>
-              <div className="flex-1 overflow-auto">
-                <div className="h-6 border-b border-border relative bg-muted/30 ml-[200px] cursor-pointer"
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setCurrentTime(Math.max(0, Math.min(totalDuration, ((e.clientX - rect.left) / rect.width) * timelineDuration)));
-                  }}>
-                  {Array.from({ length: Math.ceil(timelineDuration) + 1 }, (_, i) => (
-                    <div key={i} className="absolute top-0 h-full border-l border-border/50 flex items-end pb-0.5" style={{ left: `${(i / timelineDuration) * 100}%` }}>
-                      <span className="text-[10px] text-muted-foreground ml-1">{i}s</span>
+              {/* Scrollable tracks area with sticky ruler */}
+              {(() => {
+                const trackContentWidth = Math.max(timelineDuration * pxPerSec, 200);
+                const rulerStep = pxPerSec >= 200 ? 0.1 : pxPerSec >= 80 ? 0.5 : pxPerSec >= 40 ? 1 : pxPerSec >= 20 ? 2 : 5;
+                const labelStep = pxPerSec >= 200 ? 0.5 : pxPerSec >= 80 ? 1 : pxPerSec >= 40 ? 2 : pxPerSec >= 20 ? 5 : 10;
+                const rulerCount = Math.ceil(timelineDuration / rulerStep) + 1;
+                return (
+              <div ref={timelineScrollRef} className="flex-1 overflow-auto">
+                {/* Sticky ruler row */}
+                <div className="sticky top-0 z-10 flex bg-muted/30 border-b border-border">
+                  <div className="w-[200px] shrink-0" />
+                  <div className="relative h-6 cursor-pointer" style={{ width: trackContentWidth }}
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const raw = ((e.clientX - rect.left) / trackContentWidth) * timelineDuration;
+                      setCurrentTime(snapTime(Math.max(0, Math.min(totalDuration, raw))));
+                    }}>
+                    {Array.from({ length: rulerCount }, (_, i) => {
+                      const t = i * rulerStep;
+                      if (t > timelineDuration) return null;
+                      const isLabel = Math.abs(t - Math.round(t / labelStep) * labelStep) < rulerStep * 0.01;
+                      return (
+                        <div key={t} className="absolute top-0 h-full border-l border-border/40" style={{ left: t * pxPerSec }}>
+                          {isLabel && <span className="text-[10px] text-muted-foreground ml-1 whitespace-nowrap">{t % 1 === 0 ? `${t}s` : `${t.toFixed(1)}s`}</span>}
+                        </div>
+                      );
+                    })}
+                    {/* Playhead (draggable) */}
+                    <div className="absolute top-0 h-[2000px] w-0.5 bg-red-500 z-10" style={{ left: currentTime * pxPerSec, pointerEvents: 'none' }}>
+                      <div className="w-3 h-3 bg-red-500 rounded-sm -ml-[5px] -mt-0.5 pointer-events-auto cursor-grab active:cursor-grabbing"
+                        style={{ clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)' }}
+                        onPointerDown={handlePlayheadDragStart} />
                     </div>
-                  ))}
-                  <div className="absolute top-0 h-[500px] w-0.5 bg-red-500 z-10 pointer-events-none" style={{ left: `${(currentTime / timelineDuration) * 100}%` }}>
-                    <div className="w-2.5 h-2.5 bg-red-500 rounded-sm -ml-[4px] -mt-0.5" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%)' }} />
                   </div>
                 </div>
+                {/* Layer tracks */}
                 {[...data.elements].sort((a, b) => (b.z_index ?? 0) - (a.z_index ?? 0)).map((el, idx, sorted) => {
                   const markers = getMarkers(el);
                   const isHidden = el.visible === false;
                   const isLocked = !!el.locked;
-                  const canMoveUp = idx > 0;            // not at top of list (already highest z)
-                  const canMoveDown = idx < sorted.length - 1; // not at bottom
+                  const canMoveUp = idx > 0;
+                  const canMoveDown = idx < sorted.length - 1;
                   const animatedProps = (Object.keys(el.keyframes ?? {}) as AnimatableProperty[])
                     .filter(p => (el.keyframes?.[p]?.length ?? 0) > 0);
                   const hasAnimation = animatedProps.length > 0;
@@ -1778,7 +2040,7 @@ export function VideoEditor({
                   return (
                     <React.Fragment key={el.id}>
                     <div data-timeline-track className={cn("flex items-center h-8 border-b border-border/50", selectedElementId === el.id && "bg-accent/30", isHidden && "opacity-50")}
-                      onClick={() => { setSelectedElementId(el.id); setSelectedMarkerTime(null); }}>
+                      onClick={() => { setSelectedElementId(el.id); setSelectedMarkerTime(null); setSelectedKfProp(null); }}>
                       <TrackLabel
                         el={el} isHidden={isHidden} isLocked={isLocked}
                         canMoveUp={canMoveUp} canMoveDown={canMoveDown}
@@ -1790,44 +2052,32 @@ export function VideoEditor({
                         onRename={(name) => renameElement(el.id, name)}
                         onMoveUp={() => moveZIndex(el.id, 'up')}
                         onMoveDown={() => moveZIndex(el.id, 'down')} />
-                      <div className="flex-1 relative h-full">
+                      <div className="relative h-full" style={{ width: trackContentWidth }}>
                         <div className={cn("absolute top-1 bottom-1 rounded-sm group", selectedElementId === el.id ? "bg-blue-500/60" : "bg-blue-500/30")}
-                          style={{ left: `${(el.start / timelineDuration) * 100}%`, width: `${(el.duration / timelineDuration) * 100}%` }}>
+                          style={{ left: el.start * pxPerSec, width: el.duration * pxPerSec }}>
                           <div className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/60 rounded-l-sm"
                             onPointerDown={(e) => handleTimelinePointerDown(e, 'resize-left', el.id, e.currentTarget.parentElement!)} />
                           <div className="absolute left-1.5 right-1.5 top-0 bottom-0 cursor-grab active:cursor-grabbing"
                             onPointerDown={(e) => handleTimelinePointerDown(e, 'move', el.id, e.currentTarget.parentElement!)} />
                           <div className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/60 rounded-r-sm"
                             onPointerDown={(e) => handleTimelinePointerDown(e, 'resize-right', el.id, e.currentTarget.parentElement!)} />
-                          {/* Markers (element-level time anchors). Each carries
-                              the keyframes of any property that's been animated
-                              at that moment; right-click to delete (cascades). */}
                           {markers.map(t => (
                             <div key={t} className={cn("absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rotate-45 border cursor-pointer z-10",
-                              selectedElementId === el.id && selectedMarkerTime !== null && Math.abs(selectedMarkerTime - t) <= TIME_EPSILON
-                                ? "bg-yellow-300 border-yellow-500 scale-125"
+                              selectedElementId === el.id && selectedMarkerTime !== null && selectedKfProp === null && Math.abs(selectedMarkerTime - t) <= TIME_EPSILON
+                                ? "bg-emerald-400 border-emerald-600 scale-[1.2] ring-2 ring-emerald-400/40"
                                 : "bg-yellow-400 border-yellow-600")}
-                              style={{ left: `${(t / el.duration) * 100}%`, marginLeft: -5 }}
-                              onClick={(e) => { e.stopPropagation(); setSelectedElementId(el.id); setSelectedMarkerTime(t); }}
+                              style={{ left: t / el.duration * 100 + '%', marginLeft: -5 }}
+                              onClick={(e) => { e.stopPropagation(); setSelectedElementId(el.id); setSelectedMarkerTime(t); setSelectedKfProp(null); setCurrentTime(el.start + t); }}
                               onPointerDown={(e) => handleMarkerDragStart(e, el.id, t, e.currentTarget.parentElement!)}
                               onContextMenu={(e) => {
                                 e.preventDefault(); e.stopPropagation();
-                                if (window.confirm(`Delete marker at ${t.toFixed(2)}s? This also removes any property keyframes at that time.`)) {
-                                  deleteMarker(el.id, t);
-                                }
+                                deleteMarker(el.id, t); setSelectedMarkerTime(null); setSelectedKfProp(null);
                               }}
-                              onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                // Jump playhead to this marker time so panel reflects this moment.
-                                setCurrentTime(el.start + t);
-                              }}
-                              title={`Marker at ${t.toFixed(2)}s — drag to move, click to select, dbl-click to seek, right-click to delete`} />
+                              title={`Marker at ${t.toFixed(2)}s — click to seek, drag to move, right-click/Del to delete`} />
                           ))}
                         </div>
                       </div>
                     </div>
-                    {/* Expanded sub-rows: one per animated property, showing
-                        only that property's keyframes. */}
                     {isExpanded && animatedProps.map(prop => {
                       const list = (el.keyframes?.[prop] ?? []).slice().sort((a, b) => a.t - b.t);
                       return (
@@ -1837,31 +2087,33 @@ export function VideoEditor({
                             <span className="truncate">{prop}</span>
                             <span className="text-muted-foreground/60">({list.length})</span>
                           </div>
-                          <div className="flex-1 relative h-full">
+                          <div className="relative h-full" style={{ width: trackContentWidth }}>
                             <div className="absolute top-1 bottom-1 rounded-sm bg-yellow-500/10 border border-yellow-500/20"
-                              style={{
-                                left: `${(el.start / timelineDuration) * 100}%`,
-                                width: `${(el.duration / timelineDuration) * 100}%`,
-                              }}>
-                              {list.map(kf => (
+                              style={{ left: el.start * pxPerSec, width: el.duration * pxPerSec }}>
+                              {list.map(kf => {
+                                const isKfSelected = selectedElementId === el.id && selectedMarkerTime !== null && Math.abs(selectedMarkerTime - kf.t) <= TIME_EPSILON
+                                  && (selectedKfProp === null || selectedKfProp === prop);
+                                return (
                                 <div
                                   key={kf.t}
-                                  className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-yellow-400 border border-yellow-600 cursor-pointer z-10"
+                                  className={cn("absolute top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 border cursor-pointer z-10",
+                                    isKfSelected ? "bg-emerald-400 border-emerald-600 scale-[1.2] ring-2 ring-emerald-400/40" : "bg-yellow-400 border-yellow-600")}
                                   style={{ left: `${(kf.t / el.duration) * 100}%`, marginLeft: -4 }}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSelectedElementId(el.id);
                                     setSelectedMarkerTime(kf.t);
+                                    setSelectedKfProp(prop);
                                     setCurrentTime(el.start + kf.t);
                                   }}
+                                  onPointerDown={(e) => handlePropKfDragStart(e, el.id, prop as AnimatableProperty, kf.t, e.currentTarget.parentElement!)}
                                   onContextMenu={(e) => {
                                     e.preventDefault(); e.stopPropagation();
-                                    if (window.confirm(`Delete the ${prop} keyframe at ${kf.t.toFixed(2)}s? The marker stays.`)) {
-                                      deletePropKeyframe(el.id, prop, kf.t);
-                                    }
+                                    deletePropKeyframe(el.id, prop, kf.t);
                                   }}
-                                  title={`${prop} = ${kf.value.toFixed(2)} at ${kf.t.toFixed(2)}s${kf.easing ? ` · easing in: ${kf.easing}` : ''}`} />
-                              ))}
+                                  title={`${prop} = ${kf.value.toFixed(2)} at ${kf.t.toFixed(2)}s${kf.easing ? ` · easing in: ${kf.easing}` : ''} — drag to move, right-click/Del to delete`} />
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -1871,6 +2123,8 @@ export function VideoEditor({
                   );
                 })}
               </div>
+                );
+              })()}
             </div>
           </div>
 
