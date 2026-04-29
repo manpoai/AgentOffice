@@ -13,6 +13,7 @@ import {
   TextAlignStart, TextAlignCenter, TextAlignEnd,
   ArrowUpToLine, SeparatorHorizontal, ArrowDownToLine,
   Underline, Strikethrough, Settings2,
+  Goal, Clock7,
 } from 'lucide-react';
 import { exportVideoToBlob, downloadExport, type ExportFormat, type ExportPhase } from './videoExport';
 import { cn } from '@/lib/utils';
@@ -185,6 +186,7 @@ function TrackLabel({
   hasAnimation, expanded,
   onToggleExpanded,
   onToggleVisible, onToggleLock, onRename, onMoveUp, onMoveDown,
+  onDelete, onDuplicate,
 }: {
   el: VideoElement;
   isHidden: boolean;
@@ -199,11 +201,26 @@ function TrackLabel({
   onRename: (name: string) => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   return (
-    <div className="w-[200px] shrink-0 px-2 flex items-center gap-1 truncate text-xs">
+    <div className="w-[200px] shrink-0 px-2 flex items-center gap-1 truncate text-xs"
+      onContextMenu={(e) => {
+        e.preventDefault(); e.stopPropagation();
+        const items = [
+          { id: 'rename', label: 'Rename', onClick: () => { setDraft(el.name ?? el.type ?? ''); setEditing(true); } },
+          { id: 'duplicate', label: 'Duplicate', onClick: onDuplicate },
+          { id: 'delete', label: 'Delete', onClick: onDelete, danger: true },
+          { id: 'visible', label: isHidden ? 'Show' : 'Hide', onClick: onToggleVisible, separator: true },
+          { id: 'lock', label: isLocked ? 'Unlock' : 'Lock', onClick: onToggleLock },
+          { id: 'up', label: 'Bring Forward', onClick: onMoveUp, disabled: !canMoveUp, separator: true },
+          { id: 'down', label: 'Send Backward', onClick: onMoveDown, disabled: !canMoveDown },
+        ];
+        window.dispatchEvent(new CustomEvent('show-context-menu', { detail: { items, x: e.clientX, y: e.clientY } }));
+      }}>
       {/* Expand/collapse chevron — only enabled when the element has any
           animated property worth expanding to. */}
       <button
@@ -247,20 +264,6 @@ function TrackLabel({
           {el.name ?? el.type ?? 'element'}
         </span>
       )}
-      <button
-        disabled={!canMoveUp}
-        className="p-0.5 shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-20"
-        onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
-        title="Bring forward (higher z-index)">
-        <ArrowUp className="w-3 h-3" />
-      </button>
-      <button
-        disabled={!canMoveDown}
-        className="p-0.5 shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-20"
-        onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
-        title="Send backward (lower z-index)">
-        <ArrowDown className="w-3 h-3" />
-      </button>
     </div>
   );
 }
@@ -2059,6 +2062,24 @@ export function VideoEditor({
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
+                {(() => {
+                  if (!selectedElementId) return null;
+                  const sel = data?.elements.find(x => x.id === selectedElementId);
+                  if (!sel) return null;
+                  const localT = currentTime - sel.start;
+                  const inLifespan = localT >= 0 && localT <= sel.duration;
+                  const atT0 = localT <= TIME_EPSILON;
+                  const alreadyHasMarker = isOnMarker(sel, localT);
+                  if (!inLifespan || atT0 || alreadyHasMarker) return null;
+                  return (
+                    <button
+                      onClick={() => addMarkerAtPlayhead(selectedElementId)}
+                      className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] text-blue-500 hover:bg-blue-500/10 border border-blue-500/30"
+                      title="Add keyframe at current time (K)">
+                      <Diamond className="w-3 h-3" />Add Keyframe
+                    </button>
+                  );
+                })()}
                 <div className="flex-1" />
                 <button onClick={() => setPxPerSec(p => Math.max(20, p * 0.8))} className="p-1 rounded hover:bg-accent"><Minus className="w-3 h-3" /></button>
                 <span className="text-[10px] text-muted-foreground w-8 text-center">{Math.round(pxPerSec)}px</span>
@@ -2124,10 +2145,26 @@ export function VideoEditor({
                         onToggleLock={() => toggleLock(el.id)}
                         onRename={(name) => renameElement(el.id, name)}
                         onMoveUp={() => moveZIndex(el.id, 'up')}
-                        onMoveDown={() => moveZIndex(el.id, 'down')} />
+                        onMoveDown={() => moveZIndex(el.id, 'down')}
+                        onDelete={() => deleteElement(el.id)}
+                        onDuplicate={() => duplicateElement(el.id)} />
                       <div className="relative h-full" style={{ width: trackContentWidth }}>
                         <div className={cn("absolute top-1 bottom-1 rounded-sm group", selectedElementId === el.id ? "bg-blue-500/60" : "bg-blue-500/30")}
-                          style={{ left: el.start * pxPerSec, width: el.duration * pxPerSec }}>
+                          style={{ left: el.start * pxPerSec, width: el.duration * pxPerSec }}
+                          onContextMenu={(e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            const localT = currentTime - el.start;
+                            const inLifespan = localT >= 0 && localT <= el.duration;
+                            const atT0 = localT <= TIME_EPSILON;
+                            const alreadyHas = isOnMarker(el, localT);
+                            const canAddKf = inLifespan && !atT0 && !alreadyHas;
+                            const items = [
+                              ...(canAddKf ? [{ id: 'add-kf', label: 'Add Keyframe', onClick: () => addMarkerAtPlayhead(el.id) }] : []),
+                              { id: 'duplicate', label: 'Duplicate', onClick: () => duplicateElement(el.id), ...(canAddKf ? { separator: true } : {}) },
+                              { id: 'delete', label: 'Delete', onClick: () => deleteElement(el.id), danger: true },
+                            ];
+                            window.dispatchEvent(new CustomEvent('show-context-menu', { detail: { items, x: e.clientX, y: e.clientY } }));
+                          }}>
                           <div className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400/60 rounded-l-sm"
                             onPointerDown={(e) => handleTimelinePointerDown(e, 'resize-left', el.id, e.currentTarget.parentElement!)} />
                           <div className="absolute left-1.5 right-1.5 top-0 bottom-0 cursor-grab active:cursor-grabbing"
@@ -2144,9 +2181,12 @@ export function VideoEditor({
                               onPointerDown={(e) => handleMarkerDragStart(e, el.id, t, e.currentTarget.parentElement!)}
                               onContextMenu={(e) => {
                                 e.preventDefault(); e.stopPropagation();
-                                deleteMarker(el.id, t); setSelectedMarkerTime(null); setSelectedKfProp(null);
+                                window.dispatchEvent(new CustomEvent('show-context-menu', { detail: {
+                                  items: [{ id: 'del', label: 'Delete Keyframe', onClick: () => { deleteMarker(el.id, t); setSelectedMarkerTime(null); setSelectedKfProp(null); }, danger: true }],
+                                  x: e.clientX, y: e.clientY,
+                                } }));
                               }}
-                              title={`Marker at ${t.toFixed(2)}s — click to seek, drag to move, right-click/Del to delete`} />
+                              title={`Keyframe at ${t.toFixed(2)}s — click to seek, drag to move, right-click to delete`} />
                           ))}
                         </div>
                       </div>
@@ -2182,9 +2222,12 @@ export function VideoEditor({
                                   onPointerDown={(e) => handlePropKfDragStart(e, el.id, prop as AnimatableProperty, kf.t, e.currentTarget.parentElement!)}
                                   onContextMenu={(e) => {
                                     e.preventDefault(); e.stopPropagation();
-                                    deletePropKeyframe(el.id, prop, kf.t);
+                                    window.dispatchEvent(new CustomEvent('show-context-menu', { detail: {
+                                      items: [{ id: 'del', label: `Delete ${prop} Keyframe`, onClick: () => deletePropKeyframe(el.id, prop, kf.t), danger: true }],
+                                      x: e.clientX, y: e.clientY,
+                                    } }));
                                   }}
-                                  title={`${prop} = ${kf.value.toFixed(2)} at ${kf.t.toFixed(2)}s${kf.easing ? ` · easing in: ${kf.easing}` : ''} — drag to move, right-click/Del to delete`} />
+                                  title={`${prop} = ${kf.value.toFixed(2)} at ${kf.t.toFixed(2)}s${kf.easing ? ` · easing in: ${kf.easing}` : ''} — drag to move, right-click to delete`} />
                                 );
                               })}
                             </div>
@@ -2895,6 +2938,62 @@ function ElementPropertyPanel({
           title={element.locked ? 'Unlock element' : 'Lock element'} />
       </div>
 
+      {/* Timing */}
+      <SectionHeader>Timing</SectionHeader>
+      <div className="px-3 pb-3 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <SubsectionHeader>Start</SubsectionHeader>
+            <LabeledNumberInput label={<Goal className="w-3 h-3" />} value={element.start} min={0} step={0.1} suffix="s" onChange={v => onUpdate({ start: v })} />
+          </div>
+          <div>
+            <SubsectionHeader>Duration</SubsectionHeader>
+            <LabeledNumberInput label={<Clock7 className="w-3 h-3" />} value={element.duration} min={0.1} step={0.1} suffix="s" onChange={v => onUpdate({ duration: v })} />
+          </div>
+        </div>
+      </div>
+
+      {/* Keyframes */}
+      <SectionHeader collapsed={!showMarkers} onToggle={() => setShowMarkers(v => !v)}>
+        Keyframes ({markers.length})
+      </SectionHeader>
+      {showMarkers && (
+        <div className="px-3 pb-3 space-y-1">
+          {markers.length === 0 && (
+            <p className="text-[11px] text-muted-foreground italic">No keyframes yet. Press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">K</kbd> to add one.</p>
+          )}
+          {markers.map(t => (
+            <div key={t}
+              className={cn(
+                'flex items-center gap-2 text-[11px] rounded px-2 py-1 cursor-pointer hover:bg-muted/50',
+                selectedMarkerTime !== null && Math.abs(selectedMarkerTime - t) <= TIME_EPSILON
+                  ? 'bg-yellow-500/10' : 'bg-muted/30',
+              )}
+              onClick={() => onSelectMarker(t)}>
+              <Diamond className="w-3 h-3 text-yellow-500 shrink-0" />
+              <span className="font-mono text-foreground flex-1">{t.toFixed(2)}s</span>
+              <span className="font-mono text-muted-foreground/60 text-[9px]">@{(element.start + t).toFixed(2)}s</span>
+              <button onClick={(e) => { e.stopPropagation(); onDeleteMarker(t); }} className="p-0.5 rounded hover:bg-accent text-destructive" title="Delete keyframe">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          <button
+            onClick={onAddMarker}
+            disabled={!playheadInLifespan || playheadLocal <= TIME_EPSILON}
+            className="flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-600 mt-1 disabled:text-muted-foreground/50 disabled:cursor-not-allowed">
+            <Plus className="w-3 h-3" />Add keyframe at {Math.max(0, playheadLocal).toFixed(2)}s
+            <span className="text-[10px] text-muted-foreground/60">(K)</span>
+          </button>
+        </div>
+      )}
+
+      {/* Animations */}
+      <PropertyAnimationsSection
+        element={element}
+        onSetKeyframeEasing={onSetKeyframeEasing}
+        onDeletePropKeyframe={onDeletePropKeyframe} />
+
       {/* §1 Position: X/Y side by side + Rotation subsection */}
       <SectionHeader>Position</SectionHeader>
       <div className="px-3 pb-3 space-y-2">
@@ -2992,24 +3091,6 @@ function ElementPropertyPanel({
             }}
           />
           <div />
-        </div>
-      </div>
-
-      {/* §4 Timing (Video-specific) */}
-      <SectionHeader>Timing</SectionHeader>
-      <div className="px-3 pb-3 space-y-2">
-        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
-          <LabeledNumberInput label="Start" value={element.start} min={0} step={0.1} suffix="s" onChange={v => onUpdate({ start: v })} />
-          <LabeledNumberInput label="Dur" value={element.duration} min={0.1} step={0.1} suffix="s" onChange={v => onUpdate({ duration: v })} />
-          <div />
-        </div>
-        <div className="grid grid-cols-[1fr_1fr_24px] gap-2 items-center">
-          <div className="flex items-center gap-1.5 px-2 h-6 rounded bg-[#F5F5F5] hover:bg-[#EBEBEB] focus-within:ring-1 focus-within:ring-primary/40 cursor-text">
-            <span className="text-[10px] text-muted-foreground shrink-0 select-none">Name</span>
-            <input type="text" value={element.name ?? ''} onChange={e => onUpdate({ name: e.target.value })}
-              className="flex-1 min-w-0 bg-transparent border-0 px-0 py-0 text-[10px] text-foreground focus:outline-none font-mono tabular-nums" />
-          </div>
-          <div /><div />
         </div>
       </div>
 
@@ -3230,46 +3311,6 @@ function ElementPropertyPanel({
           </div>
         </>
       )}
-
-      {/* §8 Markers */}
-      <SectionHeader collapsed={!showMarkers} onToggle={() => setShowMarkers(v => !v)}>
-        Markers ({markers.length})
-      </SectionHeader>
-      {showMarkers && (
-        <div className="px-3 pb-3 space-y-1">
-          {markers.length === 0 && (
-            <p className="text-[11px] text-muted-foreground italic">No markers yet. Press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">K</kbd> to add one.</p>
-          )}
-          {markers.map(t => (
-            <div key={t}
-              className={cn(
-                'flex items-center gap-2 text-[11px] rounded px-2 py-1 cursor-pointer hover:bg-muted/50',
-                selectedMarkerTime !== null && Math.abs(selectedMarkerTime - t) <= TIME_EPSILON
-                  ? 'bg-yellow-500/10' : 'bg-muted/30',
-              )}
-              onClick={() => onSelectMarker(t)}>
-              <Diamond className="w-3 h-3 text-yellow-500 shrink-0" />
-              <span className="font-mono text-muted-foreground flex-1">{t.toFixed(2)}s</span>
-              <button onClick={(e) => { e.stopPropagation(); onDeleteMarker(t); }} className="p-0.5 rounded hover:bg-accent text-destructive" title="Delete marker">
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={onAddMarker}
-            disabled={!playheadInLifespan || playheadLocal <= TIME_EPSILON}
-            className="flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-600 mt-1 disabled:text-muted-foreground/50 disabled:cursor-not-allowed">
-            <Plus className="w-3 h-3" />Add marker at {Math.max(0, playheadLocal).toFixed(2)}s
-            <span className="text-[10px] text-muted-foreground/60">(K)</span>
-          </button>
-        </div>
-      )}
-
-      {/* §9 Property animations */}
-      <PropertyAnimationsSection
-        element={element}
-        onSetKeyframeEasing={onSetKeyframeEasing}
-        onDeletePropKeyframe={onDeletePropKeyframe} />
 
       {/* §10 HTML Code */}
       <SectionHeader collapsed={!showHtml} onToggle={() => setShowHtml(v => !v)}>HTML Code</SectionHeader>
