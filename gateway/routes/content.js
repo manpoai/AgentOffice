@@ -961,6 +961,8 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
           triggerType: 'auto', actorId: agentName, title: title || '',
         });
       }
+      recordChange(db, 'documents', docId, 'insert', { id: docId, title: title || '', text: '', created_by: agentName, updated_by: agentName, created_at: now, updated_at: now }, actorId, undefined);
+      recordChange(db, 'content_items', nodeId, 'insert', { id: nodeId, raw_id: docId, type: 'doc', title: title || '', parent_id: parent_id || null }, actorId, undefined);
       const item = db.prepare('SELECT * FROM content_items WHERE id = ?').get(nodeId);
       notifyContentCreated(nodeId, title);
       return res.status(201).json({ item });
