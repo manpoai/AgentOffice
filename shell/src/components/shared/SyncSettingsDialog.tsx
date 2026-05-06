@@ -13,7 +13,7 @@ interface SyncStatus {
 }
 
 export function SyncSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const t = useT();
+  const { t } = useT();
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
