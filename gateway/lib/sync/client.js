@@ -180,10 +180,12 @@ export class SyncClient {
   }
 
   async _pushLocalChanges(config) {
+    const total = this.db.prepare("SELECT COUNT(*) as n FROM _sync_log").get();
     const changes = this.db.prepare(
       "SELECT id, table_name, row_id, operation, data_json, actor_id, timestamp FROM _sync_log WHERE synced = 0 AND source = 'local' ORDER BY timestamp ASC LIMIT 500"
     ).all();
 
+    console.log(`[sync-client] Push check: ${changes.length} unsynced / ${total.n} total in _sync_log`);
     if (changes.length === 0) return;
 
     let pushed = false;

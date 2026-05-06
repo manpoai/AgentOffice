@@ -17,11 +17,14 @@ const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(GATEWAY_DIR, 'uploads'
 
 function seedSyncLog(db) {
   const existing = db.prepare("SELECT COUNT(*) as count FROM _sync_log").get();
-  if (existing.count > 0) return 0;
+  if (existing.count > 0) { console.log('[sync] _sync_log already has', existing.count, 'entries, skipping seed'); return 0; }
 
-  const tables = db.prepare(
+  const allDbTables = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '_%'"
-  ).all().map(r => r.name).filter(n => isSyncableTable(n));
+  ).all().map(r => r.name);
+  console.log('[sync-debug] All non-underscore tables:', allDbTables.join(', '));
+  const tables = allDbTables.filter(n => isSyncableTable(n));
+  console.log('[sync-debug] Syncable tables:', tables.join(', '));
 
   const utblTables = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'utbl_%_rows'"
