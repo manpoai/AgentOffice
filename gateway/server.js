@@ -123,9 +123,11 @@ setInterval(cleanupDeliveredEvents, 24 * 3600 * 1000);
 // ─── Serve shell static files (App mode) ────────
 const shellDistDir = path.join(__dirname, '..', 'shell-dist');
 if (fs.existsSync(path.join(shellDistDir, 'index.html'))) {
-  app.use(express.static(shellDistDir));
+  app.use(express.static(shellDistDir, { extensions: ['html'] }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/')) return next();
+    const htmlFile = path.join(shellDistDir, req.path + '.html');
+    if (fs.existsSync(htmlFile)) return res.sendFile(htmlFile);
     res.sendFile(path.join(shellDistDir, 'index.html'));
   });
   console.log('[gateway] Serving shell from', shellDistDir);
