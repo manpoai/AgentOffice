@@ -53,6 +53,18 @@ function createWindow(port) {
 
   mainWindow.loadURL(`http://127.0.0.1:${port}`);
 
+  // macOS: make window draggable (title bar is hidden via hiddenInset)
+  if (process.platform === 'darwin') {
+    mainWindow.webContents.on('dom-ready', () => {
+      mainWindow.webContents.executeJavaScript(`
+        const d = document.createElement('div');
+        d.id = 'electron-drag-bar';
+        d.style.cssText = 'position:fixed;top:0;left:70px;right:0;height:38px;-webkit-app-region:drag;z-index:9999;';
+        document.body.prepend(d);
+      `);
+    });
+  }
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url);
     return { action: 'deny' };
