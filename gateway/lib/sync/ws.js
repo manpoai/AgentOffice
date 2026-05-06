@@ -95,6 +95,7 @@ export class SyncWebSocketServer {
         this._handlePush(clientId, msg.changes || []);
         break;
       case 'pull':
+        console.log(`[sync-ws] Pull request from ${clientId}, since=${msg.since}`);
         this._handlePull(clientId, msg.since || 0);
         break;
       default:
@@ -123,7 +124,7 @@ export class SyncWebSocketServer {
   }
 
   _handlePull(clientId, since) {
-    const limit = 1000;
+    const limit = 100;
     const changes = this.db.prepare(
       "SELECT id, table_name, row_id, operation, data_json, actor_id, timestamp FROM _sync_log WHERE id > ? AND source = 'local' ORDER BY id ASC LIMIT ?"
     ).all(since, limit);
