@@ -20,7 +20,7 @@ function seedSyncLog(db) {
   if (existing.count > 0) { console.log('[sync] _sync_log already has', existing.count, 'entries, skipping seed'); return 0; }
 
   const allDbTables = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '_%'"
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT GLOB '_*'"
   ).all().map(r => r.name);
   console.log('[sync-debug] All non-underscore tables:', allDbTables.join(', '));
   const tables = allDbTables.filter(n => isSyncableTable(n));
@@ -184,6 +184,12 @@ export default function syncRoutes(db, syncClient) {
     }
 
     res.json({ ok: true, message: 'Sync disconnected' });
+  });
+
+  // POST /api/sync/seed — seed _sync_log with all existing data (for initial pull)
+  router.post('/seed', (req, res) => {
+    const seeded = seedSyncLog(db);
+    res.json({ ok: true, seeded });
   });
 
   // POST /api/sync/files — receive uploaded file from remote
