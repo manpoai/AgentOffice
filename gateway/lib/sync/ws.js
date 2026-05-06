@@ -123,9 +123,10 @@ export class SyncWebSocketServer {
   }
 
   _handlePull(clientId, since) {
+    const limit = 1000;
     const changes = this.db.prepare(
-      "SELECT table_name, row_id, operation, data_json, actor_id, timestamp FROM _sync_log WHERE timestamp > ? AND source = 'local' ORDER BY timestamp ASC LIMIT 1000"
-    ).all(since);
+      "SELECT table_name, row_id, operation, data_json, actor_id, timestamp FROM _sync_log WHERE timestamp > ? AND source = 'local' ORDER BY timestamp ASC LIMIT ?"
+    ).all(since, limit);
 
     const client = this.clients.get(clientId);
     if (client?.ws.readyState === client?.ws.OPEN) {
@@ -133,6 +134,7 @@ export class SyncWebSocketServer {
         type: 'pull_response',
         changes,
         server_timestamp: Date.now(),
+        has_more: changes.length === limit,
       }));
     }
   }

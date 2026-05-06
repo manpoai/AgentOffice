@@ -175,7 +175,7 @@ export class SyncClient {
   }
 
   _applyPullResponse(msg) {
-    const { changes, server_timestamp } = msg;
+    const { changes, server_timestamp, has_more } = msg;
     if (!Array.isArray(changes)) return;
 
     let applied = 0;
@@ -189,7 +189,15 @@ export class SyncClient {
       ).run(String(server_timestamp));
     }
 
-    console.log(`[sync-client] Pulled ${applied}/${changes.length} changes`);
+    console.log(`[sync-client] Pulled ${applied}/${changes.length} changes${has_more ? ' (more available)' : ''}`);
+
+    if (has_more && this.ws?.readyState === WebSocket.OPEN) {
+      const freshConfig = this.getConfig();
+      this.ws.send(JSON.stringify({
+        type: 'pull',
+        since: freshConfig.lastPullTimestamp,
+      }));
+    }
   }
 
   async _pushLocalChanges(config) {
