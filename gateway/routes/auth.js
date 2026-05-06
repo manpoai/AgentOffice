@@ -808,7 +808,7 @@ Then register it in <AGENT_DIR>/.codex/config.toml. Read the file first if it ex
 
 \`\`\`toml
 [[hooks.stop]]
-command = "<AGENT_DIR>/.codex/hooks/stop-hook-aose.sh"
+command = "'<AGENT_DIR>/.codex/hooks/stop-hook-aose.sh'"
 \`\`\`
 
 If the file already has other hooks or settings, merge carefully — preserve everything else.
@@ -982,7 +982,7 @@ Then register it in <AGENT_DIR>/.gemini/settings.json. Read the file first if it
         "hooks": [
           {
             "type": "command",
-            "command": "<AGENT_DIR>/.gemini/hooks/after-agent-aose.sh",
+            "command": "'<AGENT_DIR>/.gemini/hooks/after-agent-aose.sh'",
             "timeout": 5000
           }
         ]
