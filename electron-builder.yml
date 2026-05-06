@@ -1,0 +1,36 @@
+appId: com.agentofficesuite.app
+productName: AgentOfficeSuite
+directories:
+  output: release
+files:
+  - electron/**/*
+  - gateway/**/*
+  - shell-dist/**/*
+  - "!**/node_modules/.cache"
+  - "!**/.next"
+  - "!**/shell"
+  - "!**/adapters"
+  - "!**/dist"
+  - "!**/docs"
+  - "!**/*.tgz"
+  - "!**/*.db"
+extraMetadata:
+  main: electron/main.js
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+    - portable
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Office
+publish:
+  provider: github
+  owner: manpoai
+  repo: AgentOfficeSuite

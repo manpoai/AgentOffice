@@ -1,0 +1,14 @@
+{
+  "name": "agentofficesuite",
+  "version": "3.0.4",
+  "description": "AgentOfficeSuite — AI-native workspace for human-agent collaboration",
+  "main": "main.js",
+  "author": "manpoai",
+  "license": "AGPL-3.0",
+  "dependencies": {
+    "electron-updater": "^6.3.0"
+  },
+  "devDependencies": {
+    "electron": "^42.0.0"
+  }
+}
