@@ -1227,6 +1227,19 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     res.json({ token, actor: { id: actor.id, username: actor.username, display_name: actor.display_name, role: actor.role, avatar_url: actor.avatar_url } });
   });
 
+  // GET /api/auth/auto-login — passwordless login for App mode (Electron)
+  // Requires ADMIN_TOKEN in Authorization header. Returns a JWT for the admin user.
+  app.get('/api/auth/auto-login', (req, res) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith('Bearer ') || auth.slice(7) !== ADMIN_TOKEN) {
+      return res.status(403).json({ error: 'Invalid admin token' });
+    }
+    const actor = db.prepare("SELECT * FROM actors WHERE type = 'human' AND role = 'admin'").get();
+    if (!actor) return res.status(500).json({ error: 'No admin user found' });
+    const token = jwt.sign({ actor_id: actor.id, type: 'human', username: actor.username, role: actor.role }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, actor: { id: actor.id, username: actor.username, display_name: actor.display_name, role: actor.role, avatar_url: actor.avatar_url } });
+  });
+
   // GET /api/auth/me — get current user (works for both human JWT and agent Bearer)
   app.get('/api/auth/me', authenticateAny, (req, res) => {
     const a = req.actor;

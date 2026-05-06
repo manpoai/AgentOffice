@@ -1,6 +1,6 @@
 'use client';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { API_BASE } from '@/lib/api/config';
+import { API_BASE, IS_APP_MODE } from '@/lib/api/config';
 
 export interface Actor {
   id: string;
@@ -32,12 +32,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount, check for stored token
+  // On mount, check for stored token or auto-login in app mode
   useEffect(() => {
     const stored = localStorage.getItem('aose_token');
     if (stored) {
       setToken(stored);
-      // Verify token
       fetch(`${API_BASE}/auth/me`, {
         headers: { Authorization: `Bearer ${stored}` },
       }).then(res => {
@@ -49,10 +48,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => {
         localStorage.removeItem('aose_token');
         setToken(null);
-        setLoading(false);
+        if (IS_APP_MODE) {
+          doAutoLogin();
+        } else {
+          setLoading(false);
+        }
       });
+    } else if (IS_APP_MODE) {
+      doAutoLogin();
     } else {
       setLoading(false);
+    }
+
+    function doAutoLogin() {
+      const adminToken = (window as any).__AOSE_ADMIN_TOKEN__;
+      if (!adminToken) { setLoading(false); return; }
+      fetch(`${API_BASE}/auth/auto-login`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      })
+        .then(res => { if (res.ok) return res.json(); throw new Error('Auto-login failed'); })
+        .then(data => {
+          localStorage.setItem('aose_token', data.token);
+          setToken(data.token);
+          setActor(data.actor);
+          setLoading(false);
+        })
+        .catch(() => {
+          setLoading(false);
+        });
     }
   }, []);
 

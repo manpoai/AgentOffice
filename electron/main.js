@@ -35,7 +35,7 @@ function loadOrCreateConfig() {
   return config;
 }
 
-function createWindow(port) {
+function createWindow(port, config) {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -53,17 +53,20 @@ function createWindow(port) {
 
   mainWindow.loadURL(`http://127.0.0.1:${port}`);
 
-  // macOS: make window draggable (title bar is hidden via hiddenInset)
-  if (process.platform === 'darwin') {
-    mainWindow.webContents.on('dom-ready', () => {
-      mainWindow.webContents.executeJavaScript(`
-        const d = document.createElement('div');
-        d.id = 'electron-drag-bar';
-        d.style.cssText = 'position:fixed;top:0;left:70px;right:0;height:38px;-webkit-app-region:drag;z-index:9999;';
-        document.body.prepend(d);
-      `);
-    });
-  }
+  mainWindow.webContents.on('dom-ready', () => {
+    const adminToken = JSON.stringify(config.admin_token);
+    mainWindow.webContents.executeJavaScript(
+      `window.__AOSE_ADMIN_TOKEN__ = ${adminToken};`
+    );
+    if (process.platform === 'darwin') {
+      mainWindow.webContents.executeJavaScript(
+        "const d = document.createElement('div');" +
+        "d.id = 'electron-drag-bar';" +
+        "d.style.cssText = 'position:fixed;top:0;left:70px;right:0;height:38px;-webkit-app-region:drag;z-index:9999;';" +
+        "document.body.prepend(d);"
+      );
+    }
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url);
@@ -104,7 +107,7 @@ app.on('ready', async () => {
     return;
   }
 
-  createWindow(config.gateway_port);
+  createWindow(config.gateway_port, config);
   setupTray(mainWindow, app);
   setupUpdater();
 });
@@ -114,7 +117,7 @@ app.on('activate', () => {
     mainWindow.show();
   } else {
     const config = loadOrCreateConfig();
-    createWindow(config.gateway_port);
+    createWindow(config.gateway_port, config);
   }
 });
 

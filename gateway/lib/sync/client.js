@@ -16,6 +16,7 @@ export class SyncClient {
     this.reconnectDelay = 1000;
     this.maxReconnectDelay = 60000;
     this.pushInterval = null;
+    this.pullInterval = null;
     this.running = false;
     this.uploadsDir = process.env.UPLOADS_DIR || path.join(process.cwd(), 'uploads');
   }
@@ -50,6 +51,13 @@ export class SyncClient {
         console.error('[sync-client] Push error:', err.message);
       });
     }, 10000);
+
+    this.pullInterval = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) return;
+      this._pullRemoteChanges(config).catch(err => {
+        console.error('[sync-client] Pull error:', err.message);
+      });
+    }, 10000);
   }
 
   stop() {
@@ -65,6 +73,10 @@ export class SyncClient {
     if (this.pushInterval) {
       clearInterval(this.pushInterval);
       this.pushInterval = null;
+    }
+    if (this.pullInterval) {
+      clearInterval(this.pullInterval);
+      this.pullInterval = null;
     }
     console.log('[sync-client] Stopped');
   }
@@ -310,6 +322,46 @@ export class SyncClient {
           console.warn(`[sync-client] File upload error for ${filename}:`, err.message);
         }
       }
+    }
+  }
+
+  async _pullRemoteChanges(config) {
+    const freshConfig = this.getConfig();
+    const since = freshConfig.lastPullTimestamp;
+
+    try {
+      const res = await fetch(`${config.remoteUrl}/sync/pull?since=${since}&limit=1000`, {
+        headers: {
+          'Authorization': `Bearer ${config.remoteToken}`,
+        },
+      });
+
+      if (!res.ok) {
+        console.error(`[sync-client] HTTP pull failed: ${res.status}`);
+        return;
+      }
+
+      const { changes, server_timestamp, has_more } = await res.json();
+      if (!Array.isArray(changes) || changes.length === 0) return;
+
+      let applied = 0;
+      for (const change of changes) {
+        if (applyChange(this.db, change)) applied++;
+      }
+
+      if (server_timestamp) {
+        this.db.prepare(
+          "INSERT OR REPLACE INTO _sync_meta (key, value) VALUES ('last_pull_timestamp', ?)"
+        ).run(String(server_timestamp));
+      }
+
+      console.log(`[sync-client] Pulled ${applied}/${changes.length} changes via HTTP`);
+
+      if (has_more) {
+        await this._pullRemoteChanges(config);
+      }
+    } catch (err) {
+      console.error('[sync-client] HTTP pull error:', err.message);
     }
   }
 }
