@@ -92,6 +92,7 @@ app.on('ready', async () => {
     uploadsDir: UPLOADS_DIR,
     jwtSecret: config.jwt_secret,
     adminToken: config.admin_token,
+    adminPassword: config.admin_password || 'admin',
   });
 
   try {

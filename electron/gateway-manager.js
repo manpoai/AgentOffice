@@ -31,6 +31,7 @@ class GatewayManager {
         UPLOADS_DIR: options.uploadsDir,
         JWT_SECRET: options.jwtSecret,
         ADMIN_TOKEN: options.adminToken,
+        ADMIN_PASSWORD: options.adminPassword || 'admin',
         CORS_ORIGIN: options.corsOrigin || '*',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
