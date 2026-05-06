@@ -68,6 +68,7 @@ export function applyChange(db, change) {
     const pk = getPrimaryKeyColumn(db, table_name);
 
     if (operation === 'insert') {
+      fillNotNullDefaults(db, table_name, filteredData, pk);
       const cols = Object.keys(filteredData);
       const placeholders = cols.map(() => '?').join(', ');
       const values = cols.map(c => serializeValue(filteredData[c]));
@@ -109,6 +110,17 @@ function getPrimaryKeyColumn(db, tableName) {
 function getTableColumns(db, tableName) {
   const info = db.prepare(`PRAGMA table_info(${tableName})`).all();
   return new Set(info.map(c => c.name));
+}
+
+function fillNotNullDefaults(db, tableName, data, pk) {
+  const info = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  for (const col of info) {
+    if (col.name === pk) continue;
+    if (col.notnull && col.dflt_value === null && !(col.name in data)) {
+      const t = (col.type || '').toUpperCase();
+      data[col.name] = t.includes('INT') ? 0 : t.includes('REAL') ? 0.0 : '';
+    }
+  }
 }
 
 function serializeValue(value) {

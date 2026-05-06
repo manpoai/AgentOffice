@@ -97,7 +97,12 @@ docsRoutes(app, shared);
 dataRoutes(app, shared);
 contentRoutes(app, shared);
 eventsRoutes(app, shared);
-app.use('/api/sync', authenticateAny, syncRoutes(db, syncClient));
+const syncAuth = (req, res, next) => {
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Bearer ') && auth.slice(7) === ADMIN_TOKEN) return next();
+  return authenticateAny(req, res, next);
+};
+app.use('/api/sync', syncAuth, syncRoutes(db, syncClient));
 
 // ─── Events TTL cleanup ─────────────────────────
 const EVENT_TTL_DAYS = parseInt(process.env.GATEWAY_EVENT_TTL_DAYS || '30', 10);
