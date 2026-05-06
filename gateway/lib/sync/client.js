@@ -100,9 +100,10 @@ export class SyncClient {
       console.log('[sync-client] WebSocket connected');
       this.reconnectDelay = 1000;
 
+      const freshConfig = this.getConfig();
       this.ws.send(JSON.stringify({
         type: 'pull',
-        since: config.lastPullTimestamp,
+        since: freshConfig.lastPullTimestamp,
       }));
     });
 
