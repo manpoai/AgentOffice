@@ -1,6 +1,14 @@
-const { fork } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
+
+function findSystemNode() {
+  try {
+    return execSync('which node', { encoding: 'utf-8' }).trim();
+  } catch {
+    return 'node';
+  }
+}
 
 class GatewayManager {
   constructor() {
@@ -14,7 +22,8 @@ class GatewayManager {
     const gatewayDir = path.join(__dirname, '..', 'gateway');
     this.port = options.port || 4000;
 
-    this.process = fork(path.join(gatewayDir, 'server.js'), [], {
+    const nodeBin = findSystemNode();
+    this.process = spawn(nodeBin, [path.join(gatewayDir, 'server.js')], {
       env: {
         ...process.env,
         GATEWAY_PORT: String(this.port),
@@ -24,7 +33,7 @@ class GatewayManager {
         ADMIN_TOKEN: options.adminToken,
         CORS_ORIGIN: options.corsOrigin || '*',
       },
-      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     this.process.stdout.on('data', (data) => {
