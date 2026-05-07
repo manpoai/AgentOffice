@@ -30,11 +30,12 @@ class AgentProvisioner {
       throw err;
     }
 
+    const mcpEntryPoint = path.join(__dirname, '..', 'mcp-server', 'src', 'index.js');
     const mcpConfig = {
       mcpServers: {
         aose: {
-          command: 'npx',
-          args: ['-y', 'aose-mcp@latest'],
+          command: 'node',
+          args: [mcpEntryPoint],
           env: {
             AOSE_GATEWAY: `http://127.0.0.1:${this.gatewayPort}`,
             AOSE_TOKEN: token,
