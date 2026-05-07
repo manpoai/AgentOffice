@@ -30,7 +30,7 @@ interface ToolCategory {
 }
 
 const CLAUDE_CODE_TOOL_CATEGORIES: ToolCategory[] = [
-  { id: 'aose', label: 'AOSE Workspace', description: 'Docs, tables, comments, events', tools: ['MCP(mcp__aose__*)'], default: 'always' },
+  { id: 'aose', label: 'AOSE Workspace', description: 'Docs, tables, comments, events', tools: ['mcp__aose__*'], default: 'always' },
   { id: 'files', label: 'File Operations', description: 'Read, edit, write files', tools: ['Read', 'Edit', 'Write'], default: 'always' },
   { id: 'shell', label: 'Shell Commands', description: 'Terminal commands (bash)', tools: ['Bash'], default: 'ask' },
   { id: 'web', label: 'Web Access', description: 'Fetch URLs, web search', tools: ['WebFetch', 'WebSearch'], default: 'ask' },
@@ -151,6 +151,7 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
           agentName: result.agentName,
           platform: p,
           welcomeMessage: welcome,
+          autoStartCommand: p === 'claude-code' ? 'claude' : undefined,
         });
       }
       onClose();

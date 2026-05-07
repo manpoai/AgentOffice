@@ -44,9 +44,10 @@ interface AgentTerminalTabProps {
   isActive: boolean;
   welcomeMessage?: string;
   colorTheme?: 'light' | 'dark';
+  autoStartCommand?: string;
 }
 
-export function AgentTerminalTab({ agentId, isActive, welcomeMessage, colorTheme = 'dark' }: AgentTerminalTabProps) {
+export function AgentTerminalTab({ agentId, isActive, welcomeMessage, colorTheme = 'dark', autoStartCommand }: AgentTerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -115,6 +116,9 @@ export function AgentTerminalTab({ agentId, isActive, welcomeMessage, colorTheme
               api.resizeTerminal(agentId, cols - 1, rows);
               setTimeout(() => api.resizeTerminal(agentId, cols, rows), 50);
             }
+          }
+          if (!result?.reconnected && autoStartCommand) {
+            setTimeout(() => api.writeTerminal(agentId, autoStartCommand + '\r'), 500);
           }
         });
       });

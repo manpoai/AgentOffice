@@ -184,7 +184,7 @@ export function ContentSidebar({
   // Expose addTab for ConnectAgentsOverlay
   useEffect(() => {
     (window as any).__aoseTerminalPanel = {
-      addTab: (agent: { agentId: string; agentName: string; platform: string; welcomeMessage?: string }) => {
+      addTab: (agent: { agentId: string; agentName: string; platform: string; welcomeMessage?: string; autoStartCommand?: string }) => {
         setTerminalAgents(prev => {
           if (prev.find(a => a.agentId === agent.agentId)) return prev;
           return [...prev, { ...agent, status: 'running' as const }];

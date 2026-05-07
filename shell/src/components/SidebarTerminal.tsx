@@ -8,6 +8,7 @@ interface AgentTerminal {
   agentName: string;
   platform: string;
   status: 'running' | 'exited' | 'connecting';
+  autoStartCommand?: string;
 }
 
 interface SidebarTerminalProps {
@@ -85,6 +86,7 @@ export function SidebarTerminal({
             agentId={agent.agentId}
             isActive={selectedAgentId === agent.agentId}
             colorTheme={colorTheme}
+            autoStartCommand={agent.autoStartCommand}
           />
         ))}
       </div>

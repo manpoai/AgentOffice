@@ -127,7 +127,7 @@ class AgentProvisioner {
 
   _buildAllowList(permissions) {
     const CATEGORY_TOOLS = {
-      aose: ['MCP(mcp__aose__*)'],
+      aose: ['mcp__aose__*'],
       files: ['Read', 'Edit', 'Write'],
       shell: ['Bash'],
       web: ['WebFetch', 'WebSearch'],
