@@ -6,7 +6,8 @@
   "author": "manpoai",
   "license": "AGPL-3.0",
   "dependencies": {
-    "electron-updater": "^6.3.0"
+    "electron-updater": "^6.3.0",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "electron": "^42.0.0"
