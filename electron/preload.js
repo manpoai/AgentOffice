@@ -1,6 +1,27 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   isElectron: true,
+
+  // Terminal
+  createTerminal: (agentId) => ipcRenderer.invoke('terminal:create', agentId),
+  writeTerminal: (agentId, data) => ipcRenderer.send('terminal:write', agentId, data),
+  resizeTerminal: (agentId, cols, rows) => ipcRenderer.send('terminal:resize', agentId, cols, rows),
+  destroyTerminal: (agentId) => ipcRenderer.invoke('terminal:destroy', agentId),
+  onTerminalData: (callback) => {
+    ipcRenderer.on('terminal:data', (_event, agentId, data) => callback(agentId, data));
+  },
+  onTerminalExit: (callback) => {
+    ipcRenderer.on('terminal:exit', (_event, agentId, exitCode) => callback(agentId, exitCode));
+  },
+  removeTerminalListeners: () => {
+    ipcRenderer.removeAllListeners('terminal:data');
+    ipcRenderer.removeAllListeners('terminal:exit');
+  },
+
+  // Agent provisioning
+  provisionAgent: (platform) => ipcRenderer.invoke('agent:provision', platform),
+  listLocalAgents: () => ipcRenderer.invoke('agent:list'),
+  removeAgent: (agentName) => ipcRenderer.invoke('agent:remove', agentName),
 });
