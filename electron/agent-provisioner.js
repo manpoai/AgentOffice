@@ -13,7 +13,7 @@ class AgentProvisioner {
     this.adminToken = adminToken;
   }
 
-  async provision(platform) {
+  async provision(platform, permissions) {
     const shortId = crypto.randomBytes(4).toString('hex');
     const agentName = `${platform}-${shortId}`;
     const agentDir = path.join(AGENTS_DIR, agentName);
@@ -54,7 +54,7 @@ class AgentProvisioner {
     };
     fs.writeFileSync(path.join(agentDir, '.mcp.json'), JSON.stringify(mcpConfig, null, 2));
 
-    this._writeHookConfig(platform, agentName, agentDir);
+    this._writeHookConfig(platform, agentName, agentDir, permissions);
     this._ensureHookScript(platform);
     this._writeAgentInstructions(platform, agentName, agentDir);
     this._copySkills(agentDir);
@@ -98,11 +98,14 @@ class AgentProvisioner {
     });
   }
 
-  _writeHookConfig(platform, agentName, agentDir) {
+  _writeHookConfig(platform, agentName, agentDir, permissions) {
     if (platform === 'claude-code') {
       const claudeDir = path.join(agentDir, '.claude');
       fs.mkdirSync(claudeDir, { recursive: true });
       const settings = {
+        permissions: {
+          allow: this._buildAllowList(permissions),
+        },
         hooks: {
           Stop: [{
             matcher: '',
@@ -120,6 +123,25 @@ class AgentProvisioner {
       const config = `[hooks]\nstop = "AOSE_AGENT_NAME=${agentName} bash ~/.aose/hooks/stop-hook-codex-local.sh"\n`;
       fs.writeFileSync(path.join(codexDir, 'config.toml'), config);
     }
+  }
+
+  _buildAllowList(permissions) {
+    const CATEGORY_TOOLS = {
+      aose: ['MCP(mcp__aose__*)'],
+      files: ['Read', 'Edit', 'Write'],
+      shell: ['Bash'],
+      web: ['WebFetch', 'WebSearch'],
+    };
+    if (!permissions) {
+      return [...CATEGORY_TOOLS.aose, ...CATEGORY_TOOLS.files];
+    }
+    const allow = [];
+    for (const [catId, tools] of Object.entries(CATEGORY_TOOLS)) {
+      if (permissions[catId] === 'always') {
+        allow.push(...tools);
+      }
+    }
+    return allow;
   }
 
   _ensureHookScript(platform) {

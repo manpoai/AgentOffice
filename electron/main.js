@@ -127,8 +127,8 @@ function setupIPC() {
     return { ok: true };
   });
 
-  ipcMain.handle('agent:provision', async (_event, platform) => {
-    const result = await provisioner.provision(platform);
+  ipcMain.handle('agent:provision', async (_event, platform, permissions) => {
+    const result = await provisioner.provision(platform, permissions);
     adapterManager.start({
       agentId: result.agentId,
       agentName: result.agentName,

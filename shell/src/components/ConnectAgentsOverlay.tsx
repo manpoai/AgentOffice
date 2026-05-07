@@ -17,7 +17,30 @@ const PLATFORM_LABELS: Record<string, string> = {
   'gemini-cli': 'Gemini CLI',
 };
 
-const LOCAL_PLATFORMS = ['claude-code', 'codex', 'gemini-cli'];
+const LOCAL_PLATFORMS = ['claude-code'];
+
+type PermissionMode = 'always' | 'ask';
+
+interface ToolCategory {
+  id: string;
+  label: string;
+  description: string;
+  tools: string[];
+  default: PermissionMode;
+}
+
+const CLAUDE_CODE_TOOL_CATEGORIES: ToolCategory[] = [
+  { id: 'aose', label: 'AOSE Workspace', description: 'Docs, tables, comments, events', tools: ['MCP(mcp__aose__*)'], default: 'always' },
+  { id: 'files', label: 'File Operations', description: 'Read, edit, write files', tools: ['Read', 'Edit', 'Write'], default: 'always' },
+  { id: 'shell', label: 'Shell Commands', description: 'Terminal commands (bash)', tools: ['Bash'], default: 'ask' },
+  { id: 'web', label: 'Web Access', description: 'Fetch URLs, web search', tools: ['WebFetch', 'WebSearch'], default: 'ask' },
+];
+
+function defaultPermissions(): Record<string, PermissionMode> {
+  const defaults: Record<string, PermissionMode> = {};
+  CLAUDE_CODE_TOOL_CATEGORIES.forEach(cat => { defaults[cat.id] = cat.default; });
+  return defaults;
+}
 
 function platformLabel(name: string) {
   return PLATFORM_LABELS[name] || name;
@@ -73,6 +96,8 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
   const [promptText, setPromptText] = useState('');
   const [copied, setCopied] = useState(false);
   const [loadingPrompt, setLoadingPrompt] = useState(false);
+  const [permissions, setPermissions] = useState<Record<string, PermissionMode>>(defaultPermissions);
+  const [showPermissions, setShowPermissions] = useState(false);
 
   const isElectron = typeof window !== 'undefined' && (window as any).electronAPI?.isElectron;
   const hasCloudSync = false; // Phase 3: read from App config
@@ -93,6 +118,8 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
       setSelectedPlatform(null);
       setPromptText('');
       setCopied(false);
+      setShowPermissions(false);
+      setPermissions(defaultPermissions());
     }
   }, [open]);
 
@@ -105,34 +132,42 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
     return () => document.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
+  async function doProvision(p: string, perms?: Record<string, PermissionMode>) {
+    setLoadingPrompt(true);
+    try {
+      const api = (window as any).electronAPI;
+      const result = await api.provisionAgent(p, perms || null);
+      const panel = (window as any).__aoseTerminalPanel;
+      if (panel) {
+        const welcome =
+          `\x1b[1;32m✓ Agent provisioned successfully\x1b[0m\r\n\r\n` +
+          `  Agent:     ${result.agentName}\r\n` +
+          `  Platform:  ${platformLabel(p)}\r\n` +
+          `  Directory: ${result.agentDir}\r\n` +
+          `  Config:    ${result.agentDir}/.mcp.json\r\n\r\n` +
+          `\x1b[1mReady.\x1b[0m Open this directory in ${platformLabel(p)} to start working.\r\n\r\n`;
+        panel.addTab({
+          agentId: result.agentName,
+          agentName: result.agentName,
+          platform: p,
+          welcomeMessage: welcome,
+        });
+      }
+      onClose();
+    } catch (err: any) {
+      setPromptText(`Error: ${err.message || 'Failed to provision agent'}`);
+    }
+    setLoadingPrompt(false);
+  }
+
   async function handleSelectPlatform(p: string, isLocal: boolean) {
     if (isLocal && isElectron) {
       setSelectedPlatform(p);
-      setLoadingPrompt(true);
-      try {
-        const api = (window as any).electronAPI;
-        const result = await api.provisionAgent(p);
-        const panel = (window as any).__aoseTerminalPanel;
-        if (panel) {
-          const welcome =
-            `\x1b[1;32m✓ Agent provisioned successfully\x1b[0m\r\n\r\n` +
-            `  Agent:     ${result.agentName}\r\n` +
-            `  Platform:  ${platformLabel(p)}\r\n` +
-            `  Directory: ${result.agentDir}\r\n` +
-            `  Config:    ${result.agentDir}/.mcp.json\r\n\r\n` +
-            `\x1b[1mReady.\x1b[0m Open this directory in ${platformLabel(p)} to start working.\r\n\r\n`;
-          panel.addTab({
-            agentId: result.agentName,
-            agentName: result.agentName,
-            platform: p,
-            welcomeMessage: welcome,
-          });
-        }
-        onClose();
-      } catch (err: any) {
-        setPromptText(`Error: ${err.message || 'Failed to provision agent'}`);
+      if (p === 'claude-code') {
+        setShowPermissions(true);
+        return;
       }
-      setLoadingPrompt(false);
+      await doProvision(p);
       return;
     }
 
@@ -217,20 +252,52 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
     </div>
   );
 
+  const permissionsView = (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Configure which tools auto-execute and which require confirmation.
+      </p>
+      {CLAUDE_CODE_TOOL_CATEGORIES.map(cat => (
+        <div key={cat.id} className="flex items-center justify-between py-2">
+          <div>
+            <div className="text-sm font-medium">{cat.label}</div>
+            <div className="text-xs text-muted-foreground">{cat.description}</div>
+          </div>
+          <select
+            value={permissions[cat.id]}
+            onChange={e => setPermissions(prev => ({ ...prev, [cat.id]: e.target.value as PermissionMode }))}
+            className="text-xs px-2 py-1 rounded-md border border-border bg-background"
+          >
+            <option value="always">Always</option>
+            <option value="ask">Ask</option>
+          </select>
+        </div>
+      ))}
+      <button
+        onClick={() => doProvision('claude-code', permissions)}
+        disabled={loadingPrompt}
+        className="w-full py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+        style={{ backgroundColor: 'hsl(var(--sidebar-primary))', color: 'hsl(var(--sidebar-primary-foreground))' }}
+      >
+        {loadingPrompt ? 'Creating...' : 'Create Agent'}
+      </button>
+    </div>
+  );
+
   if (isMobile) {
     return (
       <BottomSheet open={open} onClose={onClose} title={selectedPlatform ? undefined : t('toolbar.connectAgents')} initialHeight="full">
         <div className="flex flex-col h-full">
           {selectedPlatform && (
             <div className="flex items-center gap-2 px-4 py-2 border-b border-border shrink-0">
-              <button onClick={() => { setSelectedPlatform(null); setPromptText(''); setCopied(false); }} className="p-1 text-muted-foreground">
+              <button onClick={() => { setSelectedPlatform(null); setPromptText(''); setCopied(false); setShowPermissions(false); }} className="p-1 text-muted-foreground">
                 <ArrowLeft className="h-4 w-4" />
               </button>
               <span className="text-sm font-semibold">{platformLabel(selectedPlatform)}</span>
             </div>
           )}
           <div className="flex-1 overflow-y-auto px-4 py-3">
-            {!selectedPlatform ? platformList : promptView}
+            {!selectedPlatform ? platformList : showPermissions ? permissionsView : promptView}
           </div>
         </div>
       </BottomSheet>
@@ -249,7 +316,7 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
             <div className="flex items-center gap-2">
               {selectedPlatform && (
                 <button
-                  onClick={() => { setSelectedPlatform(null); setPromptText(''); setCopied(false); }}
+                  onClick={() => { setSelectedPlatform(null); setPromptText(''); setCopied(false); setShowPermissions(false); }}
                   className="p-1 -ml-1 rounded-lg hover:bg-black/[0.05] dark:hover:bg-white/[0.1] transition-colors"
                 >
                   <ArrowLeft className="h-4 w-4 text-foreground/60" />
@@ -268,7 +335,7 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4">
-            {!selectedPlatform ? platformList : promptView}
+            {!selectedPlatform ? platformList : showPermissions ? permissionsView : promptView}
           </div>
         </div>
       </div>

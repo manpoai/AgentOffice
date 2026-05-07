@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Agent provisioning
-  provisionAgent: (platform) => ipcRenderer.invoke('agent:provision', platform),
+  provisionAgent: (platform, permissions) => ipcRenderer.invoke('agent:provision', platform, permissions),
   listLocalAgents: () => ipcRenderer.invoke('agent:list'),
   removeAgent: (agentName) => ipcRenderer.invoke('agent:remove', agentName),
 });
