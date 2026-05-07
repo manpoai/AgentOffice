@@ -133,6 +133,13 @@ export function ContentSidebar({
   // Connect Agents overlay
   const [showConnectAgents, setShowConnectAgents] = useState(false);
 
+  // Listen for terminal panel "+" button
+  useEffect(() => {
+    const handler = () => setShowConnectAgents(true);
+    window.addEventListener('aose:open-connect-agents', handler);
+    return () => window.removeEventListener('aose:open-connect-agents', handler);
+  }, []);
+
   useEffect(() => setMounted(true), []);
 
   // Close settings menu when clicking outside
