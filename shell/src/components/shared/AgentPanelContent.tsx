@@ -326,6 +326,8 @@ export function AgentPanelContent({ variant, onOpenConnectAgents }: AgentPanelCo
                         const r = await gw.deleteAgent(agentId);
                         setOffboardingResult({ name: r.name, platform: r.platform, prompt: r.offboarding_prompt });
                         queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                        const electronApi = (window as any).electronAPI;
+                        if (electronApi) electronApi.removeAgent(agent.name);
                       } catch {}
                       setDeleteConfirmId(null);
                     }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">{t('actions.delete')}</button>
