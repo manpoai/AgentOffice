@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
-const { execSync } = require('child_process');
 
 const AGENTS_DIR = path.join(os.homedir(), '.aose', 'agents');
 const HOOKS_DIR = path.join(os.homedir(), '.aose', 'hooks');
@@ -30,9 +29,6 @@ class AgentProvisioner {
       fs.rmSync(agentDir, { recursive: true, force: true });
       throw err;
     }
-
-    // git init so Claude Code skips the "trust this folder?" prompt
-    try { execSync('git init', { cwd: agentDir, stdio: 'ignore' }); } catch {}
 
     const mcpSrc = path.join(__dirname, '..', 'mcp-server');
     let mcpEntryPoint;

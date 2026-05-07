@@ -62,6 +62,23 @@ class TerminalManager {
     }
   }
 
+  autoTrustWorkspace(agentId) {
+    const entry = this.terminals.get(agentId);
+    if (!entry) return;
+    let recent = '';
+    const handler = entry.pty.onData((data) => {
+      recent += data;
+      if (recent.length > 2048) recent = recent.slice(-2048);
+      if (/Yes, I trust this folder/.test(recent)) {
+        entry.pty.write('1\r');
+        recent = '';
+        handler.dispose();
+      }
+    });
+    entry.disposables.push(handler);
+    setTimeout(() => handler.dispose(), 15000);
+  }
+
   onData(agentId, callback) {
     const entry = this.terminals.get(agentId);
     if (!entry) return null;

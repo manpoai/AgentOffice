@@ -99,6 +99,8 @@ function setupIPC() {
     const cwd = fs.existsSync(agentDir) ? agentDir : app.getPath('home');
     const result = terminalManager.create(agentId, { cwd });
 
+    if (agentId.startsWith('claude-code-')) terminalManager.autoTrustWorkspace(agentId);
+
     terminalManager.onData(agentId, (data) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('terminal:data', agentId, data);
@@ -176,6 +178,7 @@ function startAdaptersForExistingAgents() {
       const cwd = fs.existsSync(agentDir) ? agentDir : app.getPath('home');
       const result = terminalManager.create(agent.agentName, { cwd });
       if (!result.reconnected) {
+        if (agent.platform === 'claude-code') terminalManager.autoTrustWorkspace(agent.agentName);
         const cmd = getAgentStartCommand(agent.platform);
         if (cmd) {
           setTimeout(() => terminalManager.write(agent.agentName, cmd), 500);
