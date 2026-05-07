@@ -27,7 +27,7 @@ No dedicated top bar. The sidebar contains profile, search, agents button, and d
 A horizontal strip at the very top of the sidebar area, below the macOS traffic lights:
 
 ```
-[traffic lights]  [files] [tasks] [skills] [memory] [notifications]
+[traffic lights]  [files] [tasks] [skills] [memory] [notifications] [settings]
 ```
 
 - **Files** (document icon, green/active) — shows the current sidebar content (document tree)
@@ -35,6 +35,7 @@ A horizontal strip at the very top of the sidebar area, below the macOS traffic 
 - **Skills** (person/team icon) — empty shell, placeholder page
 - **Memory** (chat bubble icon) — empty shell, placeholder page
 - **Notifications** (bell icon) — opens notification panel (existing functionality, relocated)
+- **Settings** (gear icon or user avatar) — opens the existing profile dropdown (password, language, theme, cloud sync, trash, logout)
 
 ### Behavior
 - Icons are top-level navigation within the sidebar
@@ -42,13 +43,15 @@ A horizontal strip at the very top of the sidebar area, below the macOS traffic 
 - Active tab gets the green highlight (sidebar-primary color)
 - The search bar and document tree sit below this icon strip (when Files is active)
 - Notifications bell opens the existing notification dropdown (reuse NotificationPanel)
+- Settings button opens the existing profile dropdown (password, language, theme, cloud sync, trash, logout)
 
 ### Implementation
 - New component: `SidebarTopNav.tsx`
-- Renders inside ContentSidebar, replacing the current profile row position
-- Profile row moves: avatar + username become part of the bottom area or stay at top but below the nav strip
+- Renders inside ContentSidebar, replacing the current profile row
+- Profile row is removed — its dropdown is now triggered by the settings icon in the top nav
 - State: `activeTab: 'files' | 'tasks' | 'skills' | 'memory'`
 - Notifications is not a tab but a bell icon button that toggles the existing notification dropdown
+- Settings is not a tab but a gear/avatar icon that toggles the existing profile dropdown
 
 ## 2. Sidebar Layout Changes
 
@@ -69,8 +72,8 @@ A horizontal strip at the very top of the sidebar area, below the macOS traffic 
 
 ```
 ┌─────────────────────────┐
-│ Profile row (avatar+name)│
-│ Top nav icons            │
+│ Top nav icons + bell     │
+│   + settings             │
 │ Search bar               │
 ├─────────────────────────┤
 │                          │
