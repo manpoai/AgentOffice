@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, X, ChevronDown, ChevronUp, Terminal as TerminalIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AgentTerminalTab } from './AgentTerminalTab';
+import { AgentTerminalTab, ensureGlobalListener, resetGlobalListener } from './AgentTerminalTab';
 
 interface AgentTab {
   agentId: string;
@@ -24,6 +24,8 @@ export function AgentTerminalPanel() {
     const api = (window as any).electronAPI;
     if (!api) return;
 
+    ensureGlobalListener();
+
     api.onTerminalExit((agentId: string) => {
       setTabs(prev => prev.map(t =>
         t.agentId === agentId ? { ...t, status: 'exited' as const } : t
@@ -41,11 +43,13 @@ export function AgentTerminalPanel() {
         setTabs(newTabs);
         setActiveTab(newTabs[0].agentId);
         setCollapsed(false);
+        setTimeout(() => window.dispatchEvent(new Event('terminal:refit')), 100);
       }
     });
 
     return () => {
       api.removeTerminalListeners();
+      resetGlobalListener();
     };
   }, []);
 

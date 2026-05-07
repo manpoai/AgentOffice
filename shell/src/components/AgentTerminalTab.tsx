@@ -8,16 +8,19 @@ import '@xterm/xterm/css/xterm.css';
 
 const terminalDataHandlers = new Map<string, (data: string) => void>();
 
-let globalListenerAttached = false;
-function ensureGlobalListener() {
-  if (globalListenerAttached) return;
-  globalListenerAttached = true;
+export function ensureGlobalListener() {
+  if ((window as any).__aoseTerminalListenerAttached) return;
+  (window as any).__aoseTerminalListenerAttached = true;
   const api = (window as any).electronAPI;
   if (!api) return;
   api.onTerminalData((agentId: string, data: string) => {
     const handler = terminalDataHandlers.get(agentId);
     if (handler) handler(data);
   });
+}
+
+export function resetGlobalListener() {
+  (window as any).__aoseTerminalListenerAttached = false;
 }
 
 interface AgentTerminalTabProps {
