@@ -53,7 +53,7 @@ export function AgentTerminalTab({ agentId, isActive, welcomeMessage }: AgentTer
     terminal.loadAddon(new WebLinksAddon());
 
     terminal.open(containerRef.current);
-    fitAddon.fit();
+    if (isActive) fitAddon.fit();
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -102,18 +102,32 @@ export function AgentTerminalTab({ agentId, isActive, welcomeMessage }: AgentTer
   }, [agentId]);
 
   useEffect(() => {
-    if (isActive && fitAddonRef.current) {
-      setTimeout(() => fitAddonRef.current?.fit(), 0);
+    if (isActive && fitAddonRef.current && terminalRef.current) {
+      setTimeout(() => {
+        fitAddonRef.current?.fit();
+        const api = (window as any).electronAPI;
+        if (api && terminalRef.current) {
+          const { cols, rows } = terminalRef.current;
+          api.resizeTerminal(agentId, cols, rows);
+        }
+      }, 0);
     }
-  }, [isActive]);
+  }, [isActive, agentId]);
 
   useEffect(() => {
     const refit = () => {
-      if (isActive && fitAddonRef.current) fitAddonRef.current.fit();
+      if (isActive && fitAddonRef.current) {
+        fitAddonRef.current.fit();
+        const api = (window as any).electronAPI;
+        if (api && terminalRef.current) {
+          const { cols, rows } = terminalRef.current;
+          api.resizeTerminal(agentId, cols, rows);
+        }
+      }
     };
     window.addEventListener('terminal:refit', refit);
     return () => window.removeEventListener('terminal:refit', refit);
-  }, [isActive]);
+  }, [isActive, agentId]);
 
   return (
     <div
