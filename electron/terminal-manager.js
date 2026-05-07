@@ -8,7 +8,9 @@ class TerminalManager {
 
   create(agentId, options = {}) {
     if (this.terminals.has(agentId)) {
-      return { pid: this.terminals.get(agentId).pty.pid };
+      const entry = this.terminals.get(agentId);
+      this._disposeListeners(entry);
+      return { pid: entry.pty.pid, reconnected: true };
     }
 
     const shell = options.shell || (os.platform() === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/zsh');
@@ -23,7 +25,7 @@ class TerminalManager {
       env: { ...process.env, ...options.env },
     });
 
-    this.terminals.set(agentId, { pty: ptyProcess, cols, rows });
+    this.terminals.set(agentId, { pty: ptyProcess, cols, rows, disposables: [] });
     return { pid: ptyProcess.pid };
   }
 
@@ -43,14 +45,27 @@ class TerminalManager {
 
   onData(agentId, callback) {
     const entry = this.terminals.get(agentId);
-    if (entry) return entry.pty.onData(callback);
-    return null;
+    if (!entry) return null;
+    const disposable = entry.pty.onData(callback);
+    entry.disposables.push(disposable);
+    return disposable;
   }
 
   onExit(agentId, callback) {
     const entry = this.terminals.get(agentId);
-    if (entry) return entry.pty.onExit(callback);
-    return null;
+    if (!entry) return null;
+    const disposable = entry.pty.onExit(callback);
+    entry.disposables.push(disposable);
+    return disposable;
+  }
+
+  _disposeListeners(entry) {
+    if (entry.disposables) {
+      for (const d of entry.disposables) {
+        if (d && typeof d.dispose === 'function') d.dispose();
+      }
+      entry.disposables = [];
+    }
   }
 
   destroy(agentId) {

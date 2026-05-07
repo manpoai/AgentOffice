@@ -32,6 +32,27 @@ const VideoElementSchema = z.object({
   markers: z.array(z.number()).optional().describe('User-declared time anchors in element-local seconds'),
 });
 
+function getAllElements(data) {
+  if (Array.isArray(data.elements)) return data.elements;
+  if (Array.isArray(data.scenes)) {
+    for (const s of data.scenes) {
+      if (Array.isArray(s.elements)) return s.elements;
+    }
+  }
+  return null;
+}
+
+function ensureElements(data) {
+  const els = getAllElements(data);
+  if (els) return els;
+  if (Array.isArray(data.scenes) && data.scenes.length > 0) {
+    data.scenes[0].elements = [];
+    return data.scenes[0].elements;
+  }
+  data.elements = [];
+  return data.elements;
+}
+
 function materializeVideoElement(spec, existingElements) {
   return {
     id: crypto.randomUUID(),
@@ -115,8 +136,9 @@ export function registerVideoTools(server, gw) {
     async ({ video_id, ...spec }) => {
       const res = await gw.get(`/videos/${video_id}`);
       const data = res.data;
-      const el = materializeVideoElement(spec, data.elements);
-      data.elements.push(el);
+      const elements = ensureElements(data);
+      const el = materializeVideoElement(spec, elements);
+      elements.push(el);
       await gw.patch(`/videos/${video_id}`, { data });
       return { content: [{ type: 'text', text: JSON.stringify({ element_id: el.id }) }] };
     }
@@ -129,13 +151,14 @@ export function registerVideoTools(server, gw) {
       video_id: z.string().describe('Video ID'),
       elements: z.array(VideoElementSchema).describe('Array of elements to insert'),
     },
-    async ({ video_id, elements }) => {
+    async ({ video_id, elements: specs }) => {
       const res = await gw.get(`/videos/${video_id}`);
       const data = res.data;
+      const elements = ensureElements(data);
       const ids = [];
-      for (const spec of elements) {
-        const el = materializeVideoElement(spec, data.elements);
-        data.elements.push(el);
+      for (const spec of specs) {
+        const el = materializeVideoElement(spec, elements);
+        elements.push(el);
         ids.push(el.id);
       }
       await gw.patch(`/videos/${video_id}`, { data });
@@ -170,7 +193,8 @@ export function registerVideoTools(server, gw) {
     async ({ video_id, element_id, ...updates }) => {
       const res = await gw.get(`/videos/${video_id}`);
       const data = res.data;
-      const el = data.elements.find(e => e.id === element_id);
+      const elements = getAllElements(data) || [];
+      const el = elements.find(e => e.id === element_id);
       if (!el) return { content: [{ type: 'text', text: JSON.stringify({ error: 'Element not found' }) }] };
       for (const [key, val] of Object.entries(updates)) {
         if (val !== undefined) el[key] = val;
@@ -190,10 +214,18 @@ export function registerVideoTools(server, gw) {
     async ({ video_id, element_id }) => {
       const res = await gw.get(`/videos/${video_id}`);
       const data = res.data;
-      const before = data.elements.length;
-      data.elements = data.elements.filter(e => e.id !== element_id);
-      if (data.elements.length === before) {
+      const elements = getAllElements(data) || [];
+      const before = elements.length;
+      const filtered = elements.filter(e => e.id !== element_id);
+      if (filtered.length === before) {
         return { content: [{ type: 'text', text: JSON.stringify({ error: 'Element not found' }) }] };
+      }
+      if (Array.isArray(data.elements)) {
+        data.elements = filtered;
+      } else if (Array.isArray(data.scenes)) {
+        for (const s of data.scenes) {
+          if (Array.isArray(s.elements)) { s.elements = filtered; break; }
+        }
       }
       await gw.patch(`/videos/${video_id}`, { data });
       return { content: [{ type: 'text', text: JSON.stringify({ deleted: true }) }] };
@@ -207,16 +239,24 @@ export function registerVideoTools(server, gw) {
       video_id: z.string().describe('Video ID'),
       elements: z.array(VideoElementSchema).describe('New elements array. Replaces all existing elements.'),
     },
-    async ({ video_id, elements }) => {
+    async ({ video_id, elements: specs }) => {
       const res = await gw.get(`/videos/${video_id}`);
       const data = res.data;
-      const oldCount = data.elements.length;
-      data.elements = [];
+      const oldElements = getAllElements(data) || [];
+      const oldCount = oldElements.length;
+      const newElements = [];
       const ids = [];
-      for (const spec of elements) {
-        const el = materializeVideoElement(spec, data.elements);
-        data.elements.push(el);
+      for (const spec of specs) {
+        const el = materializeVideoElement(spec, newElements);
+        newElements.push(el);
         ids.push(el.id);
+      }
+      if (Array.isArray(data.scenes)) {
+        for (const s of data.scenes) {
+          if (Array.isArray(s.elements)) { s.elements = newElements; break; }
+        }
+      } else {
+        data.elements = newElements;
       }
       await gw.patch(`/videos/${video_id}`, { data });
       return { content: [{ type: 'text', text: JSON.stringify({ replaced: true, old_count: oldCount, new_count: ids.length, element_ids: ids }) }] };

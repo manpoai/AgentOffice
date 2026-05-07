@@ -69,7 +69,10 @@ export function AgentTerminalTab({ agentId, isActive, welcomeMessage }: AgentTer
 
     const api = (window as any).electronAPI;
     if (api) {
-      api.createTerminal(agentId).then(() => {
+      api.createTerminal(agentId).then((result: any) => {
+        if (result?.reconnected) {
+          terminal.clear();
+        }
         const { cols, rows } = terminal;
         api.resizeTerminal(agentId, cols, rows);
       });
