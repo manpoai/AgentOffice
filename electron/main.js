@@ -153,9 +153,9 @@ function setupIPC() {
 
 function getAgentStartCommand(platform) {
   switch (platform) {
-    case 'claude-code': return 'claude --dangerously-skip-permissions\r';
-    case 'gemini-cli': return 'gemini --yolo\r';
-    case 'codex': return 'codex --full-auto\r';
+    case 'claude-code': return 'claude\r';
+    case 'gemini-cli': return 'gemini\r';
+    case 'codex': return 'codex\r';
     default: return null;
   }
 }
