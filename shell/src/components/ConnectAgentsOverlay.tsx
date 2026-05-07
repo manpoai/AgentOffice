@@ -114,10 +114,18 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
         const result = await api.provisionAgent(p);
         const panel = (window as any).__aoseTerminalPanel;
         if (panel) {
+          const welcome =
+            `\x1b[1;32m✓ Agent provisioned successfully\x1b[0m\r\n\r\n` +
+            `  Agent:     ${result.agentName}\r\n` +
+            `  Platform:  ${platformLabel(p)}\r\n` +
+            `  Directory: ${result.agentDir}\r\n` +
+            `  Config:    ${result.agentDir}/.mcp.json\r\n\r\n` +
+            `\x1b[1mReady.\x1b[0m Open this directory in ${platformLabel(p)} to start working.\r\n\r\n`;
           panel.addTab({
             agentId: result.agentName,
             agentName: result.agentName,
             platform: p,
+            welcomeMessage: welcome,
           });
         }
         onClose();

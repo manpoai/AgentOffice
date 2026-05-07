@@ -5,11 +5,15 @@
   "main": "main.js",
   "author": "manpoai",
   "license": "AGPL-3.0",
+  "scripts": {
+    "postinstall": "electron-rebuild -f -w node-pty"
+  },
   "dependencies": {
     "electron-updater": "^6.3.0",
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
     "electron": "^42.0.0"
   }
 }

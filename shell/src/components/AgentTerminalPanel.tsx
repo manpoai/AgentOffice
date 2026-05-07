@@ -10,6 +10,7 @@ interface AgentTab {
   agentName: string;
   platform: string;
   status: 'running' | 'exited' | 'connecting';
+  welcomeMessage?: string;
 }
 
 export function AgentTerminalPanel() {
@@ -48,7 +49,7 @@ export function AgentTerminalPanel() {
     };
   }, []);
 
-  const addTab = useCallback((agent: { agentId: string; agentName: string; platform: string }) => {
+  const addTab = useCallback((agent: { agentId: string; agentName: string; platform: string; welcomeMessage?: string }) => {
     setTabs(prev => [...prev, { ...agent, status: 'running' }]);
     setActiveTab(agent.agentId);
     setCollapsed(false);
@@ -163,6 +164,7 @@ export function AgentTerminalPanel() {
               key={tab.agentId}
               agentId={tab.agentId}
               isActive={activeTab === tab.agentId}
+              welcomeMessage={tab.welcomeMessage}
             />
           ))}
         </div>

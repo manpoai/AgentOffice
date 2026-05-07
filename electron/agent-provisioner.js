@@ -22,7 +22,13 @@ class AgentProvisioner {
 
     fs.mkdirSync(agentDir, { recursive: true });
 
-    const registration = await this._registerLocal(agentName, platform, tokenHash);
+    let registration;
+    try {
+      registration = await this._registerLocal(agentName, platform, tokenHash);
+    } catch (err) {
+      fs.rmSync(agentDir, { recursive: true, force: true });
+      throw err;
+    }
 
     const mcpConfig = {
       mcpServers: {

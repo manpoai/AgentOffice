@@ -23,9 +23,10 @@ function ensureGlobalListener() {
 interface AgentTerminalTabProps {
   agentId: string;
   isActive: boolean;
+  welcomeMessage?: string;
 }
 
-export function AgentTerminalTab({ agentId, isActive }: AgentTerminalTabProps) {
+export function AgentTerminalTab({ agentId, isActive, welcomeMessage }: AgentTerminalTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -56,6 +57,10 @@ export function AgentTerminalTab({ agentId, isActive }: AgentTerminalTabProps) {
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+
+    if (welcomeMessage) {
+      terminal.write(welcomeMessage);
+    }
 
     ensureGlobalListener();
     terminalDataHandlers.set(agentId, (data: string) => {
