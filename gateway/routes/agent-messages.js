@@ -13,17 +13,20 @@ export default function agentMessagesRoutes(app, { db, authenticateAny, authenti
       return res.status(400).json({ error: 'MISSING_CONTENT', message: 'content is required' });
     }
 
-    const targetAgentId = req.params.agent_id;
-    const agent = db.prepare('SELECT id, username, display_name FROM actors WHERE id = ? AND type = ?').get(targetAgentId, 'agent');
+    const param = req.params.agent_id;
+    const agent = db.prepare(
+      "SELECT id, username, display_name FROM actors WHERE type = 'agent' AND (username = ? OR id = ?)"
+    ).get(param, param);
     if (!agent) {
       return res.status(404).json({ error: 'AGENT_NOT_FOUND' });
     }
+    const agentId = agent.id;
 
     const sender = req.actor;
     const senderType = sender.type; // 'human' or 'agent'
 
     // Agent can only send messages to itself (its own chat thread)
-    if (senderType === 'agent' && sender.id !== targetAgentId) {
+    if (senderType === 'agent' && sender.id !== agentId) {
       return res.status(403).json({ error: 'FORBIDDEN', message: 'Agents can only post to their own message thread' });
     }
 
@@ -32,9 +35,9 @@ export default function agentMessagesRoutes(app, { db, authenticateAny, authenti
 
     db.prepare(
       'INSERT INTO agent_messages (id, agent_id, sender_type, sender_id, content, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(id, targetAgentId, senderType, sender.id, content.trim(), now);
+    ).run(id, agentId, senderType, sender.id, content.trim(), now);
 
-    const message = { id, agent_id: targetAgentId, sender_type: senderType, sender_id: sender.id, content: content.trim(), created_at: now };
+    const message = { id, agent_id: agentId, sender_type: senderType, sender_id: sender.id, content: content.trim(), created_at: now };
 
     if (senderType === 'human') {
       // Human → Agent: create event for the agent
@@ -51,12 +54,12 @@ export default function agentMessagesRoutes(app, { db, authenticateAny, authenti
       };
       db.prepare(
         'INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(eventId, targetAgentId, 'message.received', 'direct_message', now, JSON.stringify(event), now);
+      ).run(eventId, agentId, 'message.received', 'direct_message', now, JSON.stringify(event), now);
 
-      pushEvent(targetAgentId, event);
+      pushEvent(agentId, event);
 
       // Also attempt webhook delivery
-      const agentFull = db.prepare('SELECT * FROM actors WHERE id = ?').get(targetAgentId);
+      const agentFull = db.prepare('SELECT * FROM actors WHERE id = ?').get(agentId);
       if (agentFull?.webhook_url) {
         deliverWebhook(agentFull, event).catch(() => {});
       }
@@ -65,11 +68,11 @@ export default function agentMessagesRoutes(app, { db, authenticateAny, authenti
       // Find the content owner (admin for now, or whoever sent the last human message)
       const lastHumanMsg = db.prepare(
         'SELECT sender_id FROM agent_messages WHERE agent_id = ? AND sender_type = ? ORDER BY created_at DESC LIMIT 1'
-      ).get(targetAgentId, 'human');
+      ).get(agentId, 'human');
 
       const humanEvent = {
         type: 'message.sent',
-        agent_id: targetAgentId,
+        agent_id: agentId,
         agent_name: agent.display_name || agent.username,
         message_id: id,
         content: content.trim(),
@@ -94,12 +97,16 @@ export default function agentMessagesRoutes(app, { db, authenticateAny, authenti
 
   // ─── List messages ──────────────────────────────
   app.get('/api/agents/:agent_id/messages', authenticateAny, (req, res) => {
-    const targetAgentId = req.params.agent_id;
+    const param = req.params.agent_id;
+    const agent = db.prepare(
+      "SELECT id FROM actors WHERE type = 'agent' AND (username = ? OR id = ?)"
+    ).get(param, param);
+    const agentId = agent ? agent.id : param;
     const limit = Math.min(parseInt(req.query.limit || '50'), 200);
     const before = req.query.before ? parseInt(req.query.before) : null;
 
     let sql = 'SELECT * FROM agent_messages WHERE agent_id = ?';
-    const params = [targetAgentId];
+    const params = [agentId];
 
     if (before) {
       sql += ' AND created_at < ?';
