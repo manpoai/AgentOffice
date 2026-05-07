@@ -128,12 +128,12 @@ class AgentProvisioner {
   _buildAllowList(permissions) {
     const CATEGORY_TOOLS = {
       aose: ['mcp__aose__*'],
-      files: ['Read', 'Edit', 'Write'],
-      shell: ['Bash'],
-      web: ['WebFetch', 'WebSearch'],
+      files: ['Read(*)', 'Edit(*)', 'Write(*)', 'MultiEdit(*)'],
+      shell: ['Bash(*)'],
+      web: ['WebFetch(*)', 'WebSearch(*)'],
     };
     if (!permissions) {
-      return [...CATEGORY_TOOLS.aose, ...CATEGORY_TOOLS.files];
+      return [...CATEGORY_TOOLS.aose, ...CATEGORY_TOOLS.files, ...CATEGORY_TOOLS.shell];
     }
     const allow = [];
     for (const [catId, tools] of Object.entries(CATEGORY_TOOLS)) {
