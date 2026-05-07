@@ -107,6 +107,14 @@ export function AgentTerminalTab({ agentId, isActive, welcomeMessage }: AgentTer
     }
   }, [isActive]);
 
+  useEffect(() => {
+    const refit = () => {
+      if (isActive && fitAddonRef.current) fitAddonRef.current.fit();
+    };
+    window.addEventListener('terminal:refit', refit);
+    return () => window.removeEventListener('terminal:refit', refit);
+  }, [isActive]);
+
   return (
     <div
       ref={containerRef}

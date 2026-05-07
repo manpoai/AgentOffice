@@ -116,7 +116,11 @@ export function AgentTerminalPanel() {
 
       <div className="flex items-center h-[35px] px-2 border-b border-border shrink-0 gap-1">
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={() => {
+            const next = !collapsed;
+            setCollapsed(next);
+            if (!next) setTimeout(() => window.dispatchEvent(new Event('terminal:refit')), 50);
+          }}
           className="p-1 rounded hover:bg-black/[0.05] dark:hover:bg-white/[0.1] transition-colors"
         >
           {collapsed ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -157,18 +161,16 @@ export function AgentTerminalPanel() {
         </button>
       </div>
 
-      {!collapsed && (
-        <div className="flex-1 min-h-0">
-          {tabs.map(tab => (
-            <AgentTerminalTab
-              key={tab.agentId}
-              agentId={tab.agentId}
-              isActive={activeTab === tab.agentId}
-              welcomeMessage={tab.welcomeMessage}
-            />
-          ))}
-        </div>
-      )}
+      <div className="flex-1 min-h-0" style={{ display: collapsed ? 'none' : undefined }}>
+        {tabs.map(tab => (
+          <AgentTerminalTab
+            key={tab.agentId}
+            agentId={tab.agentId}
+            isActive={activeTab === tab.agentId}
+            welcomeMessage={tab.welcomeMessage}
+          />
+        ))}
+      </div>
     </div>
   );
 }
