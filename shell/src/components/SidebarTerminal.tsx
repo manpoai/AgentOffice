@@ -132,19 +132,24 @@ export function SidebarTerminal({
     document.addEventListener('mouseup', onMouseUp);
   }, [terminalHeight, onTerminalHeightChange]);
 
-  if (!selectedAgentId) return null;
-
-  const selectedAgent = agents.find(a => a.agentId === selectedAgentId);
+  const selectedAgent = selectedAgentId ? agents.find(a => a.agentId === selectedAgentId) : null;
   const agentLabel = selectedAgent?.displayName || selectedAgent?.agentName || selectedAgentId;
+
+  if (!selectedAgentId) {
+    return (
+      <div style={{ height: 4, backgroundColor: c.separator, flexShrink: 0 }} />
+    );
+  }
 
   return (
     <div className="flex flex-col shrink-0" style={{ height: terminalHeight, backgroundColor: c.bg }}>
-      {/* Top separator bar */}
-      <div style={{ height: 2, backgroundColor: c.separator, flexShrink: 0 }} />
-
+      {/* Separator / drag handle — unified 4px bar */}
       <div
-        className="h-1 cursor-row-resize hover:bg-sidebar-primary/30 transition-colors shrink-0"
+        className="cursor-row-resize transition-colors shrink-0"
+        style={{ height: 4, backgroundColor: c.separator }}
         onMouseDown={onResizeMouseDown}
+        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'hsl(var(--sidebar-primary))')}
+        onMouseLeave={e => (e.currentTarget.style.backgroundColor = c.separator)}
       />
 
       {/* Title bar */}
@@ -203,14 +208,12 @@ export function SidebarTerminal({
 
           {showSettings && (
             <div
-              className="absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg py-1 min-w-[160px]"
-              style={{ backgroundColor: c.hover, border: `1px solid ${c.border}` }}
+              className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-card border border-black/10 dark:border-border rounded-lg shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] py-1 min-w-[160px]"
             >
               {editingName ? (
                 <div className="px-2 py-1.5 flex items-center gap-1">
                   <input
-                    className="flex-1 text-[11px] px-1.5 py-0.5 rounded outline-none min-w-0"
-                    style={{ backgroundColor: c.input, border: `1px solid ${c.inputBorder}`, color: c.text }}
+                    className="flex-1 text-[11px] px-1.5 py-0.5 rounded outline-none min-w-0 bg-muted border border-black/10 dark:border-border text-foreground"
                     value={nameValue}
                     onChange={e => setNameValue(e.target.value)}
                     onKeyDown={e => {
@@ -231,8 +234,7 @@ export function SidebarTerminal({
                         setShowSettings(false);
                       }
                     }}
-                    style={{ color: c.text }}
-                    className="p-0.5"
+                    className="p-0.5 text-foreground"
                   >
                     <Check className="h-3 w-3" />
                   </button>
@@ -240,57 +242,53 @@ export function SidebarTerminal({
               ) : (
                 <button
                   onClick={() => { setNameValue(agentLabel); setEditingName(true); }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors text-left"
-                  style={{ color: c.text }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-foreground hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors text-left"
                 >
-                  <Pencil className="h-3 w-3" style={{ color: c.textMuted }} />
+                  <Pencil className="h-3 w-3 text-foreground/50" />
                   {t('actions.rename') || 'Rename'}
                 </button>
               )}
 
               {confirmResetToken ? (
                 <div className="px-3 py-1.5 flex items-center gap-1">
-                  <span className="text-[10px] flex-1" style={{ color: c.textDim }}>{t('actions.resetTokenConfirm') || 'Reset token?'}</span>
+                  <span className="text-[10px] flex-1 text-foreground/50">{t('actions.resetTokenConfirm') || 'Reset token?'}</span>
                   <button onClick={() => { onResetToken?.(selectedAgentId); setConfirmResetToken(false); setShowSettings(false); }}
                     className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600">
                     {t('common.confirm') || 'Confirm'}
                   </button>
                   <button onClick={() => setConfirmResetToken(false)}
-                    className="px-1.5 py-0.5 text-[10px] font-medium rounded"
-                    style={{ color: c.textDim, backgroundColor: c.active }}>
+                    className="px-1.5 py-0.5 text-[10px] font-medium rounded text-foreground/50 bg-muted">
                     {t('common.cancel') || 'Cancel'}
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={() => setConfirmResetToken(true)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] transition-colors text-left"
-                  style={{ color: c.text }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-foreground hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors text-left"
                 >
-                  <Key className="h-3 w-3" style={{ color: c.textMuted }} />
+                  <Key className="h-3 w-3 text-foreground/50" />
                   {t('actions.resetToken') || 'Reset Token'}
                 </button>
               )}
 
-              <div className="my-0.5" style={{ borderTop: `1px solid ${c.border}` }} />
+              <div className="my-0.5 border-t border-black/10 dark:border-border" />
 
               {confirmDelete ? (
                 <div className="px-3 py-1.5 flex items-center gap-1">
-                  <span className="text-[10px] flex-1" style={{ color: c.textDim }}>{t('actions.confirmDelete') || 'Delete?'}</span>
+                  <span className="text-[10px] flex-1 text-foreground/50">{t('actions.confirmDelete') || 'Delete?'}</span>
                   <button onClick={() => { onDeleteAgent?.(selectedAgentId); setConfirmDelete(false); setShowSettings(false); }}
                     className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600">
                     {t('actions.delete') || 'Delete'}
                   </button>
                   <button onClick={() => setConfirmDelete(false)}
-                    className="px-1.5 py-0.5 text-[10px] font-medium rounded"
-                    style={{ color: c.textDim, backgroundColor: c.active }}>
+                    className="px-1.5 py-0.5 text-[10px] font-medium rounded text-foreground/50 bg-muted">
                     {t('common.cancel') || 'Cancel'}
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={() => setConfirmDelete(true)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400 transition-colors text-left"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors text-left"
                 >
                   <Trash2 className="h-3 w-3" />
                   {t('actions.delete') || 'Delete'}

@@ -7,7 +7,6 @@ import { useT } from '@/lib/i18n';
 import { resolveAvatarUrl } from '@/lib/api/gateway';
 
 interface Agent {
-  id: number;
   name: string;
   display_name?: string;
   avatar_url?: string;
@@ -22,7 +21,6 @@ interface SidebarAgentBarProps {
   onDeselectAgent: () => void;
   onOpenAgentsPanel: () => void;
   onOpenConnectAgents?: () => void;
-  isElectron: boolean;
 }
 
 export function SidebarAgentBar({
@@ -32,7 +30,6 @@ export function SidebarAgentBar({
   onDeselectAgent,
   onOpenAgentsPanel,
   onOpenConnectAgents,
-  isElectron,
   colorTheme = 'light',
 }: SidebarAgentBarProps & { colorTheme?: 'light' | 'dark' }) {
   const { t } = useT();
@@ -66,7 +63,6 @@ export function SidebarAgentBar({
           <button
             key={agent.name}
             onClick={() => {
-              if (!isElectron) return;
               if (isSelected) {
                 onDeselectAgent();
               } else {
@@ -76,7 +72,6 @@ export function SidebarAgentBar({
             className={cn(
               'w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-colors',
               isSelected ? 'border-sidebar-primary' : 'border-transparent hover:border-sidebar-primary/30',
-              !isElectron && 'cursor-default'
             )}
             title={agent.display_name || agent.name}
           >
@@ -102,30 +97,28 @@ export function SidebarAgentBar({
         );
       })}
 
-      {/* Two-segment button: @ Agents | + */}
-      <div className="ml-auto flex items-center shrink-0 rounded-lg overflow-hidden" style={{ height: 32 }}>
+      {/* Two-segment button: @ Agents | + (from master branch style) */}
+      <div className="ml-auto flex h-8 shrink-0 rounded-lg overflow-hidden border border-black/10 dark:border-white/10" style={{ backgroundColor: 'hsl(var(--sidebar-primary))' }}>
         <button
           onClick={onOpenAgentsPanel}
-          className="flex items-center gap-1.5 px-3 h-full text-xs font-medium transition-colors"
-          style={{
-            backgroundColor: '#22C55E',
-            color: '#fff',
-          }}
+          className="flex items-center justify-center gap-1.5 flex-1 px-3 text-xs font-medium transition-all active:brightness-90"
+          style={{ color: 'hsl(var(--sidebar-primary-foreground))' }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)')}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
         >
-          <AtSign className="h-3.5 w-3.5" />
+          <AtSign className="h-4 w-4" />
           {t('toolbar.agents')}
           {overflowCount > 0 && (
             <span className="ml-0.5">({overflowCount})</span>
           )}
         </button>
+        <div className="w-px self-stretch" style={{ backgroundColor: 'rgba(0,0,0,0.1)' }} />
         <button
           onClick={() => onOpenConnectAgents?.()}
-          className="flex items-center justify-center h-full transition-colors"
-          style={{
-            backgroundColor: '#1a1a2e',
-            color: '#fff',
-            width: 32,
-          }}
+          className="flex items-center justify-center w-8 transition-all active:brightness-90 rounded-r-lg"
+          style={{ color: 'hsl(var(--sidebar-primary-foreground))', backgroundColor: 'rgba(0,0,0,0.1)' }}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.18)')}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.1)')}
           title={t('actions.addAgent') || 'Add Agent'}
         >
           <Plus className="h-4 w-4" />

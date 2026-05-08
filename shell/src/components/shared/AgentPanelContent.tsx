@@ -321,7 +321,7 @@ export function AgentPanelContent({ variant, onOpenConnectAgents, onOpenChat }: 
                 {/* Chat button */}
                 {onOpenChat && (
                   <button
-                    onClick={() => onOpenChat(agentId, agent.display_name || agent.name)}
+                    onClick={() => onOpenChat(agent.name, agent.display_name || agent.name)}
                     className="w-8 h-8 rounded flex items-center justify-center hover:bg-sidebar-primary/10 transition-colors shrink-0"
                     title="Chat"
                   >

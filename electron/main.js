@@ -70,7 +70,7 @@ function createWindow(port, config) {
       mainWindow.webContents.executeJavaScript(
         "const d = document.createElement('div');" +
         "d.id = 'electron-drag-bar';" +
-        "d.style.cssText = 'position:fixed;top:0;left:280px;right:0;height:38px;-webkit-app-region:drag;z-index:9999;pointer-events:none;';" +
+        "d.style.cssText = 'position:fixed;top:0;left:280px;right:240px;height:38px;-webkit-app-region:drag;z-index:9999;pointer-events:none;';" +
         "document.body.prepend(d);"
       );
     }

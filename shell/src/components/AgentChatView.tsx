@@ -114,7 +114,7 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
       {/* Input bar */}
       <div
         className="shrink-0 px-3 py-2 flex items-end gap-2"
-        style={{ borderTop: `1px solid ${borderColor}`, backgroundColor: bg }}
+        style={{ backgroundColor: bg }}
       >
         <textarea
           ref={inputRef}

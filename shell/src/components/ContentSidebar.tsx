@@ -518,12 +518,11 @@ export function ContentSidebar({
           {/* ─── Agent bar (bottom) ─── */}
           <SidebarAgentBar
             agents={(allAgents || []).map(a => ({
-              id: a.id,
               name: a.name,
               display_name: a.display_name,
               avatar_url: a.avatar_url,
-              platform: a.platform,
-              status: a.status,
+              platform: a.platform || '',
+              status: a.online ? 'online' : 'offline',
             }))}
             selectedAgentId={selectedAgentId}
             onSelectAgent={handleSelectAgent}
@@ -533,7 +532,6 @@ export function ContentSidebar({
               setShowMessageMenu(false);
             }}
             onOpenConnectAgents={() => setShowConnectAgents(true)}
-            isElectron={isElectron}
             colorTheme={terminalColorTheme}
           />
         </>
