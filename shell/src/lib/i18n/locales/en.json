@@ -1117,7 +1117,9 @@
   },
   "trash": {
     "restore": "Restore",
-    "deletePermanently": "Delete permanently"
+    "deletePermanently": "Delete permanently",
+    "emptyTrash": "Empty Trash",
+    "emptyTrashConfirm": "Permanently delete all items in trash? This cannot be undone."
   },
   "tree": {
     "addChild": "Add child"

@@ -1280,12 +1280,29 @@ export default function ContentPage() {
           >
             <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
               <h2 className="text-sm font-semibold">{t('settings.trash')}</h2>
-              <button
-                onClick={() => setShowTrash(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                {(deletedItems || []).length > 0 && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(t('trash.emptyTrashConfirm'))) return;
+                      try {
+                        await gw.emptyTrash();
+                        queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
+                        queryClient.invalidateQueries({ queryKey: ['content-items'] });
+                      } catch (err) { showError(t('errors.permanentDeleteFailed'), err); }
+                    }}
+                    className="text-xs text-red-500 hover:text-red-600 font-medium transition-colors"
+                  >
+                    {t('trash.emptyTrash')}
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowTrash(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
+                >
+                  ×
+                </button>
+              </div>
             </div>
             <ScrollArea className="flex-1 min-h-0">
               <div className="px-2 py-2">
@@ -1353,6 +1370,23 @@ export default function ContentPage() {
       {/* Trash overlay — Mobile BottomSheet */}
       {showTrash && isMobilePage && (
         <BottomSheet open={showTrash} onClose={() => setShowTrash(false)} title={t('settings.trash')}>
+          {(deletedItems || []).length > 0 && (
+            <div className="px-4 pb-2">
+              <button
+                onClick={async () => {
+                  if (!confirm(t('trash.emptyTrashConfirm'))) return;
+                  try {
+                    await gw.emptyTrash();
+                    queryClient.invalidateQueries({ queryKey: ['content-items-deleted'] });
+                    queryClient.invalidateQueries({ queryKey: ['content-items'] });
+                  } catch (err) { showError(t('errors.permanentDeleteFailed'), err); }
+                }}
+                className="text-xs text-red-500 hover:text-red-600 font-medium transition-colors"
+              >
+                {t('trash.emptyTrash')}
+              </button>
+            </div>
+          )}
           <div className="px-2 py-2">
             {deletedLoading && (
               <div className="space-y-1 px-1 py-2">

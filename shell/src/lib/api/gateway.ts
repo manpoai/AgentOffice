@@ -321,6 +321,10 @@ export async function permanentlyDeleteContentItem(id: string): Promise<void> {
   });
 }
 
+export async function emptyTrash(): Promise<{ deleted: number }> {
+  return gwFetch('/content-items/trash', { method: 'DELETE' });
+}
+
 export async function updateContentItem(id: string, fields: {
   icon?: string | null;
   parent_id?: string | null;

@@ -1327,6 +1327,44 @@ export default function contentRoutes(app, { db, authenticateAny, authenticateAg
     res.json({ deleted: true });
   });
 
+  // Empty trash — permanently delete all soft-deleted content items
+  app.delete('/api/content-items/trash', authenticateAgent, (req, res) => {
+    const items = db.prepare('SELECT * FROM content_items WHERE deleted_at IS NOT NULL').all();
+    if (items.length === 0) return res.json({ deleted: 0 });
+
+    const deleteRaw = db.transaction(() => {
+      for (const item of items) {
+        if (item.type === 'doc') {
+          db.prepare('DELETE FROM documents WHERE id = ?').run(item.raw_id);
+        } else if (item.type === 'table') {
+          try { tableEngine.dropTable(item.raw_id); } catch (e) {
+            if (e.code !== 'NOT_FOUND') console.error('[gateway] dropTable failed:', e.message);
+          }
+        } else if (item.type === 'board') {
+          db.prepare('DELETE FROM boards WHERE id = ?').run(item.raw_id);
+        } else if (item.type === 'presentation') {
+          db.prepare('DELETE FROM presentations WHERE id = ?').run(item.raw_id);
+        } else if (item.type === 'spreadsheet') {
+          db.prepare('DELETE FROM spreadsheets WHERE id = ?').run(item.raw_id);
+        } else if (item.type === 'diagram') {
+          db.prepare('DELETE FROM diagrams WHERE id = ?').run(item.raw_id);
+        } else if (item.type === 'canvas') {
+          db.prepare('DELETE FROM canvases WHERE id = ?').run(item.raw_id);
+        } else if (item.type === 'video') {
+          db.prepare('DELETE FROM videos WHERE id = ?').run(item.raw_id);
+        } else if (item.type === 'page') {
+          db.prepare('DELETE FROM pages WHERE id = ?').run(item.raw_id);
+        }
+        db.prepare('DELETE FROM doc_icons WHERE doc_id = ?').run(item.raw_id);
+      }
+      db.prepare('DELETE FROM content_items WHERE deleted_at IS NOT NULL').run();
+    });
+    deleteRaw();
+
+    console.log(`[gateway] Empty trash: permanently deleted ${items.length} items`);
+    res.json({ deleted: items.length });
+  });
+
   // Force sync
   app.post('/api/content-items/sync', authenticateAgent, async (req, res) => {
     await syncContentItems();
