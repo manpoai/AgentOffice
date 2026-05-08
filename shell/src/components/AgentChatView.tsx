@@ -17,7 +17,7 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -65,11 +65,11 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
   const isDark = colorTheme === 'dark';
   const bg = isDark ? '#1a1a2e' : '#EBEFEB';
   const textColor = isDark ? '#e0e0e0' : '#1a1a1a';
-  const mutedColor = isDark ? '#808080' : '#666';
-  const borderColor = isDark ? '#333' : '#d4d6d4';
-  const bubbleBg = isDark ? '#2a2a4e' : '#dddedd';
-  const inputBg = isDark ? '#12122a' : '#f5f5f3';
-  const inputBorderColor = isDark ? '#444' : '#bbb';
+  const mutedColor = isDark ? '#808080' : '#999';
+  const agentBubbleBg = isDark ? '#2a2a3e' : '#F5F7F5';
+  const humanBubbleBg = isDark ? '#1a4a2e' : '#C5E8D3';
+  const humanTextColor = isDark ? '#e0e0e0' : '#1a1a1a';
+  const humanTimeColor = isDark ? '#80b090' : '#666';
 
   if (!isActive) return null;
 
@@ -90,19 +90,14 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
           return (
             <div key={msg.id} className={cn('flex', isHuman ? 'justify-end' : 'justify-start')}>
               <div
-                className="max-w-[80%] rounded-lg px-3 py-2 text-sm"
+                className="max-w-[80%] rounded-lg px-3 py-2 text-xs"
                 style={{
-                  backgroundColor: isHuman ? '#3b82f6' : bubbleBg,
-                  color: isHuman ? '#fff' : textColor,
+                  backgroundColor: isHuman ? humanBubbleBg : agentBubbleBg,
+                  color: isHuman ? humanTextColor : textColor,
                 }}
               >
-                {!isHuman && (
-                  <div className="text-[10px] font-medium mb-1" style={{ color: mutedColor }}>
-                    {msg.sender_name || agentName}
-                  </div>
-                )}
                 <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                <div className="text-[10px] mt-1" style={{ color: isHuman ? '#93c5fd' : mutedColor }}>
+                <div className="text-[10px] mt-1" style={{ color: isHuman ? humanTimeColor : mutedColor }}>
                   {formatTime(msg.created_at)}
                 </div>
               </div>
@@ -111,42 +106,29 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
         })}
       </div>
 
-      {/* Input bar */}
-      <div
-        className="shrink-0 px-3 py-2 flex items-end gap-2"
-        style={{ backgroundColor: bg }}
-      >
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={`Message ${agentName}...`}
-          rows={1}
-          className="flex-1 resize-none rounded-md px-3 py-2 text-sm outline-none max-h-[120px] overflow-y-auto"
-          style={{
-            backgroundColor: inputBg,
-            color: textColor,
-            border: `1px solid ${inputBorderColor}`,
-            minHeight: 36,
-          }}
-          onInput={(e) => {
-            const el = e.currentTarget;
-            el.style.height = 'auto';
-            el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-          }}
-        />
-        <button
-          onClick={handleSend}
-          disabled={!input.trim() || sending}
-          className="shrink-0 p-2 rounded-md transition-colors"
-          style={{
-            backgroundColor: input.trim() && !sending ? '#3b82f6' : (isDark ? '#333' : '#d4d6d4'),
-            color: input.trim() && !sending ? '#fff' : mutedColor,
-          }}
-        >
-          <Send className="h-4 w-4" />
-        </button>
+      {/* Input bar — aligned with CommentPanel style */}
+      <div className="shrink-0 px-3 py-2" style={{ backgroundColor: bg }}>
+        <div className="flex items-center bg-card rounded-lg border border-border h-10 px-2 gap-1 has-[:focus]:border-sidebar-primary transition-colors">
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={`Message ${agentName}...`}
+            className="flex-1 text-xs text-foreground placeholder:text-muted-foreground bg-transparent outline-none"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            className={cn(
+              'p-1 rounded transition-colors shrink-0',
+              input.trim() && !sending ? 'text-foreground hover:text-foreground/80' : 'text-muted-foreground/40 cursor-not-allowed',
+            )}
+          >
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   );

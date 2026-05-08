@@ -156,9 +156,9 @@ export function SidebarTerminal({
       />
 
       {/* Title bar */}
+      <div className="shrink-0">
       <div
-        className="flex items-center h-8 px-2 shrink-0 gap-1"
-        style={{ borderBottom: `1px solid ${c.border}` }}
+        className="flex items-center h-8 px-2 gap-1"
       >
         <span className="text-[12px] font-medium truncate flex-1 pl-1" style={{ color: c.text }}>
           {agentLabel}
@@ -322,6 +322,8 @@ export function SidebarTerminal({
             </div>
           )}
         </div>
+      </div>
+      <div className="mx-4 border-b" style={{ borderColor: c.border }} />
       </div>
 
       {/* Content area */}
