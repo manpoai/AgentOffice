@@ -46,13 +46,17 @@ export class SyncClient {
     console.log(`[sync-client] Starting sync to ${config.remoteUrl}`);
     console.log(`[sync-client] Config: cursor=${config.lastPullCursor}, enabled=${config.syncEnabled}`);
 
-    // Initial snapshot sync if we've never synced before
+    // Initial snapshot sync if we've never synced before (or cursor was reset)
     if (config.lastPullCursor === 0) {
+      console.log('[sync-client] Cursor is 0, starting snapshot sync...');
       try {
         await this._initialSnapshotSync(config);
+        console.log('[sync-client] Snapshot sync completed successfully');
       } catch (err) {
-        console.error('[sync-client] Initial snapshot sync failed:', err.message);
+        console.error('[sync-client] Initial snapshot sync failed:', err.message, err.stack);
       }
+    } else {
+      console.log(`[sync-client] Skipping snapshot (cursor=${config.lastPullCursor} > 0)`);
     }
 
     this._connect(config);
@@ -104,7 +108,9 @@ export class SyncClient {
       throw new Error(`Snapshot request failed: ${res.status}`);
     }
 
-    const { snapshot, cursor } = await res.json();
+    const body = await res.json();
+    const { snapshot, cursor } = body;
+    console.log(`[sync-client] Snapshot response: cursor=${cursor}, tables=${Object.keys(snapshot || {}).join(',')}, sizes=${Object.entries(snapshot || {}).map(([k,v]) => `${k}:${v.length}`).join(',')}`);
 
     // Set sync flag to prevent triggers from writing source='local'
     this.db.prepare("INSERT OR IGNORE INTO _sync_applying VALUES (1)").run();
@@ -112,6 +118,7 @@ export class SyncClient {
     try {
       for (const tableName of SYNC_TABLES) {
         const remoteRows = snapshot[tableName] || [];
+        console.log(`[sync-client] Processing ${tableName}: ${remoteRows.length} remote rows`);
         if (remoteRows.length === 0) continue;
 
         const tableExists = this.db.prepare(
