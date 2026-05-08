@@ -99,9 +99,9 @@ export default function syncRoutes(db, syncClient) {
     ).all(since, limit);
 
     const hasMore = changes.length === limit;
-    const cursor = hasMore && changes.length > 0
+    const cursor = changes.length > 0
       ? changes[changes.length - 1].id
-      : 0;
+      : since;
 
     res.json({
       changes,

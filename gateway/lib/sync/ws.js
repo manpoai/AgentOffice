@@ -142,9 +142,9 @@ export class SyncWebSocketServer {
     ).all(since, limit);
 
     const hasMore = changes.length === limit;
-    const cursor = hasMore && changes.length > 0
+    const cursor = changes.length > 0
       ? changes[changes.length - 1].id
-      : 0;
+      : since;
 
     const client = this.clients.get(clientId);
     if (client?.ws.readyState === client?.ws.OPEN) {
