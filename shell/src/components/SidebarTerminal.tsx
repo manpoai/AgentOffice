@@ -257,7 +257,7 @@ export function SidebarTerminal({
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-foreground hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors text-left"
               >
                 <Camera className="h-3 w-3 text-foreground/50" />
-                {t('actions.changeAvatar') || 'Change Avatar'}
+                {t('contacts.changeAvatar') || 'Change Avatar'}
               </button>
               <input
                 ref={avatarInputRef}

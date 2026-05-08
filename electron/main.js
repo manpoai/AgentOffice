@@ -68,10 +68,10 @@ function createWindow(port, config) {
     );
     if (process.platform === 'darwin') {
       mainWindow.webContents.executeJavaScript(
-        "const d = document.createElement('div');" +
-        "d.id = 'electron-drag-bar';" +
-        "d.style.cssText = 'position:fixed;top:0;left:280px;right:240px;height:38px;-webkit-app-region:drag;z-index:9999;pointer-events:none;';" +
-        "document.body.prepend(d);"
+        "const s = document.createElement('style');" +
+        "s.textContent = '[data-topbar-drag] { -webkit-app-region: drag; } " +
+        "[data-topbar-drag] button, [data-topbar-drag] input, [data-topbar-drag] a, [data-topbar-drag] [role=button] { -webkit-app-region: no-drag; }';" +
+        "document.head.appendChild(s);"
       );
     }
   });

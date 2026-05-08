@@ -162,7 +162,7 @@ export function ContentTopBar({
 
   return (
     <>
-      <div className="flex-1 min-w-0 flex items-center pl-6 pr-4 h-16">
+      <div className="flex-1 min-w-0 flex items-center pl-6 pr-4 h-16" data-topbar-drag>
         {/* Sidebar toggle — desktop only */}
         {onToggleDocList && !isEdit && (
           <button

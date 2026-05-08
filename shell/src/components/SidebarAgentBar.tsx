@@ -16,6 +16,7 @@ interface Agent {
 
 interface SidebarAgentBarProps {
   agents: Agent[];
+  localAgentNames?: Set<string>;
   selectedAgentId: string | null;
   onSelectAgent: (agentName: string) => void;
   onDeselectAgent: () => void;
@@ -25,6 +26,7 @@ interface SidebarAgentBarProps {
 
 export function SidebarAgentBar({
   agents,
+  localAgentNames,
   selectedAgentId,
   onSelectAgent,
   onDeselectAgent,
@@ -53,49 +55,59 @@ export function SidebarAgentBar({
   const visibleAgents = agents.slice(0, visibleCount);
   const overflowCount = Math.max(0, agents.length - visibleCount);
 
+  const hasLocal = localAgentNames && localAgentNames.size > 0;
+  const localVisible = hasLocal ? visibleAgents.filter(a => localAgentNames.has(a.name)) : [];
+  const remoteVisible = hasLocal ? visibleAgents.filter(a => !localAgentNames.has(a.name)) : visibleAgents;
+
+  const renderAvatar = (agent: Agent) => {
+    const isSelected = selectedAgentId === agent.name;
+    const avatarUrl = resolveAvatarUrl(agent.avatar_url);
+    const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
+    return (
+      <button
+        key={agent.name}
+        onClick={() => {
+          if (isSelected) {
+            onDeselectAgent();
+          } else {
+            onSelectAgent(agent.name);
+          }
+        }}
+        className={cn(
+          'w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-colors',
+          isSelected ? 'border-sidebar-primary' : 'border-transparent hover:border-sidebar-primary/30',
+        )}
+        title={agent.display_name || agent.name}
+      >
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+        ) : platformFallback ? (
+          <img
+            src={platformFallback}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+              (e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback')?.classList.remove('hidden');
+            }}
+          />
+        ) : null}
+        {!avatarUrl && (
+          <div className={cn('avatar-fallback w-full h-full bg-muted flex items-center justify-center', platformFallback ? 'hidden' : '')}>
+            <Bot className="h-4 w-4 text-sidebar-primary" />
+          </div>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div ref={containerRef} className="flex items-center gap-1 px-2 py-2 shrink-0" style={{ backgroundColor: colorTheme === 'dark' ? '#1a1a2e' : '#EBEFEB' }}>
-      {visibleAgents.map((agent) => {
-        const isSelected = selectedAgentId === agent.name;
-        const avatarUrl = resolveAvatarUrl(agent.avatar_url);
-        const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
-        return (
-          <button
-            key={agent.name}
-            onClick={() => {
-              if (isSelected) {
-                onDeselectAgent();
-              } else {
-                onSelectAgent(agent.name);
-              }
-            }}
-            className={cn(
-              'w-8 h-8 rounded-full overflow-hidden shrink-0 border-2 transition-colors',
-              isSelected ? 'border-sidebar-primary' : 'border-transparent hover:border-sidebar-primary/30',
-            )}
-            title={agent.display_name || agent.name}
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-            ) : platformFallback ? (
-              <img
-                src={platformFallback}
-                alt=""
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                  (e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback')?.classList.remove('hidden');
-                }}
-              />
-            ) : null}
-            {!avatarUrl && (
-              <div className={cn('avatar-fallback w-full h-full bg-muted flex items-center justify-center', platformFallback ? 'hidden' : '')}>
-                <Bot className="h-4 w-4 text-sidebar-primary" />
-              </div>
-            )}
-          </button>
-        );
-      })}
+      {localVisible.map(renderAvatar)}
+      {localVisible.length > 0 && remoteVisible.length > 0 && (
+        <div className="w-px h-6 mx-0.5 shrink-0" style={{ backgroundColor: colorTheme === 'dark' ? '#444' : '#c4c8c4' }} />
+      )}
+      {remoteVisible.map(renderAvatar)}
 
       {/* Two-segment button: @ Agents | + */}
       <div className="ml-auto flex h-8 shrink-0 rounded-lg overflow-hidden border border-black/10 dark:border-white/10" style={{ width: 104, backgroundColor: 'hsl(var(--sidebar-primary))' }}>

@@ -103,6 +103,7 @@ export function ContentSidebar({
   const [terminalAgents, setTerminalAgents] = useState<Array<{
     agentId: string; agentName: string; platform: string; status: 'running' | 'exited' | 'connecting';
   }>>([]);
+  const [localAgentNames, setLocalAgentNames] = useState<Set<string>>(new Set());
 
   // Refs
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -171,6 +172,7 @@ export function ContentSidebar({
     if (!api) return;
     api.listLocalAgents().then((agents: any[]) => {
       if (agents.length > 0) {
+        setLocalAgentNames(new Set(agents.map(a => a.agentName)));
         setTerminalAgents(agents.map(a => ({
           agentId: a.agentName,
           agentName: a.agentName,
@@ -540,6 +542,7 @@ export function ContentSidebar({
               platform: a.platform || '',
               status: a.online ? 'online' : 'offline',
             }))}
+            localAgentNames={localAgentNames}
             selectedAgentId={selectedAgentId}
             onSelectAgent={handleSelectAgent}
             onDeselectAgent={handleDeselectAgent}
@@ -713,51 +716,77 @@ export function ContentSidebar({
           <div className="fixed inset-0 z-40" onClick={() => setShowAgentsMenu(false)} />
           <div
             ref={agentsRef}
-            className="fixed z-50 bg-white dark:bg-card border border-black/10 dark:border-border rounded-lg shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] overflow-hidden"
-            style={{ top: `${menuPos.agents?.top ?? 136}px`, left: `${menuPos.agents?.left ?? 8}px`, width: '280px', maxHeight: '400px' }}
+            className="absolute bottom-12 left-2 z-50 bg-white dark:bg-card border border-black/10 dark:border-border rounded-lg shadow-[0px_2px_10px_0px_rgba(0,0,0,0.05)] overflow-hidden"
+            style={{ width: '260px', maxHeight: '360px' }}
           >
-            <div className="flex items-center justify-between px-4 pt-3 pb-2">
-              <span className="text-sm font-medium text-foreground">Members</span>
+            <div className="flex items-center justify-between px-3 pt-3 pb-2">
+              <span className="text-xs font-medium text-foreground/50">{t('toolbar.agents')}</span>
               <button
                 onClick={() => { setShowAgentsMenu(false); setShowConnectAgents(true); }}
                 className="text-xs text-sidebar-primary font-medium hover:underline"
               >
-                + Add Agent
+                + {t('actions.addAgent')}
               </button>
             </div>
-            <ScrollArea style={{ maxHeight: '350px' }}>
+            <ScrollArea style={{ maxHeight: '310px' }}>
               <div className="px-2 pb-2">
-                {(allAgents || []).map(agent => {
-                  const avatarUrl = gw.resolveAvatarUrl(agent.avatar_url);
-                  const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
-                  const isSelected = selectedAgentId === agent.name;
-                  return (
-                    <button
-                      key={agent.name}
-                      onClick={() => { setShowAgentsMenu(false); handleSelectAgent(agent.name); }}
-                      className={cn(
-                        'w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors text-left',
-                        isSelected ? 'bg-sidebar-primary/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.05]',
-                      )}
-                    >
-                      <div className="w-10 h-10 rounded-full bg-muted overflow-hidden shrink-0">
-                        {avatarUrl ? (
-                          <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-                        ) : platformFallback ? (
-                          <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-foreground/30">
-                            <Users className="h-5 w-5" />
-                          </div>
+                {(() => {
+                  const all = allAgents || [];
+                  const localList = all.filter(a => localAgentNames.has(a.name));
+                  const remoteList = all.filter(a => !localAgentNames.has(a.name));
+                  const renderAgent = (agent: typeof all[0]) => {
+                    const avatarUrl = gw.resolveAvatarUrl(agent.avatar_url);
+                    const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
+                    const isSelected = selectedAgentId === agent.name;
+                    return (
+                      <button
+                        key={agent.name}
+                        onClick={() => { setShowAgentsMenu(false); handleSelectAgent(agent.name); }}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors text-left',
+                          isSelected ? 'bg-sidebar-primary/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.05]',
                         )}
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
-                        <span className="text-xs text-foreground/50 truncate">{agent.name}</span>
-                      </div>
-                    </button>
+                      >
+                        <div className="w-8 h-8 rounded-full bg-muted overflow-hidden shrink-0">
+                          {avatarUrl ? (
+                            <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                          ) : platformFallback ? (
+                            <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-foreground/30">
+                              <Users className="h-4 w-4" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
+                          <span className="text-xs text-foreground/50 truncate">{agent.name}</span>
+                        </div>
+                      </button>
+                    );
+                  };
+                  return (
+                    <>
+                      {localList.length > 0 && (
+                        <>
+                          <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium text-foreground/40 uppercase tracking-wider">Local</div>
+                          {localList.map(renderAgent)}
+                        </>
+                      )}
+                      {localList.length > 0 && remoteList.length > 0 && (
+                        <div className="mx-2 my-1 border-t border-black/10 dark:border-white/10" />
+                      )}
+                      {remoteList.length > 0 && (
+                        <>
+                          {localList.length > 0 && (
+                            <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium text-foreground/40 uppercase tracking-wider">Remote</div>
+                          )}
+                          {remoteList.map(renderAgent)}
+                        </>
+                      )}
+                    </>
                   );
-                })}
+                })()}
               </div>
             </ScrollArea>
           </div>
