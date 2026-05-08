@@ -568,7 +568,7 @@ function migrateTableComments(db) {
     ['content_snapshots', 'id'],
     ['events', 'id'],
     ['thread_links', 'id'],
-    ['doc_icons', 'id'],
+    ['doc_icons', 'doc_id'],
     ['content_pins', 'id'],
     ['user_tables', 'id'],
     ['user_fields', 'id'],
