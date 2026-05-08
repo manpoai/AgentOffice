@@ -323,6 +323,36 @@ export class SyncClient {
       if (this.onChangeApplied) {
         this.onChangeApplied(change);
       }
+      this._downloadReferencedFiles(change);
+    }
+  }
+
+  async _downloadReferencedFiles(change) {
+    if (!change.data_json) return;
+    const json = typeof change.data_json === 'string' ? change.data_json : JSON.stringify(change.data_json);
+    const FILE_REF_RE = /\/api\/uploads\/(thumbnails|files|avatars)\/([^\s"',]+)/g;
+    let match;
+    const config = this.getConfig();
+    if (!config.remoteUrl || !config.remoteToken) return;
+    while ((match = FILE_REF_RE.exec(json)) !== null) {
+      const subDir = match[1];
+      const filename = match[2];
+      const localPath = path.join(this.uploadsDir, subDir, filename);
+      if (fs.existsSync(localPath)) continue;
+      const localDir = path.join(this.uploadsDir, subDir);
+      if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+      try {
+        const res = await fetch(`${config.remoteUrl}/uploads/${subDir}/${encodeURIComponent(filename)}`, {
+          headers: { 'Authorization': `Bearer ${config.remoteToken}` },
+        });
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          fs.writeFileSync(localPath, buf);
+          console.log(`[sync-client] Downloaded file on change: ${subDir}/${filename}`);
+        }
+      } catch (err) {
+        console.warn(`[sync-client] File download error for ${subDir}/${filename}:`, err.message);
+      }
     }
   }
 

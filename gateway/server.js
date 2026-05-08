@@ -101,6 +101,12 @@ function handleSyncChangeSSE(change) {
   if (change.table_name === 'comments') {
     broadcastHumanEvent({ event: 'comment.changed', data: { action: change.operation, id: change.row_id } });
   }
+  if (change.table_name === 'agent_messages') {
+    broadcastHumanEvent({ event: 'message.sent', data: { agent_id: data?.agent_id, message_id: change.row_id, content: data?.content, created_at: data?.created_at } });
+  }
+  if (change.table_name === 'actors') {
+    broadcastHumanEvent({ event: 'content.changed', data: { action: change.operation, type: 'agent', id: change.row_id } });
+  }
 }
 
 const syncClient = new SyncClient(db, { onChangeApplied: handleSyncChangeSSE });

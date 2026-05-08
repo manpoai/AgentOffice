@@ -90,6 +90,9 @@ function runMigrations(db) {
   // Migrate: add deleted_at column to actors
   try { db.exec('ALTER TABLE actors ADD COLUMN deleted_at INTEGER'); } catch { /* already exists */ }
 
+  // Migrate: add agent_kind column to actors (local/remote)
+  try { db.exec('ALTER TABLE actors ADD COLUMN agent_kind TEXT'); } catch { /* already exists */ }
+
   // Migrate: create content_snapshots table
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS content_snapshots (

@@ -42,6 +42,7 @@ export interface Agent {
   display_name?: string;
   avatar_url?: string | null;
   platform?: string | null;
+  agent_kind?: string | null;
   type?: string;
   online: boolean;
   capabilities?: string[];
@@ -131,8 +132,8 @@ export async function deleteAgent(agentId: string): Promise<{
 }
 
 /** Admin: get onboarding prompt for a specific platform */
-export async function getOnboardingPrompt(platform: string): Promise<{ platform: string; prompt: string }> {
-  return gwFetch(`/admin/onboarding-prompt?platform=${encodeURIComponent(platform)}`);
+export async function getOnboardingPrompt(platform: string, agentKind: string = 'remote'): Promise<{ platform: string; prompt: string }> {
+  return gwFetch(`/admin/onboarding-prompt?platform=${encodeURIComponent(platform)}&agent_kind=${encodeURIComponent(agentKind)}`);
 }
 
 /** Admin: get offboarding (cleanup) prompt for a specific platform */
@@ -787,4 +788,8 @@ export async function listAgentMessages(agentId: string, limit = 50, before?: nu
   const params = new URLSearchParams({ limit: String(limit) });
   if (before) params.set('before', String(before));
   return gwFetch(`/agents/${agentId}/messages?${params}`);
+}
+
+export async function getSyncStatus(): Promise<{ sync_enabled: boolean; pending_changes: number; last_sync: number | null }> {
+  return gwFetch('/sync/status');
 }

@@ -607,11 +607,13 @@ export function CommentPanel({
     staleTime: 5_000,
   });
 
-  const { data: agents = [] } = useQuery<Agent[]>({
+  const { data: allAgents = [] } = useQuery<Agent[]>({
     queryKey: ['agents'],
     queryFn: listAgents,
     staleTime: 60_000,
   });
+  const isElectron = typeof window !== 'undefined' && (window as any).electronAPI?.isElectron;
+  const agents = isElectron ? allAgents : allAgents.filter(a => a.agent_kind !== 'local');
 
   // Auto-switch to resolved tab if focusCommentId is in resolved set
   useEffect(() => {

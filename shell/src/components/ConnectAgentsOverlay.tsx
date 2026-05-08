@@ -100,7 +100,14 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
   const [showPermissions, setShowPermissions] = useState(false);
 
   const isElectron = typeof window !== 'undefined' && (window as any).electronAPI?.isElectron;
-  const hasCloudSync = false; // Phase 3: read from App config
+
+  const { data: syncStatus } = useQuery({
+    queryKey: ['sync-status'],
+    queryFn: gw.getSyncStatus,
+    staleTime: 30_000,
+    enabled: !!isElectron,
+  });
+  const hasCloudSync = !!syncStatus?.sync_enabled;
 
   const { data: platformsData } = useQuery({
     queryKey: ['admin-platforms'],
@@ -176,7 +183,7 @@ export function ConnectAgentsOverlay({ open, onClose }: ConnectAgentsOverlayProp
     setLoadingPrompt(true);
     setCopied(false);
     try {
-      const data = await gw.getOnboardingPrompt(p);
+      const data = await gw.getOnboardingPrompt(p, isLocal ? 'local' : 'remote');
       setPromptText(data.prompt);
     } catch {
       setPromptText('Failed to load prompt.');

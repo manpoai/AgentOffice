@@ -26,13 +26,13 @@ function getPublicBaseUrl(req) {
 // ─── Onboarding prompt builder ──────────────────
 // Per-platform prompt that an agent executes to register with AOSE and
 // (for platforms that support push) stand up a local adapter sidecar.
-function buildOnboardingPrompt(platform, aoseUrl) {
-  if (platform === 'openclaw') return buildOpenclawOnboardingPrompt(aoseUrl);
-  if (platform === 'zylos') return buildZylosOnboardingPrompt(aoseUrl);
-  if (platform === 'claude-code') return buildClaudeCodeOnboardingPrompt(aoseUrl);
-  if (platform === 'codex') return buildCodexOnboardingPrompt(aoseUrl);
-  if (platform === 'gemini-cli') return buildGeminiCliOnboardingPrompt(aoseUrl);
-  return buildGenericOnboardingPrompt(platform, aoseUrl);
+function buildOnboardingPrompt(platform, aoseUrl, agentKind = 'remote') {
+  if (platform === 'openclaw') return buildOpenclawOnboardingPrompt(aoseUrl, agentKind);
+  if (platform === 'zylos') return buildZylosOnboardingPrompt(aoseUrl, agentKind);
+  if (platform === 'claude-code') return buildClaudeCodeOnboardingPrompt(aoseUrl, agentKind);
+  if (platform === 'codex') return buildCodexOnboardingPrompt(aoseUrl, agentKind);
+  if (platform === 'gemini-cli') return buildGeminiCliOnboardingPrompt(aoseUrl, agentKind);
+  return buildGenericOnboardingPrompt(platform, aoseUrl, agentKind);
 }
 
 // ─── Offboarding prompt builder ─────────────────
@@ -358,7 +358,7 @@ You should NOT see adapter-${name}.json or adapter-${name}.log. Other adapter-*.
 Cleanup is complete. If you are re-invited to the workspace later, run the zylos onboarding prompt again — it will mint a fresh token and rewrite the files belonging to "${name}".`;
 }
 
-function buildGenericOnboardingPrompt(platform, aoseUrl) {
+function buildGenericOnboardingPrompt(platform, aoseUrl, agentKind = 'remote') {
   return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects.
 
 IMPORTANT — HTTP tooling: For every HTTP call in this prompt, use \`curl\`. Do NOT use Python urllib/requests, Node http, or any language-level HTTP client. curl ships on macOS and Linux and verifies TLS against the OS trust store, so it works across every environment. Language HTTP clients frequently fail on CA-bundle issues (especially Homebrew Python) — skip that class of problem entirely by using curl.
@@ -368,7 +368,7 @@ Run:
 
   curl -sS -X POST ${aoseUrl}/agents/self-register \\
     -H "Content-Type: application/json" \\
-    -d '{"name":"your-agent-name","platform":"${platform}"}'
+    -d '{"name":"your-agent-name","platform":"${platform}","agent_kind":"${agentKind}"}'
 
 Pick a single name. It must match \`^[a-z][a-z0-9-]{1,30}$\` (lowercase letters, digits, hyphens; 2-31 chars). This is both your @-mention handle and your display label — a richer display name can be set later via the profile API if you want one.
 
@@ -396,7 +396,7 @@ Step 4: Verify
 Call the whoami tool to confirm your identity and permissions. Once verified, let the admin know you're ready.`;
 }
 
-function buildOpenclawOnboardingPrompt(aoseUrl) {
+function buildOpenclawOnboardingPrompt(aoseUrl, agentKind = 'remote') {
   return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
 
 You are running on OpenClaw. AOSE supports OpenClaw via a local sidecar ("aose-adapter") that pushes AOSE events into your current chat session, so you get woken up when someone @-mentions you in AOSE — without the human having to switch chat windows.
@@ -411,7 +411,7 @@ Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g.
 
   curl -sS -X POST ${aoseUrl}/agents/self-register \\
     -H "Content-Type: application/json" \\
-    -d '{"name":"<your-agent-name>","platform":"openclaw"}'
+    -d '{"name":"<your-agent-name>","platform":"openclaw","agent_kind":"${agentKind}"}'
 
 Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
 
@@ -530,7 +530,7 @@ Once whoami succeeds AND you have read all skills, registration is complete.
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
 
-function buildClaudeCodeOnboardingPrompt(aoseUrl) {
+function buildClaudeCodeOnboardingPrompt(aoseUrl, agentKind = 'remote') {
   const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
   return `This is an onboarding prompt copied from AOSE by your user. Please follow the steps below to complete registration. If any step involves privileged operations (e.g. tmux, --dangerously-skip-permissions) and you are unsure, ask the user for confirmation before proceeding.
 
@@ -548,7 +548,7 @@ Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g.
 
   curl -sS -X POST ${aoseUrl}/agents/self-register \\
     -H "Content-Type: application/json" \\
-    -d '{"name":"<your-agent-name>","platform":"claude-code"}'
+    -d '{"name":"<your-agent-name>","platform":"claude-code","agent_kind":"${agentKind}"}'
 
 Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
 
@@ -723,7 +723,7 @@ You will see the confirmation dialog — press Enter to accept. Then detach with
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
 
-function buildCodexOnboardingPrompt(aoseUrl) {
+function buildCodexOnboardingPrompt(aoseUrl, agentKind = 'remote') {
   const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
   return `This is an onboarding prompt copied from AOSE by your user. Please follow the steps below to complete registration. If any step involves privileged operations (e.g. tmux) and you are unsure, ask the user for confirmation before proceeding.
 
@@ -741,7 +741,7 @@ Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g.
 
   curl -sS -X POST ${aoseUrl}/agents/self-register \\
     -H "Content-Type: application/json" \\
-    -d '{"name":"<your-agent-name>","platform":"codex"}'
+    -d '{"name":"<your-agent-name>","platform":"codex","agent_kind":"${agentKind}"}'
 
 Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
 
@@ -899,7 +899,7 @@ Once whoami succeeds AND you have read all skills, registration is complete.
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
 
-function buildGeminiCliOnboardingPrompt(aoseUrl) {
+function buildGeminiCliOnboardingPrompt(aoseUrl, agentKind = 'remote') {
   const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
   return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
 
@@ -915,7 +915,7 @@ Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g.
 
   curl -sS -X POST ${aoseUrl}/agents/self-register \\
     -H "Content-Type: application/json" \\
-    -d '{"name":"<your-agent-name>","platform":"gemini-cli"}'
+    -d '{"name":"<your-agent-name>","platform":"gemini-cli","agent_kind":"${agentKind}"}'
 
 Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
 
@@ -1061,7 +1061,7 @@ Once whoami succeeds AND you have read all skills, registration is complete.
 If any step fails, stop and report which step, which command, and the full error output. Do not try to patch around failures — the admin needs to see them.`;
 }
 
-function buildZylosOnboardingPrompt(aoseUrl) {
+function buildZylosOnboardingPrompt(aoseUrl, agentKind = 'remote') {
   const aoseBase = aoseUrl.replace(/\/api\/gateway$/, '').replace(/\/$/, '');
   return `Hi! You've been invited to join an aose workspace — a collaborative platform where humans and agents work together on documents, databases, and projects. This prompt will walk you through the full registration. Execute each step in order; do not skip any.
 
@@ -1077,7 +1077,7 @@ Pick a single name that is lowercase alphanumeric with hyphens, 2-31 chars (e.g.
 
   curl -sS -X POST ${aoseUrl}/agents/self-register \\
     -H "Content-Type: application/json" \\
-    -d '{"name":"<your-agent-name>","platform":"zylos"}'
+    -d '{"name":"<your-agent-name>","platform":"zylos","agent_kind":"${agentKind}"}'
 
 Save the returned "token" as AOSE_TOKEN. Your registration will be reviewed by an admin.
 
@@ -1356,7 +1356,7 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // ─── Auth: Register agent ────────────────────────
   app.post('/api/auth/register', (req, res) => {
-    const { ticket, name, display_name, capabilities, webhook_url, webhook_secret, platform } = req.body;
+    const { ticket, name, display_name, capabilities, webhook_url, webhook_secret, platform, agent_kind } = req.body;
     if (!ticket || !name || !display_name) {
       return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'ticket, name, display_name required' });
     }
@@ -1379,10 +1379,10 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     const tokenHash = hashToken(token);
     const now = Date.now();
 
-    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, platform, created_at, updated_at)
-      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, platform, agent_kind, created_at, updated_at)
+      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(agentId, name, display_name, tokenHash, JSON.stringify(capabilities || []),
-        webhook_url || null, webhook_secret || null, platform || null, now, now);
+        webhook_url || null, webhook_secret || null, platform || null, agent_kind || null, now, now);
 
     // Mark ticket used
     db.prepare('UPDATE tickets SET used = 1 WHERE id = ?').run(ticket);
@@ -1404,16 +1404,11 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // ─── Agent Self-Registration ────────────────────
   app.post('/api/agents/self-register', checkSelfRegisterRate, async (req, res) => {
-    const { name, display_name, capabilities, webhook_url, webhook_secret, platform } = req.body;
+    const { name, display_name, capabilities, webhook_url, webhook_secret, platform, agent_kind } = req.body;
     if (!name) {
       return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'name required' });
     }
-    // display_name is optional at registration: defaults to name. The agent
-    // (or an admin) can refine it later via PATCH /api/me/profile. Asking for
-    // both up front let users pick subtly-different values that confused
-    // viewers — keep the registration form to a single identifier.
     const effectiveDisplayName = display_name || name;
-    // Validate name format: lowercase, alphanumeric + hyphens
     if (!/^[a-z][a-z0-9-]{1,30}$/.test(name)) {
       return res.status(400).json({
         error: 'INVALID_NAME',
@@ -1421,7 +1416,6 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
         pattern: '^[a-z][a-z0-9-]{1,30}$',
       });
     }
-    // Check name uniqueness
     const existingActor = db.prepare('SELECT id FROM actors WHERE username = ?').get(name);
     if (existingActor) {
       return res.status(409).json({
@@ -1436,10 +1430,10 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     const tokenHash = hashToken(token);
     const now = Date.now();
 
-    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, platform, pending_approval, created_at, updated_at)
-      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, webhook_url, webhook_secret, platform, agent_kind, pending_approval, created_at, updated_at)
+      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`)
       .run(agentId, name, effectiveDisplayName, tokenHash, JSON.stringify(capabilities || []),
-        webhook_url || null, webhook_secret || null, platform || null, now, now);
+        webhook_url || null, webhook_secret || null, platform || null, agent_kind || null, now, now);
 
     // Notify all human admins about new agent registration
     const admins = db.prepare("SELECT id FROM actors WHERE type = 'human' AND role = 'admin'").all();
@@ -1499,8 +1493,8 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
     const agentId = genId('agt');
     const now = Date.now();
 
-    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, platform, pending_approval, created_at, updated_at)
-      VALUES (?, 'agent', ?, ?, ?, '[]', ?, 0, ?, ?)`)
+    db.prepare(`INSERT INTO actors (id, type, username, display_name, token_hash, capabilities, platform, agent_kind, pending_approval, created_at, updated_at)
+      VALUES (?, 'agent', ?, ?, ?, '[]', ?, 'local', 0, ?, ?)`)
       .run(agentId, name, name, token_hash, platform || 'claude-code', now, now);
 
     res.status(201).json({ agent_id: agentId, name, created_at: now });
@@ -1588,16 +1582,17 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // Admin: list all agents (excluding deleted)
   app.get('/api/admin/agents', authenticateAdmin, (req, res) => {
-    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, platform, online, last_seen_at, pending_approval, created_at FROM actors WHERE type = 'agent' AND deleted_at IS NULL").all();
-    res.json({ agents: agents.map(a => ({ ...a, agent_id: a.id, name: a.username, capabilities: JSON.parse(a.capabilities || '[]'), pending_approval: !!a.pending_approval, platform: a.platform || null })) });
+    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, platform, agent_kind, online, last_seen_at, pending_approval, created_at FROM actors WHERE type = 'agent' AND deleted_at IS NULL").all();
+    res.json({ agents: agents.map(a => ({ ...a, agent_id: a.id, name: a.username, capabilities: JSON.parse(a.capabilities || '[]'), pending_approval: !!a.pending_approval, platform: a.platform || null, agent_kind: a.agent_kind || null })) });
   });
 
   // Admin: get onboarding prompt for a specific platform (data-driven platform list)
   app.get('/api/admin/onboarding-prompt', authenticateAdmin, (req, res) => {
     const platform = req.query.platform || 'zylos';
+    const agentKind = req.query.agent_kind || 'remote';
     const origin = getPublicBaseUrl(req);
     const aoseUrl = `${origin}/api/gateway`;
-    const prompt = buildOnboardingPrompt(platform, aoseUrl);
+    const prompt = buildOnboardingPrompt(platform, aoseUrl, agentKind);
     res.json({ platform, prompt });
   });
 
@@ -1612,12 +1607,12 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
   // Agent-facing: list other agents (public info only, excluding deleted)
   app.get('/api/agents', authenticateAgent, (req, res) => {
-    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, platform, online, last_seen_at FROM actors WHERE type = 'agent' AND (pending_approval = 0 OR pending_approval IS NULL) AND deleted_at IS NULL").all();
+    const agents = db.prepare("SELECT id, username, display_name, avatar_url, capabilities, platform, agent_kind, online, last_seen_at FROM actors WHERE type = 'agent' AND (pending_approval = 0 OR pending_approval IS NULL) AND deleted_at IS NULL").all();
     res.json({
       agents: agents.map(a => ({
         agent_id: a.id, name: a.username, display_name: a.display_name, avatar_url: a.avatar_url || null,
         capabilities: JSON.parse(a.capabilities || '[]'),
-        platform: a.platform || null,
+        platform: a.platform || null, agent_kind: a.agent_kind || null,
         online: !!a.online, last_seen_at: a.last_seen_at,
       })),
     });

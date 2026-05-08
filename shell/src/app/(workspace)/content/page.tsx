@@ -223,7 +223,7 @@ export default function ContentPage() {
   const [showMobileProfile, setShowMobileProfile] = useState(false);
   const [showMobileAgents, setShowMobileAgents] = useState(false);
   const [showMobileConnectAgents, setShowMobileConnectAgents] = useState(false);
-  const [mobileChatAgent, setMobileChatAgent] = useState<{ id: string; name: string } | null>(null);
+  const [mobileChatAgent, setMobileChatAgent] = useState<{ id: string; name: string; agent_kind?: string | null } | null>(null);
   const [mobileEditingName, setMobileEditingName] = useState(false);
   const [mobileEditNameValue, setMobileEditNameValue] = useState('');
   const [mobileSavingProfile, setMobileSavingProfile] = useState(false);
@@ -1991,7 +1991,7 @@ export default function ContentPage() {
       <BottomSheet open={!!mobileChatAgent} onClose={() => setMobileChatAgent(null)} title={mobileChatAgent?.name || 'Chat'} initialHeight="full" className="!overflow-hidden">
         {mobileChatAgent && (
           <div className="h-[calc(90vh-80px)]">
-            <AgentChatView agentId={mobileChatAgent.id} agentName={mobileChatAgent.name} isActive={true} colorTheme="light" />
+            <AgentChatView agentId={mobileChatAgent.id} agentName={mobileChatAgent.name} isActive={true} colorTheme="light" agentKind={mobileChatAgent.agent_kind} />
           </div>
         )}
       </BottomSheet>

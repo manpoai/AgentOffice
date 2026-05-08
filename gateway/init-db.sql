@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS actors (
   online      INTEGER DEFAULT 0,
   last_seen_at INTEGER,
   platform    TEXT,
+  agent_kind  TEXT,
   pending_approval INTEGER DEFAULT 0,
   deleted_at  INTEGER,
   -- shared

@@ -14,9 +14,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GATEWAY_DIR = path.dirname(__dirname);
 const UPLOADS_ROOT = process.env.UPLOADS_DIR || path.join(GATEWAY_DIR, 'uploads');
 
-function seedSyncLog(db) {
-  const existing = db.prepare("SELECT COUNT(*) as count FROM _sync_log").get();
-  if (existing.count > 0) { console.log('[sync] _sync_log already has', existing.count, 'entries, skipping seed'); return 0; }
+function seedSyncLog(db, { force = false } = {}) {
+  if (!force) {
+    const existing = db.prepare("SELECT COUNT(*) as count FROM _sync_log").get();
+    if (existing.count > 0) { console.log('[sync] _sync_log already has', existing.count, 'entries, skipping seed'); return 0; }
+  }
 
   const allDbTables = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT GLOB '_*'"
@@ -28,6 +30,10 @@ function seedSyncLog(db) {
   ).all().map(r => r.name);
 
   const allTables = [...tables, ...utblTables];
+
+  const seededRows = new Set(
+    db.prepare("SELECT DISTINCT table_name || '::' || row_id as key FROM _sync_log WHERE operation = 'insert'").all().map(r => r.key)
+  );
 
   const insert = db.prepare(`
     INSERT INTO _sync_log (table_name, row_id, operation, data_json, actor_id, timestamp, source)
@@ -45,6 +51,8 @@ function seedSyncLog(db) {
 
       const rows = db.prepare(`SELECT * FROM ${table}`).all();
       for (const row of rows) {
+        const key = `${table}::${row[pkCol]}`;
+        if (seededRows.has(key)) continue;
         insert.run(table, String(row[pkCol]), JSON.stringify(row), now);
         seeded++;
       }
@@ -222,8 +230,10 @@ export default function syncRoutes(db, syncClient) {
   });
 
   // POST /api/sync/seed — seed _sync_log with all existing data (for initial pull)
+  // Pass ?force=1 to add missing insert entries even when sync_log is non-empty
   router.post('/seed', (req, res) => {
-    const seeded = seedSyncLog(db);
+    const force = req.query.force === '1' || req.body?.force === true;
+    const seeded = seedSyncLog(db, { force });
     res.json({ ok: true, seeded });
   });
 

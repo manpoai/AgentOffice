@@ -11,9 +11,10 @@ interface AgentChatViewProps {
   agentName: string;
   isActive: boolean;
   colorTheme?: 'light' | 'dark';
+  agentKind?: string | null;
 }
 
-export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark' }: AgentChatViewProps) {
+export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark', agentKind }: AgentChatViewProps) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -107,29 +108,42 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
       </div>
 
       {/* Input bar — aligned with CommentPanel style */}
-      <div className="shrink-0 px-3 py-2" style={{ backgroundColor: bg }}>
-        <div className="flex items-center bg-card rounded-lg border border-border h-10 px-2 gap-1 has-[:focus]:border-sidebar-primary transition-colors">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={`Message ${agentName}...`}
-            className="flex-1 text-xs text-foreground placeholder:text-muted-foreground bg-transparent outline-none"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className={cn(
-              'p-1 rounded transition-colors shrink-0',
-              input.trim() && !sending ? 'text-foreground hover:text-foreground/80' : 'text-muted-foreground/40 cursor-not-allowed',
-            )}
-          >
-            <Send className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
+      {(() => {
+        const isElectronEnv = typeof window !== 'undefined' && (window as any).electronAPI?.isElectron;
+        const canMessage = isElectronEnv || agentKind !== 'local';
+        if (!canMessage) {
+          return (
+            <div className="shrink-0 px-3 py-2 text-center text-xs" style={{ backgroundColor: bg, color: mutedColor }}>
+              This agent runs locally and cannot receive messages from the web
+            </div>
+          );
+        }
+        return (
+          <div className="shrink-0 px-3 py-2" style={{ backgroundColor: bg }}>
+            <div className="flex items-center bg-card rounded-lg border border-border h-10 px-2 gap-1 has-[:focus]:border-sidebar-primary transition-colors">
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={`Message ${agentName}...`}
+                className="flex-1 text-xs text-foreground placeholder:text-muted-foreground bg-transparent outline-none"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || sending}
+                className={cn(
+                  'p-1 rounded transition-colors shrink-0',
+                  input.trim() && !sending ? 'text-foreground hover:text-foreground/80' : 'text-muted-foreground/40 cursor-not-allowed',
+                )}
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

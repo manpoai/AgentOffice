@@ -59,9 +59,11 @@ export function applyChange(db, change) {
       if (!data) return false;
 
       const tableColumns = getTableColumns(db, table_name);
+      const SENSITIVE_FIELDS = { actors: new Set(['token_hash', 'password_hash', 'webhook_secret']) };
+      const excludeSet = SENSITIVE_FIELDS[table_name];
       const filteredData = {};
       for (const [key, value] of Object.entries(data)) {
-        if (tableColumns.has(key)) {
+        if (tableColumns.has(key) && !(excludeSet && excludeSet.has(key))) {
           filteredData[key] = value;
         }
       }
@@ -91,9 +93,18 @@ export function applyChange(db, change) {
         }
         if (sets.length === 0) return false;
         values.push(row_id);
-        db.prepare(
+        const result = db.prepare(
           `UPDATE ${table_name} SET ${sets.join(', ')} WHERE ${pk} = ?`
         ).run(...values);
+        if (result.changes === 0) {
+          fillNotNullDefaults(db, table_name, filteredData, pk);
+          const cols = Object.keys(filteredData);
+          const placeholders = cols.map(() => '?').join(', ');
+          const vals = cols.map(c => serializeValue(filteredData[c]));
+          db.prepare(
+            `INSERT OR REPLACE INTO ${table_name} (${cols.join(', ')}) VALUES (${placeholders})`
+          ).run(...vals);
+        }
         return true;
       }
     } finally {
