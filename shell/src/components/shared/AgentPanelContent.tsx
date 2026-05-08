@@ -96,6 +96,8 @@ export function AgentPanelContent({ variant, onOpenConnectAgents, onOpenChat }: 
 
   const connected = allAgents?.filter(a => !a.pending_approval) || [];
   const pending   = allAgents?.filter(a => a.pending_approval)  || [];
+  const localAgents = connected.filter(a => a.agent_kind === 'local');
+  const remoteAgents = connected.filter(a => a.agent_kind !== 'local');
 
   async function handleAvatarUpload(agentId: string, e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -287,8 +289,170 @@ export function AgentPanelContent({ variant, onOpenConnectAgents, onOpenChat }: 
         </div>
       ) : connected.length > 0 ? (
         <div>
-          <p className="text-xs font-medium text-foreground/50 mb-2">{t('sidebar.connected')}</p>
-          {connected.map(agent => {
+          {localAgents.length > 0 && (
+            <>
+              <p className="text-xs font-medium text-foreground/50 mb-2 uppercase tracking-wider">Local</p>
+              {localAgents.map(agent => {
+                const agentId = agent.agent_id || agent.name;
+                const isEditing = editingAgentId === agentId;
+                return (
+                  <div key={agentId} className={cn('flex items-center gap-3 group rounded-lg transition-colors', styles.connectedPy, !isCompact && 'hover:bg-black/[0.05] dark:hover:bg-white/[0.05] px-2 -mx-2')}>
+                    <div className="relative">
+                      {renderAvatar(agent)}
+                      <div className={cn('absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-card', agent.online ? 'bg-green-500' : 'bg-gray-300')} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {isEditing ? (
+                        <input
+                          className="text-sm font-medium text-foreground bg-background border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary w-full"
+                          value={nameValue}
+                          onChange={e => setNameValue(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleNameSave(agentId, agent.display_name || agent.name); if (e.key === 'Escape') setEditingAgentId(null); }}
+                          onBlur={() => handleNameSave(agentId, agent.display_name || agent.name)}
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="text-sm font-medium text-foreground truncate block">{agent.display_name || agent.name}</span>
+                      )}
+                      <span className="text-xs text-foreground/50">
+                        {agent.name}
+                        {agent.platform && <span className="ml-1.5 px-1.5 py-0.5 bg-sidebar-primary/10 text-sidebar-primary rounded text-[10px]">{platformLabel(agent.platform)}</span>}
+                        {!agent.online && agent.last_seen_at && (
+                          <span className="text-[10px] text-foreground/30 ml-1">{formatRelativeTime(agent.last_seen_at)}</span>
+                        )}
+                      </span>
+                    </div>
+                    {onOpenChat && (
+                      <button
+                        onClick={() => onOpenChat(agent.name, agent.display_name || agent.name, agent.agent_kind, agent.origin_device_id)}
+                        className="w-8 h-8 rounded flex items-center justify-center hover:bg-sidebar-primary/10 transition-colors shrink-0"
+                        title="Chat"
+                      >
+                        <MessageSquare className="h-4 w-4 text-sidebar-primary" />
+                      </button>
+                    )}
+                    {deleteConfirmId === agentId ? (
+                      <div className="flex items-center gap-1 ml-1">
+                        <span className="text-[10px] text-foreground/60">{t('actions.confirmDelete')}</span>
+                        <button onClick={async () => {
+                          try {
+                            const r = await gw.deleteAgent(agentId);
+                            setOffboardingResult({ name: r.name, platform: r.platform, prompt: r.offboarding_prompt });
+                            queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                            const electronApi = (window as any).electronAPI;
+                            if (electronApi) electronApi.removeAgent(agent.name);
+                          } catch {}
+                          setDeleteConfirmId(null);
+                        }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">{t('actions.delete')}</button>
+                        <button onClick={() => setDeleteConfirmId(null)} className="px-1.5 py-0.5 text-[10px] font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors shrink-0">{t('common.cancel')}</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setDeleteConfirmId(agentId)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05] opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-3.5 w-3.5 text-foreground/40" /></button>
+                    )}
+                    {!isCompact && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => startEditing(agent)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05]"><Pencil className="h-3.5 w-3.5 text-foreground/40" /></button>
+                        {resetTokenConfirmId === agentId ? (
+                          <div className="flex items-center gap-1 ml-1">
+                            <span className="text-[10px] text-foreground/60">{t('actions.resetTokenConfirm')}</span>
+                            <button onClick={async () => { try { const r = await gw.resetAgentToken(agentId); setResetTokenResult({ agentId, token: r.token }); } catch {} setResetTokenConfirmId(null); }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">{t('common.confirm')}</button>
+                            <button onClick={() => setResetTokenConfirmId(null)} className="px-1.5 py-0.5 text-[10px] font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors shrink-0">{t('common.cancel')}</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setResetTokenConfirmId(agentId)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05] text-[10px] text-foreground/40" title={t('actions.resetToken')}>
+                            <Key className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {remoteAgents.length > 0 && <div className="border-t border-border my-2" />}
+            </>
+          )}
+          {remoteAgents.length > 0 && (
+            <>
+              <p className="text-xs font-medium text-foreground/50 mb-2 uppercase tracking-wider">Remote</p>
+              {remoteAgents.map(agent => {
+                const agentId = agent.agent_id || agent.name;
+                const isEditing = editingAgentId === agentId;
+                return (
+                  <div key={agentId} className={cn('flex items-center gap-3 group rounded-lg transition-colors', styles.connectedPy, !isCompact && 'hover:bg-black/[0.05] dark:hover:bg-white/[0.05] px-2 -mx-2')}>
+                    <div className="relative">
+                      {renderAvatar(agent)}
+                      <div className={cn('absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-card', agent.online ? 'bg-green-500' : 'bg-gray-300')} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {isEditing ? (
+                        <input
+                          className="text-sm font-medium text-foreground bg-background border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary w-full"
+                          value={nameValue}
+                          onChange={e => setNameValue(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleNameSave(agentId, agent.display_name || agent.name); if (e.key === 'Escape') setEditingAgentId(null); }}
+                          onBlur={() => handleNameSave(agentId, agent.display_name || agent.name)}
+                          autoFocus
+                        />
+                      ) : (
+                        <span className="text-sm font-medium text-foreground truncate block">{agent.display_name || agent.name}</span>
+                      )}
+                      <span className="text-xs text-foreground/50">
+                        {agent.name}
+                        {agent.platform && <span className="ml-1.5 px-1.5 py-0.5 bg-sidebar-primary/10 text-sidebar-primary rounded text-[10px]">{platformLabel(agent.platform)}</span>}
+                        {!agent.online && agent.last_seen_at && (
+                          <span className="text-[10px] text-foreground/30 ml-1">{formatRelativeTime(agent.last_seen_at)}</span>
+                        )}
+                      </span>
+                    </div>
+                    {onOpenChat && (
+                      <button
+                        onClick={() => onOpenChat(agent.name, agent.display_name || agent.name, agent.agent_kind, agent.origin_device_id)}
+                        className="w-8 h-8 rounded flex items-center justify-center hover:bg-sidebar-primary/10 transition-colors shrink-0"
+                        title="Chat"
+                      >
+                        <MessageSquare className="h-4 w-4 text-sidebar-primary" />
+                      </button>
+                    )}
+                    {deleteConfirmId === agentId ? (
+                      <div className="flex items-center gap-1 ml-1">
+                        <span className="text-[10px] text-foreground/60">{t('actions.confirmDelete')}</span>
+                        <button onClick={async () => {
+                          try {
+                            const r = await gw.deleteAgent(agentId);
+                            setOffboardingResult({ name: r.name, platform: r.platform, prompt: r.offboarding_prompt });
+                            queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                            const electronApi = (window as any).electronAPI;
+                            if (electronApi) electronApi.removeAgent(agent.name);
+                          } catch {}
+                          setDeleteConfirmId(null);
+                        }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">{t('actions.delete')}</button>
+                        <button onClick={() => setDeleteConfirmId(null)} className="px-1.5 py-0.5 text-[10px] font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors shrink-0">{t('common.cancel')}</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setDeleteConfirmId(agentId)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05] opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-3.5 w-3.5 text-foreground/40" /></button>
+                    )}
+                    {!isCompact && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => startEditing(agent)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05]"><Pencil className="h-3.5 w-3.5 text-foreground/40" /></button>
+                        {resetTokenConfirmId === agentId ? (
+                          <div className="flex items-center gap-1 ml-1">
+                            <span className="text-[10px] text-foreground/60">{t('actions.resetTokenConfirm')}</span>
+                            <button onClick={async () => { try { const r = await gw.resetAgentToken(agentId); setResetTokenResult({ agentId, token: r.token }); } catch {} setResetTokenConfirmId(null); }} className="px-1.5 py-0.5 text-[10px] font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors shrink-0">{t('common.confirm')}</button>
+                            <button onClick={() => setResetTokenConfirmId(null)} className="px-1.5 py-0.5 text-[10px] font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors shrink-0">{t('common.cancel')}</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setResetTokenConfirmId(agentId)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05] text-[10px] text-foreground/40" title={t('actions.resetToken')}>
+                            <Key className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+          {localAgents.length === 0 && remoteAgents.length === 0 && connected.map(agent => {
             const agentId = agent.agent_id || agent.name;
             const isEditing = editingAgentId === agentId;
             return (
@@ -318,7 +482,6 @@ export function AgentPanelContent({ variant, onOpenConnectAgents, onOpenChat }: 
                     )}
                   </span>
                 </div>
-                {/* Chat button */}
                 {onOpenChat && (
                   <button
                     onClick={() => onOpenChat(agent.name, agent.display_name || agent.name, agent.agent_kind, agent.origin_device_id)}
@@ -328,7 +491,6 @@ export function AgentPanelContent({ variant, onOpenConnectAgents, onOpenChat }: 
                     <MessageSquare className="h-4 w-4 text-sidebar-primary" />
                   </button>
                 )}
-                {/* Delete button — visible on all screen sizes */}
                 {deleteConfirmId === agentId ? (
                   <div className="flex items-center gap-1 ml-1">
                     <span className="text-[10px] text-foreground/60">{t('actions.confirmDelete')}</span>
@@ -347,7 +509,6 @@ export function AgentPanelContent({ variant, onOpenConnectAgents, onOpenChat }: 
                 ) : (
                   <button onClick={() => setDeleteConfirmId(agentId)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05] opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="h-3.5 w-3.5 text-foreground/40" /></button>
                 )}
-                {/* Edit and reset token — desktop only */}
                 {!isCompact && (
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => startEditing(agent)} className="w-8 h-8 rounded flex items-center justify-center hover:bg-black/[0.05]"><Pencil className="h-3.5 w-3.5 text-foreground/40" /></button>

@@ -104,6 +104,12 @@ function handleSyncChangeSSE(change) {
   if (change.table_name === 'agent_messages') {
     broadcastHumanEvent({ event: 'message.sent', data: { agent_id: data?.agent_id, message_id: change.row_id, content: data?.content, created_at: data?.created_at } });
   }
+  if (change.table_name === 'events' && data?.agent_id && change.operation === 'insert') {
+    try {
+      const payload = typeof data.payload === 'string' ? JSON.parse(data.payload) : data.payload;
+      if (payload) pushEvent(data.agent_id, payload);
+    } catch {}
+  }
   if (change.table_name === 'actors') {
     broadcastHumanEvent({ event: 'content.changed', data: { action: change.operation, type: 'agent', id: change.row_id } });
   }
