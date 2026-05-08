@@ -102,6 +102,7 @@ export class SyncClient {
       this.reconnectDelay = 1000;
 
       const freshConfig = this.getConfig();
+      console.log(`[sync-client] Sending pull since=${freshConfig.lastPullCursor}`);
       this.ws.send(JSON.stringify({
         type: 'pull',
         since: freshConfig.lastPullCursor,
@@ -111,20 +112,25 @@ export class SyncClient {
     this.ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data.toString());
+        console.log(`[sync-client] WS message: type=${msg.type}`);
         this._handleMessage(msg);
       } catch (err) {
         console.error('[sync-client] Invalid message:', err.message);
       }
     });
 
-    this.ws.on('close', () => {
-      console.log('[sync-client] WebSocket disconnected');
+    this.ws.on('close', (code, reason) => {
+      console.log(`[sync-client] WebSocket disconnected code=${code} reason=${reason?.toString() || ''}`);
       this.ws = null;
       this._scheduleReconnect(config);
     });
 
     this.ws.on('error', (err) => {
       console.error('[sync-client] WebSocket error:', err.message);
+    });
+
+    this.ws.on('unexpected-response', (req, res) => {
+      console.error(`[sync-client] WS unexpected response: ${res.statusCode}`);
     });
   }
 
