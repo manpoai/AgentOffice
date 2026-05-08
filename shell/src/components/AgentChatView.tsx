@@ -63,24 +63,25 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
   }, [handleSend]);
 
   const isDark = colorTheme === 'dark';
+  const bg = isDark ? '#1a1a2e' : '#EEF0EE';
+  const textColor = isDark ? '#e0e0e0' : '#1a1a1a';
+  const mutedColor = isDark ? '#808080' : '#666';
+  const borderColor = isDark ? '#333' : '#d4d6d4';
+  const bubbleBg = isDark ? '#2a2a4e' : '#dddedd';
+  const inputBg = isDark ? '#12122a' : '#f5f5f3';
+  const inputBorderColor = isDark ? '#444' : '#bbb';
 
   if (!isActive) return null;
 
   return (
-    <div className={cn(
-      'flex flex-col h-full',
-      isDark ? 'bg-[#1e1e1e] text-[#d4d4d4]' : 'bg-white text-foreground'
-    )}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: bg, color: textColor }}>
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-3">
         {isLoading && (
-          <div className="text-xs text-muted-foreground text-center py-4">Loading...</div>
+          <div className="text-xs text-center py-4" style={{ color: mutedColor }}>Loading...</div>
         )}
         {!isLoading && messages.length === 0 && (
-          <div className={cn(
-            'text-xs text-center py-8',
-            isDark ? 'text-[#808080]' : 'text-muted-foreground'
-          )}>
+          <div className="text-xs text-center py-8" style={{ color: mutedColor }}>
             Send a message to {agentName}
           </div>
         )}
@@ -88,27 +89,20 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
           const isHuman = msg.sender_type === 'human';
           return (
             <div key={msg.id} className={cn('flex', isHuman ? 'justify-end' : 'justify-start')}>
-              <div className={cn(
-                'max-w-[80%] rounded-lg px-3 py-2 text-sm',
-                isHuman
-                  ? isDark ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
-                  : isDark ? 'bg-[#2d2d2d] text-[#d4d4d4]' : 'bg-gray-100 text-foreground'
-              )}>
+              <div
+                className="max-w-[80%] rounded-lg px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: isHuman ? '#3b82f6' : bubbleBg,
+                  color: isHuman ? '#fff' : textColor,
+                }}
+              >
                 {!isHuman && (
-                  <div className={cn(
-                    'text-[10px] font-medium mb-1',
-                    isDark ? 'text-[#888]' : 'text-muted-foreground'
-                  )}>
+                  <div className="text-[10px] font-medium mb-1" style={{ color: mutedColor }}>
                     {msg.sender_name || agentName}
                   </div>
                 )}
                 <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-                <div className={cn(
-                  'text-[10px] mt-1',
-                  isHuman
-                    ? 'text-blue-200'
-                    : isDark ? 'text-[#666]' : 'text-muted-foreground/60'
-                )}>
+                <div className="text-[10px] mt-1" style={{ color: isHuman ? '#93c5fd' : mutedColor }}>
                   {formatTime(msg.created_at)}
                 </div>
               </div>
@@ -118,10 +112,10 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
       </div>
 
       {/* Input bar */}
-      <div className={cn(
-        'shrink-0 border-t px-3 py-2 flex items-end gap-2',
-        isDark ? 'border-[#333] bg-[#1e1e1e]' : 'border-border bg-white'
-      )}>
+      <div
+        className="shrink-0 px-3 py-2 flex items-end gap-2"
+        style={{ borderTop: `1px solid ${borderColor}`, backgroundColor: bg }}
+      >
         <textarea
           ref={inputRef}
           value={input}
@@ -129,14 +123,13 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
           onKeyDown={handleKeyDown}
           placeholder={`Message ${agentName}...`}
           rows={1}
-          className={cn(
-            'flex-1 resize-none rounded-md px-3 py-2 text-sm outline-none',
-            'max-h-[120px] overflow-y-auto',
-            isDark
-              ? 'bg-[#2d2d2d] text-[#d4d4d4] placeholder:text-[#666] border border-[#444] focus:border-[#888]'
-              : 'bg-gray-50 text-foreground placeholder:text-muted-foreground border border-border focus:border-blue-400'
-          )}
-          style={{ minHeight: 36 }}
+          className="flex-1 resize-none rounded-md px-3 py-2 text-sm outline-none max-h-[120px] overflow-y-auto"
+          style={{
+            backgroundColor: inputBg,
+            color: textColor,
+            border: `1px solid ${inputBorderColor}`,
+            minHeight: 36,
+          }}
           onInput={(e) => {
             const el = e.currentTarget;
             el.style.height = 'auto';
@@ -146,12 +139,11 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
         <button
           onClick={handleSend}
           disabled={!input.trim() || sending}
-          className={cn(
-            'shrink-0 p-2 rounded-md transition-colors',
-            input.trim() && !sending
-              ? isDark ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-blue-500 text-white hover:bg-blue-600'
-              : isDark ? 'bg-[#333] text-[#555]' : 'bg-gray-200 text-gray-400'
-          )}
+          className="shrink-0 p-2 rounded-md transition-colors"
+          style={{
+            backgroundColor: input.trim() && !sending ? '#3b82f6' : (isDark ? '#333' : '#d4d6d4'),
+            color: input.trim() && !sending ? '#fff' : mutedColor,
+          }}
         >
           <Send className="h-4 w-4" />
         </button>

@@ -310,15 +310,17 @@ export function ContentSidebar({
     setSelectedAgentId(agentName);
     const existing = terminalAgents.find(a => a.agentId === agentName);
     if (!existing) {
+      const agentData = allAgents?.find(a => a.name === agentName);
       setTerminalAgents(prev => [...prev, {
         agentId: agentName,
         agentName: agentName,
-        platform: 'unknown',
+        displayName: agentData?.display_name,
+        platform: agentData?.platform || 'unknown',
         status: 'running' as const,
       }]);
     }
     setTimeout(() => window.dispatchEvent(new Event('terminal:refit')), 100);
-  }, [terminalAgents]);
+  }, [terminalAgents, allAgents]);
 
   const handleDeselectAgent = useCallback(() => {
     setSelectedAgentId(null);
@@ -328,6 +330,33 @@ export function ContentSidebar({
     setTerminalAgents(prev => prev.map(a =>
       a.agentId === agentId ? { ...a, status: 'exited' as const } : a
     ));
+  }, []);
+
+  const handleDeleteAgent = useCallback(async (agentId: string) => {
+    try {
+      await gw.deleteAgent(agentId);
+      queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+      setTerminalAgents(prev => prev.filter(a => a.agentId !== agentId));
+      if (selectedAgentId === agentId) setSelectedAgentId(null);
+      const electronApi = (window as any).electronAPI;
+      if (electronApi) electronApi.removeAgent(agentId);
+    } catch {}
+  }, [queryClient, selectedAgentId]);
+
+  const handleRenameAgent = useCallback(async (agentId: string, newName: string) => {
+    try {
+      await gw.adminUpdateAgent(agentId, { display_name: newName });
+      queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+      setTerminalAgents(prev => prev.map(a =>
+        a.agentId === agentId ? { ...a, displayName: newName } : a
+      ));
+    } catch {}
+  }, [queryClient]);
+
+  const handleResetToken = useCallback(async (agentId: string) => {
+    try {
+      await gw.resetAgentToken(agentId);
+    } catch {}
   }, []);
 
   const terminalColorTheme = theme === 'dark' ? 'dark' as const : 'light' as const;
@@ -476,6 +505,9 @@ export function ContentSidebar({
               terminalHeight={terminalHeight}
               onTerminalHeightChange={setTerminalHeight}
               onAgentExit={handleAgentExit}
+              onDeleteAgent={handleDeleteAgent}
+              onRenameAgent={handleRenameAgent}
+              onResetToken={handleResetToken}
               colorTheme={terminalColorTheme}
               isElectron={isElectron}
             />
@@ -498,6 +530,7 @@ export function ContentSidebar({
               setShowAgentsMenu(v => !v);
               setShowMessageMenu(false);
             }}
+            onOpenConnectAgents={() => setShowConnectAgents(true)}
             isElectron={isElectron}
             colorTheme={terminalColorTheme}
           />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { AtSign, Bot } from 'lucide-react';
+import { AtSign, Bot, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useT } from '@/lib/i18n';
 import { resolveAvatarUrl } from '@/lib/api/gateway';
@@ -21,6 +21,7 @@ interface SidebarAgentBarProps {
   onSelectAgent: (agentName: string) => void;
   onDeselectAgent: () => void;
   onOpenAgentsPanel: () => void;
+  onOpenConnectAgents?: () => void;
   isElectron: boolean;
 }
 
@@ -30,6 +31,7 @@ export function SidebarAgentBar({
   onSelectAgent,
   onDeselectAgent,
   onOpenAgentsPanel,
+  onOpenConnectAgents,
   isElectron,
   colorTheme = 'light',
 }: SidebarAgentBarProps & { colorTheme?: 'light' | 'dark' }) {
@@ -43,7 +45,7 @@ export function SidebarAgentBar({
       if (!containerRef.current) return;
       const containerWidth = containerRef.current.clientWidth;
       const avatarSize = 36;
-      const agentsButtonWidth = 100;
+      const agentsButtonWidth = 120;
       const available = containerWidth - agentsButtonWidth;
       setVisibleCount(Math.max(0, Math.floor(available / avatarSize)));
     });
@@ -58,6 +60,8 @@ export function SidebarAgentBar({
     <div ref={containerRef} className="flex items-center gap-1 px-2 py-2 shrink-0" style={{ backgroundColor: colorTheme === 'dark' ? '#1a1a2e' : '#EEF0EE' }}>
       {visibleAgents.map((agent) => {
         const isSelected = selectedAgentId === agent.name;
+        const avatarUrl = resolveAvatarUrl(agent.avatar_url);
+        const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
         return (
           <button
             key={agent.name}
@@ -76,10 +80,21 @@ export function SidebarAgentBar({
             )}
             title={agent.display_name || agent.name}
           >
-            {resolveAvatarUrl(agent.avatar_url) ? (
-              <img src={resolveAvatarUrl(agent.avatar_url)!} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full bg-muted flex items-center justify-center">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+            ) : platformFallback ? (
+              <img
+                src={platformFallback}
+                alt=""
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                  (e.target as HTMLImageElement).parentElement!.querySelector('.avatar-fallback')?.classList.remove('hidden');
+                }}
+              />
+            ) : null}
+            {!avatarUrl && (
+              <div className={cn('avatar-fallback w-full h-full bg-muted flex items-center justify-center', platformFallback ? 'hidden' : '')}>
                 <Bot className="h-4 w-4 text-sidebar-primary" />
               </div>
             )}
@@ -87,20 +102,35 @@ export function SidebarAgentBar({
         );
       })}
 
-      <button
-        onClick={onOpenAgentsPanel}
-        className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium shrink-0 transition-colors"
-        style={{
-          backgroundColor: 'hsl(var(--sidebar-primary))',
-          color: 'hsl(var(--sidebar-primary-foreground))',
-        }}
-      >
-        <AtSign className="h-3.5 w-3.5" />
-        {t('toolbar.agents')}
-        {overflowCount > 0 && (
-          <span className="ml-0.5">({overflowCount})</span>
-        )}
-      </button>
+      {/* Two-segment button: @ Agents | + */}
+      <div className="ml-auto flex items-center shrink-0">
+        <button
+          onClick={onOpenAgentsPanel}
+          className="flex items-center gap-1 px-2 py-1 rounded-l-lg text-xs font-medium transition-colors"
+          style={{
+            backgroundColor: 'hsl(var(--sidebar-primary))',
+            color: 'hsl(var(--sidebar-primary-foreground))',
+          }}
+        >
+          <AtSign className="h-3.5 w-3.5" />
+          {t('toolbar.agents')}
+          {overflowCount > 0 && (
+            <span className="ml-0.5">({overflowCount})</span>
+          )}
+        </button>
+        <div style={{ width: 1, backgroundColor: 'hsl(var(--sidebar-primary-foreground))', opacity: 0.3, alignSelf: 'stretch' }} />
+        <button
+          onClick={() => onOpenConnectAgents?.()}
+          className="flex items-center px-1.5 py-1 rounded-r-lg text-xs font-medium transition-colors"
+          style={{
+            backgroundColor: 'hsl(var(--sidebar-primary))',
+            color: 'hsl(var(--sidebar-primary-foreground))',
+          }}
+          title={t('actions.addAgent') || 'Add Agent'}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
