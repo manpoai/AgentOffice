@@ -141,7 +141,10 @@ class AdapterManager {
 
     if (platform === 'claude-code') {
       if (this.terminalWriter) {
-        this.terminalWriter(agentName, content + '\r');
+        this.terminalWriter(agentName, content);
+        setTimeout(() => {
+          this.terminalWriter(agentName, '\r');
+        }, 300);
       }
       console.log(`[adapter] Event written to terminal for ${agentName}: ${event.event}`);
     } else if (platform === 'gemini-cli') {
