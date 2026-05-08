@@ -460,6 +460,7 @@ export function ContentSidebar({
               setShowProfileMenu(v => !v);
             }}
             unreadCount={unreadCount}
+            isElectron={isElectron}
           />
 
           {/* ─── Search box ─── */}
@@ -478,7 +479,7 @@ export function ContentSidebar({
                   setMenuPos(p => ({ ...p, plus: calcMenuPos(plusBtnRef, 168, true) }));
                   onShowNewMenuChange(!showNewMenu);
                 }}
-                className="p-1.5 text-black/70 dark:text-white/70 hover:text-foreground rounded-lg transition-colors shrink-0"
+                className="h-8 w-8 flex items-center justify-center text-black/70 dark:text-white/70 hover:text-foreground rounded-lg bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.05] dark:border-white/[0.05] hover:bg-black/[0.06] dark:hover:bg-white/[0.08] transition-colors shrink-0"
                 title={t('common.new')}
               >
                 <PlusCircle className="h-4 w-4" strokeWidth={1.5} />

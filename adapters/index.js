@@ -208,11 +208,28 @@ async function catchup() {
   while (hasMore) {
     const params = new URLSearchParams({ since: String(since), limit: '50' });
     if (cursor) params.set('cursor', cursor);
-    const res = await fetch(`${GATEWAY_URL}/me/catchup?${params}`, {
-      headers: { 'Authorization': `Bearer ${AGENT_TOKEN}` },
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await res.json();
+    let data;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(`${GATEWAY_URL}/me/catchup?${params}`, {
+          headers: { 'Authorization': `Bearer ${AGENT_TOKEN}` },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+        }
+        data = await res.json();
+        break;
+      } catch (e) {
+        console.error(`[adapter] Catchup fetch attempt ${attempt}/3 failed: ${e.message}`);
+        if (attempt === 3) {
+          console.error('[adapter] Catchup failed after 3 attempts, skipping (will retry on next restart)');
+          return;
+        }
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
+    }
     for (const event of data.events || []) await handleEvent(event);
     hasMore = data.has_more;
     cursor = data.cursor;

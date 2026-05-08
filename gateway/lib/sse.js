@@ -37,14 +37,9 @@ export function pushEvent(agentId, event) {
   const eventType = event.event || event.type;
   console.log(`[push] agent=${agentId} event=${eventId} type=${eventType} clients=${clientCount} delivered=${clientCount > 0}`);
 
-  if (_db && clientCount > 0 && eventId) {
-    try {
-      _db.prepare('UPDATE events SET delivered = 1, delivered_at = ?, delivery_method = ? WHERE id = ?')
-        .run(Date.now(), 'sse', eventId);
-    } catch (e) {
-      console.warn(`[sse] mark delivered failed event=${eventId}: ${e.message}`);
-    }
-  }
+  // NOTE: Do NOT set delivered=1 here. SSE push is a doorbell — the agent
+  // still needs to call catchup_events (via MCP) to read the event body.
+  // catchup and SSE replay mark delivered=1 when the agent actually reads.
 }
 
 export function isAllowedWebhookUrl(urlStr) {
