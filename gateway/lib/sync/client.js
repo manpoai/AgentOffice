@@ -90,7 +90,7 @@ export class SyncClient {
       .replace(/\/$/, '');
 
     try {
-      this.ws = new WebSocket(`${wsUrl}/sync/ws?token=${config.remoteToken}`);
+      this.ws = new WebSocket(`${wsUrl}/sync/ws?token=${config.remoteToken}`, { perMessageDeflate: false });
     } catch (err) {
       console.error('[sync-client] WebSocket creation error:', err.message);
       this._scheduleReconnect(config);

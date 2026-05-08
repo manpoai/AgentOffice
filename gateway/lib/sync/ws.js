@@ -13,7 +13,7 @@ export class SyncWebSocketServer {
     this.authMiddleware = authMiddleware;
     this.adminToken = adminToken;
 
-    this.wss = new WebSocketServer({ server, path: '/api/sync/ws' });
+    this.wss = new WebSocketServer({ server, path: '/api/sync/ws', perMessageDeflate: false });
 
     this.wss.on('connection', (ws, req) => {
       this._handleConnection(ws, req);
