@@ -3,6 +3,7 @@
  */
 
 import { WebSocketServer } from 'ws';
+import crypto from 'crypto';
 import { applyChange, SYNC_PROTOCOL_VERSION, checkVersionCompatibility } from './protocol.js';
 import { recordChange } from '../sync-hook.js';
 
@@ -80,7 +81,6 @@ export class SyncWebSocketServer {
       if (admin) return admin;
     }
     try {
-      const crypto = require('crypto');
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       // Try agent token
       const actor = this.db.prepare(
