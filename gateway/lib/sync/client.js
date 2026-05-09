@@ -395,7 +395,7 @@ export class SyncClient {
   async _downloadReferencedFiles(change) {
     if (!change.data_json) return;
     const json = typeof change.data_json === 'string' ? change.data_json : JSON.stringify(change.data_json);
-    const FILE_REF_RE = /(?:\/api)?\/uploads\/(thumbnails|files|avatars)\/([^\s"',]+)/g;
+    const FILE_REF_RE = /(?:\/api(?:\/gateway)?)?\/uploads\/(thumbnails|files|avatars)\/([^\s"',]+)/g;
     let match;
     const config = this.getConfig();
     if (!config.remoteUrl || !config.remoteToken) return;
@@ -515,7 +515,7 @@ export class SyncClient {
    * Failures are logged but do not fail the sync.
    */
   async _pushReferencedFiles(config, changes) {
-    const FILE_REF_RE = /(?:\/api)?\/uploads\/(thumbnails|files|avatars)\/([^\s"',]+)/g;
+    const FILE_REF_RE = /(?:\/api(?:\/gateway)?)?\/uploads\/(thumbnails|files|avatars)\/([^\s"',]+)/g;
     const seen = new Set();
 
     for (const change of changes) {
