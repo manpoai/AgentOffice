@@ -21,6 +21,7 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
     es.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data);
+        console.log('[SSEProvider] event:', event.event, event);
 
         if (event.event === 'notification.created') {
           queryClient.invalidateQueries({ queryKey: ['notifications'] });
@@ -28,7 +29,6 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (event.event === 'comment.changed') {
-          // Invalidate all comment queries for the target — queryKey prefix ['comments'] covers all variants
           queryClient.invalidateQueries({ queryKey: ['comments'] });
         }
 
@@ -40,13 +40,14 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (event.event === 'message.sent') {
+          console.log('[SSEProvider] invalidating agent-messages for', event.data?.agent_id);
           queryClient.invalidateQueries({ queryKey: ['agent-messages'] });
           if (event.data?.agent_id) {
             queryClient.invalidateQueries({ queryKey: ['agent-messages', event.data.agent_id] });
           }
         }
-      } catch {
-        // ignore parse errors
+      } catch (err) {
+        console.error('[SSEProvider] parse error:', err);
       }
     };
 
