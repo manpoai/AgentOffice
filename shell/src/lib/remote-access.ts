@@ -14,7 +14,7 @@ const CLOUD_ORIGIN_KEY = 'aose_cloud_origin';
 export function getPublicOrigin(): string {
   if (typeof window === 'undefined') return '';
   if (IS_APP_MODE) {
-    return localStorage.getItem(CLOUD_ORIGIN_KEY) || '';
+    return localStorage.getItem(CLOUD_ORIGIN_KEY) || window.location.origin;
   }
   return window.location.origin;
 }
