@@ -7,6 +7,9 @@ files:
   - gateway/**/*
   - shell-dist/**/*
   - mcp-server/**/*
+  # Excludes — explicit and aggressive. Default Electron bundle includes
+  # everything matched above; without these the .app balloons to multiple GB
+  # because of test data, backup DB files, and dev artifacts.
   - "!**/node_modules/.cache"
   - "!**/.next"
   - "!**/shell"
@@ -14,9 +17,33 @@ files:
   - "!**/dist"
   - "!**/docs"
   - "!**/*.tgz"
+  # Database files (gateway.db, gateway.db.bak-*, gateway.db.backup-*, etc.)
+  # — App creates a fresh ~/.aose/data/gateway.db at first launch.
   - "!**/*.db"
+  - "!**/*.db-shm"
+  - "!**/*.db-wal"
+  - "!**/*.db.bak-*"
+  - "!**/*.db.backup-*"
+  - "!**/*.db.empty-*"
+  - "!**/*.db.cleanup-*"
+  - "!gateway/gateway.db*"
+  # Uploads — user-specific, App writes to ~/.aose/data/uploads/ at runtime.
+  - "!gateway/uploads/**"
+  - "!gateway/data/**"
+  # Dev-only routes / test pages
   - "!shell-dist/editor-test*"
   - "!shell-dist/_next/static/chunks/app/editor-test/**"
+  # Miscellaneous build/runtime junk
+  - "!**/.next/cache/**"
+  - "!**/.git"
+  - "!**/.gitignore"
+  - "!**/.env*"
+  - "!**/coverage/**"
+  - "!**/test/**"
+  - "!**/tests/**"
+  - "!**/*.log"
+  - "!**/*.test.*"
+  - "!**/*.map"
 asarUnpack:
   - mcp-server/**/*
 extraMetadata:

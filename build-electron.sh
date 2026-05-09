@@ -1,37 +1,40 @@
 #!/bin/bash
 set -e
 
-echo "=== Building AgentOfficeSuite Desktop App ==="
+echo "=== Building AOSE Desktop App ==="
 
-# 1. Build shell in app mode (static export)
-echo "[1/4] Building shell (CSR mode)..."
+# 1. Build shell in app mode (static export, auto-rsync to ../shell-dist/)
+echo "[1/4] Building shell (static export)..."
 cd shell
-npm run build:app
+npm run build:app   # Auto-rsyncs out/ → ../shell-dist/ since commit 150f83e
 cd ..
 
-# 2. Move static files to shell-dist/
-echo "[2/4] Preparing shell-dist..."
-rm -rf shell-dist
-mv shell/out shell-dist
-
-# 3. Install gateway production dependencies
-echo "[3/4] Installing gateway dependencies..."
+# 2. Install gateway production dependencies
+echo "[2/4] Installing gateway dependencies..."
 cd gateway
-npm install --omit=dev
+npm install --omit=dev --ignore-scripts
 cd ..
 
-# 4. Install electron dependencies
-echo "[4/4] Installing electron dependencies..."
+# 3. Install electron production dependencies (postinstall rebuilds node-pty)
+echo "[3/4] Installing electron production dependencies..."
 cd electron
 npm install --omit=dev
 cd ..
 
+# 4. Install root devDependencies (electron-builder + electron) so packaging
+#    can find them. Required because electron-builder reads electron version
+#    from the project that owns it.
+echo "[4/4] Installing electron-builder (root devDeps)..."
+NODE_ENV=development npm install --include=dev --ignore-scripts
+
 echo ""
 echo "=== Build preparation complete ==="
-echo "To package the app, run:"
-echo "  npx electron-builder --mac     # macOS"
-echo "  npx electron-builder --win     # Windows"
-echo "  npx electron-builder --linux   # Linux"
+echo "To package the app:"
+echo "  CSC_IDENTITY_AUTO_DISCOVERY=false ./node_modules/.bin/electron-builder --mac --arm64 --x64 --publish never"
+echo "  ./node_modules/.bin/electron-builder --win        # Windows"
+echo "  ./node_modules/.bin/electron-builder --linux      # Linux"
 echo ""
-echo "To test without packaging:"
+echo "Output goes to release/. See docs/RELEASE_CHECKLIST.md for full release flow."
+echo ""
+echo "Run the packaged App without DMG (faster iteration):"
 echo "  npx electron electron/main.js"
