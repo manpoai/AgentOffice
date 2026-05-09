@@ -30,6 +30,16 @@ try {
   crashReporter.start({ submitURL: '', uploadToServer: false, compress: true, productName: 'AOSE' });
 } catch (e) { console.warn('[app] crashReporter init failed:', e.message); }
 
+// Catch-all so a single subsystem failure (e.g. node-pty spawn for one agent)
+// doesn't terminate the whole App. Node 24 default behaviour is strict-throw
+// on unhandled rejections.
+process.on('unhandledRejection', (reason) => {
+  console.error('[app] Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[app] Uncaught exception:', err);
+});
+
 const gateway = new GatewayManager();
 const terminalManager = new TerminalManager();
 let adapterManager = null;
@@ -177,7 +187,8 @@ function getAgentStartCommand(platform) {
 function startAdaptersForExistingAgents() {
   const agents = provisioner.listAgents();
   for (const agent of agents) {
-    if (agent.token) {
+    if (!agent.token) continue;
+    try {
       adapterManager.start({
         agentId: agent.agentName,
         agentName: agent.agentName,
@@ -185,7 +196,11 @@ function startAdaptersForExistingAgents() {
         platform: agent.platform,
         agentDir: agent.agentDir,
       });
+    } catch (err) {
+      console.error(`[app] adapterManager.start failed for ${agent.agentName}:`, err.message);
+    }
 
+    try {
       const agentDir = path.join(DATA_DIR, 'agents', agent.agentName);
       const cwd = fs.existsSync(agentDir) ? agentDir : app.getPath('home');
       const result = terminalManager.create(agent.agentName, { cwd });
@@ -195,6 +210,8 @@ function startAdaptersForExistingAgents() {
           setTimeout(() => terminalManager.write(agent.agentName, cmd), 500);
         }
       }
+    } catch (err) {
+      console.error(`[app] terminalManager.create failed for ${agent.agentName}:`, err.message);
     }
   }
   if (agents.length > 0) {
