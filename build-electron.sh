@@ -10,9 +10,12 @@ npm run build:app   # Auto-rsyncs out/ → ../shell-dist/ since commit 150f83e
 cd ..
 
 # 2. Install gateway production dependencies
+# DO NOT use --ignore-scripts here: better-sqlite3 has a native postinstall
+# that compiles the .node binding. Without it, packaged App fails on
+# "Could not locate the bindings file" when the gateway starts.
 echo "[2/4] Installing gateway dependencies..."
 cd gateway
-npm install --omit=dev --ignore-scripts
+npm install --omit=dev
 cd ..
 
 # 3. Install electron production dependencies (postinstall rebuilds node-pty)
