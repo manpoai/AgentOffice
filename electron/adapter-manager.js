@@ -30,7 +30,7 @@ function statePath(agentId) {
 function loadState(agentId) {
   try {
     return JSON.parse(fs.readFileSync(statePath(agentId), 'utf8'));
-  } catch { return { lastEventId: null }; }
+  } catch { return { lastEventTs: 0 }; }
 }
 
 function saveState(agentId, state) {
@@ -70,8 +70,8 @@ class AdapterManager {
 
   async _catchup(agentId, agentName, platform, agentDir, agentToken) {
     const state = loadState(agentId);
-    const sinceParam = state.lastEventId ? `?since=${encodeURIComponent(state.lastEventId)}` : '?since=0';
-    const url = `http://127.0.0.1:${this.gatewayPort}/api/me/events/catchup${sinceParam}`;
+    const since = state.lastEventTs || 0;
+    const url = `http://127.0.0.1:${this.gatewayPort}/api/me/catchup?since=${since}&limit=100`;
     return new Promise((resolve, reject) => {
       const req = http.get(url, { headers: { Authorization: `Bearer ${agentToken}` } }, (res) => {
         let body = '';
@@ -85,7 +85,9 @@ class AdapterManager {
             for (const event of events) {
               this._handleEvent(agentId, agentName, platform, agentDir, event);
             }
-            console.log(`[adapter] Catchup delivered ${events.length} events for ${agentName}`);
+            if (events.length > 0) {
+              console.log(`[adapter] Catchup delivered ${events.length} events for ${agentName}`);
+            }
           } catch (e) { console.warn(`[adapter] catchup parse error for ${agentName}:`, e.message); }
           resolve();
         });
@@ -173,10 +175,10 @@ class AdapterManager {
     writeInbox(agentName, content);
     console.log(`[adapter] Event delivered to inbox for ${agentName}: ${event.event}`);
 
-    // Persist last-seen event id so that if the App is killed mid-stream,
-    // the next launch's catchup picks up from here instead of "now".
-    if (event.event_id) {
-      saveState(agentId, { lastEventId: event.event_id, lastEventAt: Date.now() });
+    // Persist last-seen occurred_at so that if the App is killed mid-stream,
+    // the next launch's catchup picks up from this timestamp instead of "now".
+    if (typeof event.occurred_at === 'number') {
+      saveState(agentId, { lastEventTs: event.occurred_at });
     }
 
     if (this.terminalWriter && platform === 'claude-code') {
