@@ -302,6 +302,7 @@ export default function syncRoutes(db, syncClient, onChangeApplied) {
 
     try {
       fs.writeFileSync(destPath, req.file.buffer);
+      console.log(`[sync-files] Received file via sync: ${subDir}/${safeName} (${req.file.buffer.length} bytes)`);
       res.json({ ok: true, filename: safeName });
     } catch (err) {
       console.error('[sync] File write error:', err.message);
