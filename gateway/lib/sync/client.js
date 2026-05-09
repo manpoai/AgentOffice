@@ -107,9 +107,23 @@ export class SyncClient {
       'user_links', 'user_select_options',
       'agent_messages', 'notifications', 'preferences',
     ];
-    // Also discover utbl_*_rows tables from both sides
+    // Discover utbl_*_rows tables: union of local AND remote.
+    // On a fresh App, local has none, so we MUST also ask remote what utbl tables exist.
     const localUtbl = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'utbl_%_rows'").all().map(r => r.name);
-    const allTables = [...SYNC_TABLES, ...localUtbl];
+    let remoteUtbl = [];
+    try {
+      const utblRes = await fetch(`${config.remoteUrl}/sync/utbl-tables`, {
+        headers: { 'Authorization': `Bearer ${config.remoteToken}` },
+      });
+      if (utblRes.ok) {
+        const body = await utblRes.json();
+        remoteUtbl = body.tables || [];
+      }
+    } catch (err) {
+      console.warn('[sync-client] Failed to fetch remote utbl tables:', err.message);
+    }
+    const allUtbl = Array.from(new Set([...localUtbl, ...remoteUtbl]));
+    const allTables = [...SYNC_TABLES, ...allUtbl];
     const res = await fetch(`${config.remoteUrl}/sync/snapshot?tables=${allTables.join(',')}`, {
       headers: { 'Authorization': `Bearer ${config.remoteToken}` },
     });
@@ -124,7 +138,41 @@ export class SyncClient {
     this.db.prepare("INSERT OR IGNORE INTO _sync_applying VALUES (1)").run();
 
     try {
-      for (const tableName of allTables) {
+      // First pass: apply user_tables/user_fields snapshots so we can create physical row tables
+      // before trying to insert rows into them. We do this by ordering: process all
+      // non-utbl tables first, then create utbl tables, then insert rows.
+
+      // Process non-utbl tables first
+      const utblTableNames = allTables.filter(t => t.startsWith('utbl_'));
+      const nonUtblTables = allTables.filter(t => !t.startsWith('utbl_'));
+      const orderedTables = [...nonUtblTables, ...utblTableNames];
+
+      // Create missing utbl_*_rows tables based on user_tables/user_fields snapshot data.
+      // Physical row tables aren't auto-created by sync trigger when user_tables row
+      // is inserted, so we create them here from the snapshot data.
+      const userTablesData = snapshot['user_tables'] || [];
+      const userFieldsData = snapshot['user_fields'] || [];
+      for (const ut of userTablesData) {
+        const physicalName = `utbl_${ut.id}_rows`;
+        if (!utblTableNames.includes(physicalName)) continue;
+        const exists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(physicalName);
+        if (exists) continue;
+        const fieldsForTable = userFieldsData.filter(f => f.table_id === ut.id);
+        const colDefs = ['id TEXT PRIMARY KEY', 'created_at INTEGER', 'updated_at INTEGER', 'created_by TEXT', 'updated_by TEXT'];
+        for (const f of fieldsForTable) {
+          const colName = f.physical_column;
+          if (!colName || ['id', 'created_at', 'updated_at', 'created_by', 'updated_by'].includes(colName)) continue;
+          colDefs.push(`"${colName}" TEXT`);
+        }
+        try {
+          this.db.exec(`CREATE TABLE IF NOT EXISTS ${physicalName} (${colDefs.join(', ')})`);
+          console.log(`[sync-client] Created physical row table ${physicalName} with ${colDefs.length} columns`);
+        } catch (err) {
+          console.warn(`[sync-client] Failed to create ${physicalName}:`, err.message);
+        }
+      }
+
+      for (const tableName of orderedTables) {
         const remoteRows = snapshot[tableName] || [];
         if (remoteRows.length === 0) continue;
 
@@ -191,7 +239,7 @@ export class SyncClient {
             data_json: JSON.stringify(row),
             timestamp: Date.now(),
           }));
-          await fetch(`${config.remoteUrl}/sync/push`, {
+          const pushRes = await fetch(`${config.remoteUrl}/sync/push`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${config.remoteToken}`,
@@ -199,6 +247,9 @@ export class SyncClient {
             },
             body: JSON.stringify({ changes, protocol_version: '1.0' }),
           });
+          if (!pushRes.ok) {
+            throw new Error(`Snapshot push for ${tableName} failed: HTTP ${pushRes.status}`);
+          }
         }
 
         if (inserted + updated + pushed > 0) {
@@ -226,8 +277,8 @@ export class SyncClient {
 
   _handleAuthFailure() {
     this._authFailCount = (this._authFailCount || 0) + 1;
-    if (this._authFailCount >= 3) {
-      console.error('[sync-client] Token revoked or invalid — disabling sync');
+    if (this._authFailCount >= 10) {
+      console.error('[sync-client] Token revoked or invalid (10 consecutive auth failures) — disabling sync');
       this.db.prepare("INSERT OR REPLACE INTO _sync_meta (key, value) VALUES ('sync_enabled', '0')").run();
       this.stop();
     }
@@ -250,7 +301,10 @@ export class SyncClient {
 
     this.ws.on('open', () => {
       console.log('[sync-client] WebSocket connected');
-      this.reconnectDelay = 1000;
+      // Only reset reconnect delay after the connection has been stable for a while.
+      // Previously this reset was immediate, which caused a tight reconnect storm
+      // when the upstream kept dropping the socket right after open (1006/1005).
+      this._stableTimer = setTimeout(() => { this.reconnectDelay = 1000; }, 5000);
 
       const freshConfig = this.getConfig();
       this.ws.send(JSON.stringify({
@@ -271,6 +325,7 @@ export class SyncClient {
     this.ws.on('close', (code, reason) => {
       console.log(`[sync-client] WebSocket disconnected code=${code} reason=${reason?.toString() || ''}`);
       this.ws = null;
+      if (this._stableTimer) { clearTimeout(this._stableTimer); this._stableTimer = null; }
       this._scheduleReconnect(config);
     });
 
@@ -408,71 +463,47 @@ export class SyncClient {
 
     let pushed = false;
 
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({
-        type: 'push',
-        changes: changes.map(c => ({
-          table_name: c.table_name,
-          row_id: c.row_id,
-          operation: c.operation,
-          data_json: c.data_json,
-          actor_id: c.actor_id,
-          timestamp: c.timestamp,
-        })),
-      }));
+    try {
+      const res = await fetch(`${config.remoteUrl}/sync/push`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.remoteToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          protocol_version: SYNC_PROTOCOL_VERSION,
+          changes: changes.map(c => ({
+            table_name: c.table_name,
+            row_id: c.row_id,
+            operation: c.operation,
+            data_json: c.data_json,
+            actor_id: c.actor_id,
+            timestamp: c.timestamp,
+          })),
+        }),
+      });
 
-      const ids = changes.map(c => c.id);
-      this.db.prepare(
-        `UPDATE _sync_log SET synced = 1 WHERE id IN (${ids.map(() => '?').join(',')})`
-      ).run(...ids);
+      if (res.ok) {
+        const ids = changes.map(c => c.id);
+        this.db.prepare(
+          `UPDATE _sync_log SET synced = 1 WHERE id IN (${ids.map(() => '?').join(',')})`
+        ).run(...ids);
 
-      this.db.prepare(
-        "INSERT OR REPLACE INTO _sync_meta (key, value) VALUES ('last_sync_timestamp', ?)"
-      ).run(String(Date.now()));
+        this.db.prepare(
+          "INSERT OR REPLACE INTO _sync_meta (key, value) VALUES ('last_sync_timestamp', ?)"
+        ).run(String(Date.now()));
 
-      pushed = true;
-    } else {
-      try {
-        const res = await fetch(`${config.remoteUrl}/sync/push`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${config.remoteToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            protocol_version: SYNC_PROTOCOL_VERSION,
-            changes: changes.map(c => ({
-              table_name: c.table_name,
-              row_id: c.row_id,
-              operation: c.operation,
-              data_json: c.data_json,
-              actor_id: c.actor_id,
-              timestamp: c.timestamp,
-            })),
-          }),
-        });
-
-        if (res.ok) {
-          const ids = changes.map(c => c.id);
-          this.db.prepare(
-            `UPDATE _sync_log SET synced = 1 WHERE id IN (${ids.map(() => '?').join(',')})`
-          ).run(...ids);
-
-          this.db.prepare(
-            "INSERT OR REPLACE INTO _sync_meta (key, value) VALUES ('last_sync_timestamp', ?)"
-          ).run(String(Date.now()));
-
-          pushed = true;
-          this._authFailCount = 0;
-        } else if (res.status === 401 || res.status === 403) {
-          this._handleAuthFailure();
-        }
-      } catch (err) {
-        console.error('[sync-client] HTTP push failed:', err.message);
+        pushed = true;
+        this._authFailCount = 0;
+      } else if (res.status === 401 || res.status === 403) {
+        this._handleAuthFailure();
+      } else {
+        console.error(`[sync-client] HTTP push failed: ${res.status}`);
       }
+    } catch (err) {
+      console.error('[sync-client] HTTP push failed:', err.message);
     }
 
-    // After successfully pushing changes, upload any referenced files
     if (pushed) {
       await this._pushReferencedFiles(config, changes);
     }

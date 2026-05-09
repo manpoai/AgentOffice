@@ -65,7 +65,7 @@ function seedSyncLog(db, { force = false } = {}) {
   return seeded;
 }
 
-export default function syncRoutes(db, syncClient) {
+export default function syncRoutes(db, syncClient, onChangeApplied) {
   const router = Router();
 
   // POST /api/sync/push — receive changes from a remote client
@@ -87,7 +87,10 @@ export default function syncRoutes(db, syncClient) {
     let applied = 0;
     for (const change of changes) {
       const ok = applyChange(db, change);
-      if (ok) applied++;
+      if (ok) {
+        applied++;
+        if (onChangeApplied) onChangeApplied(change);
+      }
     }
 
     res.json({ applied, total: changes.length, server_timestamp: Date.now() });
@@ -114,6 +117,15 @@ export default function syncRoutes(db, syncClient) {
       server_timestamp: Date.now(),
       has_more: hasMore,
     });
+  });
+
+  // GET /api/sync/utbl-tables — list dynamic utbl_*_rows tables that exist on this gateway
+  // Used by remote SyncClient on initial snapshot to discover row tables it doesn't have yet
+  router.get('/utbl-tables', (_req, res) => {
+    const rows = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'utbl_%_rows'"
+    ).all();
+    res.json({ tables: rows.map(r => r.name) });
   });
 
   // GET /api/sync/snapshot?tables=content_items — full table dump for initial sync
@@ -152,7 +164,7 @@ export default function syncRoutes(db, syncClient) {
   // GET /api/sync/status — sync connection status
   router.get('/status', (req, res) => {
     const pendingCount = db.prepare(
-      "SELECT COUNT(*) as count FROM _sync_log WHERE synced = 0"
+      "SELECT COUNT(*) as count FROM _sync_log WHERE synced = 0 AND source = 'local'"
     ).get();
 
     const lastSync = db.prepare(

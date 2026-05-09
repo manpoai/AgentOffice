@@ -1266,11 +1266,17 @@ export default function authRoutes(app, { express, db, JWT_SECRET, ADMIN_TOKEN, 
 
     db.prepare('UPDATE sync_tokens SET revoked_at = ? WHERE id = ?').run(Date.now(), req.params.id);
 
-    const localAgents = db.prepare("SELECT id FROM actors WHERE origin_device_id = ? AND agent_kind = 'local'").all(req.params.id);
+    const remainingActive = db.prepare("SELECT COUNT(*) as c FROM sync_tokens WHERE actor_id = ? AND revoked_at IS NULL").get(req.actor.id);
+    const isLastDevice = (remainingActive?.c || 0) === 0;
+
+    const localAgents = isLastDevice
+      ? db.prepare("SELECT id FROM actors WHERE agent_kind = 'local' AND (origin_device_id = ? OR origin_device_id IS NULL OR origin_device_id = '')").all(req.params.id)
+      : db.prepare("SELECT id FROM actors WHERE agent_kind = 'local' AND origin_device_id = ?").all(req.params.id);
     if (localAgents.length > 0) {
       const agentIds = localAgents.map(a => a.id);
       const placeholders = agentIds.map(() => '?').join(', ');
       db.prepare(`DELETE FROM agent_messages WHERE agent_id IN (${placeholders})`).run(...agentIds);
+      db.prepare(`DELETE FROM events WHERE agent_id IN (${placeholders})`).run(...agentIds);
       db.prepare(`DELETE FROM actors WHERE id IN (${placeholders})`).run(...agentIds);
     }
 

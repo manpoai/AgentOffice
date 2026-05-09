@@ -12,6 +12,7 @@ interface Agent {
   avatar_url?: string;
   platform: string;
   status: string;
+  agent_kind?: string | null;
 }
 
 interface SidebarAgentBarProps {
@@ -55,9 +56,8 @@ export function SidebarAgentBar({
   const visibleAgents = agents.slice(0, visibleCount);
   const overflowCount = Math.max(0, agents.length - visibleCount);
 
-  const hasLocal = localAgentNames && localAgentNames.size > 0;
-  const localVisible = hasLocal ? visibleAgents.filter(a => localAgentNames.has(a.name)) : [];
-  const remoteVisible = hasLocal ? visibleAgents.filter(a => !localAgentNames.has(a.name)) : visibleAgents;
+  const localVisible = visibleAgents.filter(a => a.agent_kind === 'local');
+  const remoteVisible = visibleAgents.filter(a => a.agent_kind !== 'local');
 
   const renderAvatar = (agent: Agent) => {
     const isSelected = selectedAgentId === agent.name;

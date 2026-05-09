@@ -565,6 +565,7 @@ export function ContentSidebar({
               avatar_url: a.avatar_url,
               platform: a.platform || '',
               status: a.online ? 'online' : 'offline',
+              agent_kind: a.agent_kind,
             }))}
             localAgentNames={localAgentNames}
             selectedAgentId={selectedAgentId}

@@ -39,8 +39,11 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        if (event.type === 'message.sent') {
-          queryClient.invalidateQueries({ queryKey: ['agent-messages', event.agent_id] });
+        if (event.event === 'message.sent') {
+          queryClient.invalidateQueries({ queryKey: ['agent-messages'] });
+          if (event.data?.agent_id) {
+            queryClient.invalidateQueries({ queryKey: ['agent-messages', event.data.agent_id] });
+          }
         }
       } catch {
         // ignore parse errors
