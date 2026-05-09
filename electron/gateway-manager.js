@@ -2,13 +2,38 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
 const net = require('net');
+const fs = require('fs');
 
 function findSystemNode() {
+  // 1. Try `which node` with the inherited PATH — works when launched from a
+  //    shell (dev mode: `npx electron`).
   try {
-    return execSync('which node', { encoding: 'utf-8' }).trim();
-  } catch {
-    return 'node';
+    const found = execSync('which node', { encoding: 'utf-8' }).trim();
+    if (found && fs.existsSync(found)) return found;
+  } catch { /* fall through */ }
+
+  // 2. Try `which` with a PATH that includes typical macOS/Linux node install
+  //    locations. Packaged macOS apps launched from Finder inherit a minimal
+  //    PATH (/usr/bin:/bin:/usr/sbin:/sbin) that doesn't have node.
+  const extraPath = [
+    '/usr/local/bin',
+    '/opt/homebrew/bin',
+    '/opt/homebrew/opt/node/bin',
+    process.env.HOME ? `${process.env.HOME}/.nvm/versions/node/v24/bin` : null,
+    process.env.HOME ? `${process.env.HOME}/.volta/bin` : null,
+    '/usr/bin',
+    '/bin',
+  ].filter(Boolean);
+  for (const dir of extraPath) {
+    const candidate = path.join(dir, 'node');
+    try { if (fs.existsSync(candidate)) return candidate; } catch {}
   }
+
+  // 3. Last resort: Electron's own bundled Node binary. process.execPath in
+  //    the main process is the Electron binary — running it with ELECTRON_RUN_AS_NODE=1
+  //    forces it to behave as a regular Node interpreter. This works in
+  //    packaged builds without requiring the user to install Node separately.
+  return process.execPath;
 }
 
 /**
@@ -52,9 +77,15 @@ class GatewayManager {
     this.port = options.port || 4000;
 
     const nodeBin = findSystemNode();
+    // If we're using Electron's own binary as Node, we MUST set
+    // ELECTRON_RUN_AS_NODE=1 so it skips Electron init and behaves as a Node
+    // interpreter. process.execPath includes "Electron" or the productName
+    // when packaged.
+    const usingElectronAsNode = nodeBin === process.execPath;
     this.process = spawn(nodeBin, [path.join(gatewayDir, 'server.js')], {
       env: {
         ...process.env,
+        ...(usingElectronAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
         GATEWAY_PORT: String(this.port),
         GATEWAY_DB_PATH: options.dbPath,
         UPLOADS_DIR: options.uploadsDir,
