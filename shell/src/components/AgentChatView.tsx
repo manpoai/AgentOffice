@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import * as gw from '@/lib/api/gateway';
+import { IS_APP_MODE } from '@/lib/api/config';
 
 interface AgentChatViewProps {
   agentId: string;
@@ -117,14 +118,15 @@ export function AgentChatView({ agentId, agentName, isActive, colorTheme = 'dark
 
       {/* Input bar — aligned with CommentPanel style */}
       {(() => {
-        // Local agents are owned by this device when:
-        //   - sync is not enabled (no concept of "another device" yet), OR
-        //   - sync IS enabled and the agent's origin_device_id matches our device_id
-        // The previous logic blocked the input even when sync was off, which
-        // meant a brand-new App with a freshly-registered local agent couldn't
-        // message its own agent until it connected to the cloud first.
+        // For local agents, only the App that owns the agent process can talk
+        // to it. The web (cloud) side is NEVER the owner of a local agent —
+        // it's a remote viewer for all agent_kind='local' actors.
+        // The App side is the owner when:
+        //   - sync isn't connected yet (the agent was registered locally with
+        //     no device_id; there's no notion of "another device" to compare to)
+        //   - OR sync IS connected and origin_device_id matches our device_id
         const syncEnabled = !!syncStatus?.sync_enabled;
-        const isOwnerDevice = agentKind === 'local' && (
+        const isOwnerDevice = agentKind === 'local' && IS_APP_MODE && (
           !syncEnabled ||
           (!!myDeviceId && originDeviceId === myDeviceId)
         );
