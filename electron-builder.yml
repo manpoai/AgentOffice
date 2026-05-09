@@ -49,6 +49,9 @@ files:
   - "!**/*.map"
 asarUnpack:
   - mcp-server/**/*
+  # shell-dist must be unpacked because gateway serves it via express.static
+  # and gateway runs as an external Node process (no asar support).
+  - shell-dist/**/*
   # Gateway runs as a Node child process. External Node interpreters can't
   # resolve modules from inside .asar archives, so the gateway tree must live
   # on the filesystem next to the .asar. asarUnpack copies these paths into
