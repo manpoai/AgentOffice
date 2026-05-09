@@ -2359,7 +2359,7 @@ export function CanvasEditor({
       x: Math.round(target.frame.width / 2 - w / 2),
       y: Math.round(target.frame.height / 2 - h / 2),
       w, h,
-      html: createImageHtml(serverUrl, w, h),
+      html: createImageHtml(serverUrl, w, h, elId),
       locked: false, z_index: target.frame.elements.length + 1,
       name: name ?? 'Image',
     };

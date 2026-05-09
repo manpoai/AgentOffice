@@ -892,7 +892,7 @@ export function VideoEditor({
         return;
       }
       URL.revokeObjectURL(probe.objectUrl);
-      html = createImageHtml(canonicalizeUploadUrl(serverUrl), w, h);
+      html = createImageHtml(canonicalizeUploadUrl(serverUrl), w, h, newElId);
     }
     const newEl: VideoElement = {
       id: newElId, type: elType,
