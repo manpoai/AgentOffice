@@ -21,7 +21,7 @@ import { handleNotificationClick } from '@/lib/notification-click';
 import { ConnectAgentsOverlay } from '@/components/ConnectAgentsOverlay';
 import { SyncSettingsDialog } from '@/components/shared/SyncSettingsDialog';
 import { ConnectionsDialog } from '@/components/shared/ConnectionsDialog';
-import { IS_APP_MODE } from '@/lib/api/config';
+import { IS_APP_MODE, API_BASE } from '@/lib/api/config';
 import { SidebarTopNav, type SidebarTab } from './SidebarTopNav';
 import { EmptyTabPage } from './EmptyTabPage';
 import { SidebarAgentBar } from './SidebarAgentBar';
@@ -708,6 +708,34 @@ export function ContentSidebar({
                 {t('settings.connections')}
               </button>
             )}
+            <button
+              onClick={() => {
+                setShowProfileMenu(false);
+                const token = typeof window !== 'undefined' ? localStorage.getItem('aose_token') : null;
+                if (!token) return;
+                // Use a hidden anchor with the bearer token so the browser
+                // streams the tar.gz to disk under its server-suggested name.
+                const url = `${API_BASE}/admin/backup?_t=${Date.now()}`;
+                fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+                  .then(async (r) => {
+                    if (!r.ok) throw new Error(`backup failed: ${r.status}`);
+                    const cd = r.headers.get('Content-Disposition') || '';
+                    const m = /filename="([^"]+)"/.exec(cd);
+                    const name = m?.[1] || `aose-backup-${Date.now()}.tar.gz`;
+                    const blob = await r.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = name;
+                    a.click();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                  })
+                  .catch(err => alert('Backup failed: ' + err.message));
+              }}
+              className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"
+            >
+              <Cloud className="h-4 w-4 text-[#939493] dark:text-[#818181]" />
+              Export data
+            </button>
             <button
               onClick={() => { setShowProfileMenu(false); onToggleTrash(); }}
               className="flex items-center gap-3 w-full h-10 px-4 text-sm font-medium text-black/70 dark:text-white/70 hover:bg-black/[0.04] transition-colors"

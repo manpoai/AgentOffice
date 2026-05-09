@@ -25,6 +25,7 @@ import contentRoutes from './routes/content.js';
 import eventsRoutes from './routes/events.js';
 import syncRoutes from './routes/sync.js';
 import agentMessagesRoutes from './routes/agent-messages.js';
+import backupRoutes from './routes/backup.js';
 import { SyncWebSocketServer } from './lib/sync/ws.js';
 import { SyncClient } from './lib/sync/client.js';
 
@@ -124,6 +125,7 @@ dataRoutes(app, shared);
 contentRoutes(app, shared);
 eventsRoutes(app, shared);
 agentMessagesRoutes(app, shared);
+backupRoutes(app, shared);
 const syncAuth = (req, res, next) => {
   const auth = req.headers.authorization;
   if (auth?.startsWith('Bearer ') && auth.slice(7) === ADMIN_TOKEN) return next();
