@@ -2,7 +2,7 @@ const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { GatewayManager } = require('./gateway-manager');
+const { GatewayManager, findFreePort } = require('./gateway-manager');
 const { TerminalManager } = require('./terminal-manager');
 const { AdapterManager } = require('./adapter-manager');
 const { AgentProvisioner } = require('./agent-provisioner');
@@ -191,6 +191,21 @@ function startAdaptersForExistingAgents() {
 app.on('ready', async () => {
   ensureDataDir();
   const config = loadOrCreateConfig();
+
+  // Resolve actual port: try stored preference first, fall back to next free.
+  // Persist whichever port we land on so subsequent launches reuse it.
+  try {
+    const resolvedPort = await findFreePort(config.gateway_port);
+    if (resolvedPort !== config.gateway_port) {
+      console.log(`[app] Port ${config.gateway_port} in use, using ${resolvedPort}`);
+      config.gateway_port = resolvedPort;
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    }
+  } catch (err) {
+    console.error('[app] Could not find a free port:', err.message);
+    app.quit();
+    return;
+  }
 
   adapterManager = new AdapterManager(config.gateway_port);
   adapterManager.setTerminalWriter((agentName, data) => {

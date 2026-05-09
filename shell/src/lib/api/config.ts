@@ -7,9 +7,11 @@
 
 export const IS_APP_MODE = process.env.NEXT_PUBLIC_API_MODE === 'app';
 
-export const API_BASE = IS_APP_MODE
-    ? `http://localhost:${process.env.NEXT_PUBLIC_GATEWAY_PORT || 4000}/api`
-    : '/api/gateway';
+// In App mode, the shell is loaded from the gateway itself (http://127.0.0.1:<port>),
+// so relative URLs like `/api/foo` resolve to the same gateway — no need to bake
+// the port into the build, which lets us auto-detect a free port at runtime.
+// In Web mode, the Next.js shell proxies `/api/gateway/*` to the gateway.
+export const API_BASE = IS_APP_MODE ? '/api' : '/api/gateway';
 
 /** Resolve a gateway-relative path to a full URL the browser can fetch. */
 export function resolveGatewayUrl(p: string): string {

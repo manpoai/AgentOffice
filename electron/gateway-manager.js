@@ -1,6 +1,7 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
+const net = require('net');
 
 function findSystemNode() {
   try {
@@ -8,6 +9,34 @@ function findSystemNode() {
   } catch {
     return 'node';
   }
+}
+
+/**
+ * Probe whether a TCP port is free on 127.0.0.1.
+ * Resolves true if the bind succeeds and the listener closes cleanly.
+ */
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+/**
+ * Find a free port starting from `preferred`, walking up to `preferred + range`.
+ * Returns the first available port. Throws if none are free in the range.
+ */
+async function findFreePort(preferred = 4000, range = 100) {
+  for (let port = preferred; port < preferred + range; port++) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await isPortFree(port)) return port;
+  }
+  throw new Error(`No free port in range ${preferred}..${preferred + range}`);
 }
 
 class GatewayManager {
@@ -94,4 +123,4 @@ class GatewayManager {
   }
 }
 
-module.exports = { GatewayManager };
+module.exports = { GatewayManager, findFreePort, isPortFree };
