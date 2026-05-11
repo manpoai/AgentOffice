@@ -7,6 +7,7 @@ files:
   - gateway/**/*
   - shell-dist/**/*
   - mcp-server/**/*
+  - node-runtime/**/*
   # Excludes — explicit and aggressive. Default Electron bundle includes
   # everything matched above; without these the .app balloons to multiple GB
   # because of test data, backup DB files, and dev artifacts.
@@ -48,6 +49,7 @@ files:
   - "!**/*.log"
   - "!**/*.map"
 asarUnpack:
+  - node-runtime/**/*
   - mcp-server/**/*
   # shell-dist must be unpacked because gateway serves it via express.static
   # and gateway runs as an external Node process (no asar support).

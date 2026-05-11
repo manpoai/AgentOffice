@@ -4,92 +4,15 @@ const http = require('http');
 const net = require('net');
 const fs = require('fs');
 
-function getRequiredModuleVersion(gatewayDir) {
-  try {
-    const nodePath = path.join(
-      gatewayDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'
-    );
-    const buf = fs.readFileSync(nodePath);
-    const str = buf.toString('utf-8', 0, Math.min(buf.length, 4096));
-    const match = str.match(/node_modules.api_version=(\d+)/);
-    if (match) return match[1];
-  } catch {}
-  return null;
+function isPackaged() {
+  return __dirname.includes('app.asar');
 }
 
-function findSystemNode(gatewayDir) {
-  const wantArch = process.arch;
-
-  function checkNode(nodePath) {
-    try {
-      const out = execSync(`"${nodePath}" -p "process.arch+','+process.versions.modules"`, {
-        encoding: 'utf-8', timeout: 3000,
-      }).trim();
-      const [arch, modules] = out.split(',');
-      return { arch, modules, path: nodePath };
-    } catch { return null; }
-  }
-
-  const requiredABI = getRequiredModuleVersion(gatewayDir);
-  const candidates = [];
-
-  // 1. Try `which node` — works from shell (dev mode).
-  try {
-    const found = execSync('which node', { encoding: 'utf-8' }).trim();
-    if (found && fs.existsSync(found)) {
-      const info = checkNode(found);
-      if (info) candidates.push(info);
-    }
-  } catch {}
-
-  // 2. Common install paths + all nvm versions.
-  const dirs = [
-    '/opt/homebrew/bin',
-    '/opt/homebrew/opt/node/bin',
-    '/usr/local/bin',
-  ];
-  if (process.env.HOME) {
-    const nvmDir = path.join(process.env.HOME, '.nvm/versions/node');
-    try {
-      const versions = fs.readdirSync(nvmDir)
-        .filter(v => v.startsWith('v'))
-        .sort().reverse();
-      for (const v of versions) {
-        dirs.push(path.join(nvmDir, v, 'bin'));
-      }
-    } catch {}
-    dirs.push(path.join(process.env.HOME, '.volta/bin'));
-  }
-  dirs.push('/usr/bin', '/bin');
-
-  for (const dir of dirs) {
-    const candidate = path.join(dir, 'node');
-    try {
-      if (!fs.existsSync(candidate)) continue;
-      if (candidates.some(c => c.path === candidate)) continue;
-      const info = checkNode(candidate);
-      if (info) candidates.push(info);
-    } catch {}
-  }
-
-  // Pick best: matching arch + matching ABI > matching arch > any
-  const archMatch = candidates.filter(c => c.arch === wantArch);
-  if (requiredABI) {
-    const perfect = archMatch.find(c => c.modules === requiredABI);
-    if (perfect) {
-      console.log(`[gateway] Using Node ${perfect.path} (arch=${perfect.arch}, ABI=${perfect.modules})`);
-      return perfect.path;
-    }
-  }
-  if (archMatch.length > 0) {
-    const best = archMatch[0];
-    console.log(`[gateway] Using Node ${best.path} (arch=${best.arch}, ABI=${best.modules}, wanted ABI=${requiredABI})`);
-    return best.path;
-  }
-
-  // 3. Last resort: Electron's own binary.
-  console.log(`[gateway] No matching system Node found, using Electron binary`);
-  return process.execPath;
+function findBundledNode() {
+  const bundledPath = path.join(__dirname, '..', 'node-runtime', 'node')
+    .replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
+  if (fs.existsSync(bundledPath)) return bundledPath;
+  return null;
 }
 
 /**
@@ -119,33 +42,16 @@ async function findFreePort(preferred = 4000, range = 100) {
   throw new Error(`No free port in range ${preferred}..${preferred + range}`);
 }
 
-function rebuildNativeModules(nodeBin, gatewayDir) {
-  const sqlitePath = path.join(
-    gatewayDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'
-  );
-  const exists = fs.existsSync(sqlitePath);
-  const requiredABI = exists ? getRequiredModuleVersion(gatewayDir) : null;
+function findSystemNode() {
   try {
-    const nodeABI = execSync(`"${nodeBin}" -p "process.versions.modules"`, {
-      encoding: 'utf-8', timeout: 3000,
-    }).trim();
-    if (exists && requiredABI === nodeABI) return;
-    const reason = exists
-      ? `ABI mismatch: native module=${requiredABI}, node=${nodeABI}`
-      : 'native module binary missing';
-    console.log(`[gateway] ${reason}. Rebuilding better-sqlite3...`);
-    const npmPath = path.join(path.dirname(nodeBin), 'npm');
-    const npmBin = fs.existsSync(npmPath) ? npmPath : 'npm';
-    execSync(`"${npmBin}" rebuild better-sqlite3`, {
-      encoding: 'utf-8',
-      timeout: 120000,
-      cwd: gatewayDir,
-      env: { ...process.env, PATH: `${path.dirname(nodeBin)}:${process.env.PATH}` },
-    });
-    console.log(`[gateway] better-sqlite3 rebuilt successfully for ABI ${nodeABI}`);
-  } catch (e) {
-    console.error(`[gateway] Failed to rebuild better-sqlite3: ${e.message}`);
+    const found = execSync('which node', { encoding: 'utf-8', timeout: 3000 }).trim();
+    if (found && fs.existsSync(found)) return found;
+  } catch {}
+  const paths = ['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node'];
+  for (const p of paths) {
+    if (fs.existsSync(p)) return p;
   }
+  return null;
 }
 
 class GatewayManager {
@@ -158,18 +64,33 @@ class GatewayManager {
     if (this.process) return;
 
     const electronGatewayPath = path.join(__dirname, '..', 'gateway');
-    const gatewayDir = electronGatewayPath.includes('app.asar' + path.sep)
+    const gatewayDir = isPackaged()
       ? electronGatewayPath.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep)
       : electronGatewayPath;
     this.port = options.port || 4000;
 
-    const nodeBin = findSystemNode(gatewayDir);
-    rebuildNativeModules(nodeBin, gatewayDir);
-    const usingElectronAsNode = nodeBin === process.execPath;
+    let nodeBin;
+    let useElectronAsNode = false;
+    if (isPackaged()) {
+      const bundled = findBundledNode();
+      if (bundled) {
+        nodeBin = bundled;
+        console.log(`[gateway] Using bundled Node: ${nodeBin}`);
+      } else {
+        nodeBin = process.execPath;
+        useElectronAsNode = true;
+        console.log(`[gateway] No bundled Node found, using Electron as Node runtime`);
+      }
+    } else {
+      nodeBin = findSystemNode() || process.execPath;
+      useElectronAsNode = nodeBin === process.execPath;
+      console.log(`[gateway] Dev mode: using ${nodeBin}`);
+    }
+
     this.process = spawn(nodeBin, [path.join(gatewayDir, 'server.js')], {
       env: {
         ...process.env,
-        ...(usingElectronAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+        ...(useElectronAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
         GATEWAY_PORT: String(this.port),
         GATEWAY_DB_PATH: options.dbPath,
         UPLOADS_DIR: options.uploadsDir,

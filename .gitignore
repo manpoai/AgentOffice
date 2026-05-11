@@ -103,3 +103,4 @@ adapters/**/config-*.json
 !adapters/**/config-*.example.json
 adapters/**/.last-event-ts-*
 *.db.cleanup-bak-*
+node-runtime/
