@@ -54,6 +54,8 @@ class AgentProvisioner {
     };
     fs.writeFileSync(path.join(agentDir, '.mcp.json'), JSON.stringify(mcpConfig, null, 2));
 
+    fs.writeFileSync(path.join(agentDir, '.agent-meta.json'), JSON.stringify({ agent_id: registration.agent_id }));
+
     this._writeHookConfig(platform, agentName, agentDir, permissions);
     this._ensureHookScript(platform);
     this._writeAgentInstructions(platform, agentName, agentDir);
@@ -168,8 +170,10 @@ class AgentProvisioner {
     return dirs.map(name => {
       const agentDir = path.join(AGENTS_DIR, name);
       const mcpPath = path.join(agentDir, '.mcp.json');
+      const metaPath = path.join(agentDir, '.agent-meta.json');
       let platform = 'unknown';
       let token = null;
+      let agentId = null;
       if (fs.existsSync(mcpPath)) {
         try {
           const mcp = JSON.parse(fs.readFileSync(mcpPath, 'utf-8'));
@@ -179,7 +183,10 @@ class AgentProvisioner {
           else if (name.startsWith('gemini-cli-')) platform = 'gemini-cli';
         } catch {}
       }
-      return { agentName: name, agentDir, platform, token };
+      if (fs.existsSync(metaPath)) {
+        try { agentId = JSON.parse(fs.readFileSync(metaPath, 'utf-8')).agent_id; } catch {}
+      }
+      return { agentId, agentName: name, agentDir, platform, token };
     });
   }
 

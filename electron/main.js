@@ -189,7 +189,7 @@ function startAdaptersForExistingAgents() {
     if (!agent.token) continue;
     try {
       adapterManager.start({
-        agentId: agent.agentName,
+        agentId: agent.agentId || agent.agentName,
         agentName: agent.agentName,
         agentToken: agent.token,
         platform: agent.platform,

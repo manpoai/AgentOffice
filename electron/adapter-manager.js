@@ -10,7 +10,7 @@ const STATE_DIR = path.join(os.homedir(), '.aose', 'adapter-state');
 let _translateEvent = null;
 async function loadTranslator() {
   if (!_translateEvent) {
-    const mod = await import(path.join(__dirname, '..', 'adapters', 'event-translator.js'));
+    const mod = await import(path.join(__dirname, 'lib', 'event-translator.js'));
     _translateEvent = mod.translateEvent;
   }
   return _translateEvent;
