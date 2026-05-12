@@ -120,6 +120,10 @@ function handleSyncChangeSSE(change) {
   if (change.table_name === 'actors') {
     broadcastHumanEvent({ event: 'content.changed', data: { action: change.operation, type: 'agent', id: change.row_id } });
   }
+  if (change.table_name === 'tasks') {
+    const eventMap = { insert: 'task.created', update: 'task.updated', delete: 'task.deleted' };
+    broadcastHumanEvent({ event: eventMap[change.operation] || 'task.updated', data: { task_id: change.row_id } });
+  }
 }
 
 const syncClient = new SyncClient(db, { onChangeApplied: handleSyncChangeSSE });
