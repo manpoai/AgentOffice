@@ -106,6 +106,8 @@ export class SyncClient {
       'user_view_columns', 'user_view_filters', 'user_view_sorts',
       'user_links', 'user_select_options',
       'agent_messages', 'notifications', 'preferences',
+      'tasks', 'task_attachments', 'task_schedules',
+      'skills', 'memories',
     ];
     // Discover utbl_*_rows tables: union of local AND remote.
     // On a fresh App, local has none, so we MUST also ask remote what utbl tables exist.
