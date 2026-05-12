@@ -10,7 +10,7 @@ const { AgentProvisioner } = require('./agent-provisioner');
 const { setupTray } = require('./tray');
 const { setupUpdater } = require('./updater');
 
-const DATA_DIR = path.join(app.getPath('home'), '.aose');
+const DATA_DIR = path.join(app.getPath('home'), app.isPackaged ? '.aose' : '.aose-dev');
 const DATA_SUBDIR = path.join(DATA_DIR, 'data');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const DB_PATH = path.join(DATA_SUBDIR, 'gateway.db');
