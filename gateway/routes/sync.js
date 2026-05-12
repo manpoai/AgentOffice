@@ -190,7 +190,7 @@ export default function syncRoutes(db, syncClient, onChangeApplied) {
 
   // POST /api/sync/connect — initiate sync connection (called by local App)
   router.post('/connect', async (req, res) => {
-    const { remote_url, remote_token, device_id, protocol_version } = req.body;
+    const { remote_url, remote_token, device_id, protocol_version, skip_health_check } = req.body;
 
     if (!remote_url || !remote_token) {
       return res.status(400).json({ error: 'remote_url and remote_token are required' });
@@ -203,13 +203,19 @@ export default function syncRoutes(db, syncClient, onChangeApplied) {
       });
     }
 
-    try {
-      const healthRes = await fetch(`${remote_url}/health`);
-      if (!healthRes.ok) throw new Error(`HTTP ${healthRes.status}`);
-      const health = await healthRes.json();
-      if (!health.ok) throw new Error('Server health check returned ok:false');
-    } catch (err) {
-      return res.status(502).json({ error: `Cannot reach remote server: ${err.message}` });
+    // Skip health check when caller already verified connectivity (e.g. App
+    // frontend successfully logged in + obtained sync token before calling
+    // connect).  Node.js fetch may fail in environments where the browser
+    // succeeds (proxy/VPN that only tunnels browser traffic).
+    if (!skip_health_check) {
+      try {
+        const healthRes = await fetch(`${remote_url}/health`);
+        if (!healthRes.ok) throw new Error(`HTTP ${healthRes.status}`);
+        const health = await healthRes.json();
+        if (!health.ok) throw new Error('Server health check returned ok:false');
+      } catch (err) {
+        return res.status(502).json({ error: `Cannot reach remote server: ${err.message}` });
+      }
     }
 
     const upsert = db.prepare(

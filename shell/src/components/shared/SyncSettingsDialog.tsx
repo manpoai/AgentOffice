@@ -100,6 +100,7 @@ export function SyncSettingsDialog({ open, onClose }: { open: boolean; onClose: 
           remote_url: gatewayUrl,
           remote_token: sync_token,
           device_id: token_id,
+          skip_health_check: true,
         }),
       });
       if (!connectRes.ok) {
