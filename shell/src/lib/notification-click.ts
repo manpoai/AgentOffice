@@ -36,16 +36,14 @@ export async function handleNotificationClick({ notif, router, queryClient, isMo
     return;
   }
 
-  const linkParams = new URLSearchParams(notif.link.split('?')[1] || '');
-  const targetId = linkParams.get('id');
-  const commentId = linkParams.get('comment_id');
+  const linkUrl = new URL(notif.link, window.location.origin);
+  const targetId = linkUrl.searchParams.get('id');
+  const commentId = linkUrl.searchParams.get('comment_id');
 
-  if (window.location.pathname === '/content' && targetId) {
+  if (linkUrl.pathname === '/content' && window.location.pathname === '/content' && targetId) {
     window.dispatchEvent(new CustomEvent('notification-navigate', {
       detail: { targetId, commentId },
     }));
-  } else if (isMobile) {
-    router.push(notif.link);
   } else {
     router.push(notif.link);
   }

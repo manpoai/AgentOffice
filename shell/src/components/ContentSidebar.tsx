@@ -22,10 +22,13 @@ import { ConnectAgentsOverlay } from '@/components/ConnectAgentsOverlay';
 import { SyncSettingsDialog } from '@/components/shared/SyncSettingsDialog';
 import { ConnectionsDialog } from '@/components/shared/ConnectionsDialog';
 import { IS_APP_MODE, API_BASE } from '@/lib/api/config';
-import { SidebarTopNav, type SidebarTab } from './SidebarTopNav';
+import { SidebarTopNav, TAB_ROUTES, type SidebarTab } from './SidebarTopNav';
 import { EmptyTabPage } from './EmptyTabPage';
 import { SidebarAgentBar } from './SidebarAgentBar';
 import { SidebarTerminal } from './SidebarTerminal';
+import { TasksSidebarPanel } from './sidebar/TasksSidebarPanel';
+import { SkillsSidebarPanel } from './sidebar/SkillsSidebarPanel';
+import { MemorySidebarPanel } from './sidebar/MemorySidebarPanel';
 
 interface ContentSidebarProps {
   collapsed: boolean;
@@ -42,6 +45,14 @@ interface ContentSidebarProps {
   onCreateByType: (type: CreatableType) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  onSidebarTabChange?: (tab: SidebarTab) => void;
+  onSelectedTaskChange?: (id: string | null) => void;
+  onSelectedSkillChange?: (id: string | null) => void;
+  onSelectedMemoryChange?: (id: string | null) => void;
+  routeTab?: SidebarTab;
+  routeSelectedTaskId?: string | null;
+  routeSelectedSkillId?: string | null;
+  routeSelectedMemoryAgentId?: string | null;
 }
 
 export function ContentSidebar({
@@ -59,6 +70,14 @@ export function ContentSidebar({
   onCreateByType,
   searchQuery,
   onSearchChange,
+  onSidebarTabChange,
+  onSelectedTaskChange,
+  onSelectedSkillChange,
+  onSelectedMemoryChange,
+  routeTab,
+  routeSelectedTaskId,
+  routeSelectedSkillId,
+  routeSelectedMemoryAgentId,
 }: ContentSidebarProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -82,13 +101,50 @@ export function ContentSidebar({
   const [showConnections, setShowConnections] = useState(false);
   const [showConnectAgents, setShowConnectAgents] = useState(false);
 
-  // New sidebar state
-  const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>(() => {
+  // New sidebar state — route-driven when routeTab is provided
+  const [_activeSidebarTab, _setActiveSidebarTab] = useState<SidebarTab>(() => {
+    if (routeTab) return routeTab;
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('aose-sidebar-tab') as SidebarTab) || 'files';
     }
     return 'files';
   });
+  const activeSidebarTab = routeTab ?? _activeSidebarTab;
+  const handleTabChange = useCallback((tab: SidebarTab) => {
+    if (routeTab !== undefined) {
+      router.push(TAB_ROUTES[tab]);
+    } else {
+      _setActiveSidebarTab(tab);
+    }
+  }, [routeTab, router]);
+  const [_selectedTaskId, _setSelectedTaskId] = useState<string | null>(null);
+  const selectedTaskId = routeSelectedTaskId !== undefined ? routeSelectedTaskId : _selectedTaskId;
+  const setSelectedTaskId = useCallback((id: string | null) => {
+    if (routeTab === 'tasks') {
+      router.push(id ? `/tasks/${id}` : '/tasks');
+    } else {
+      _setSelectedTaskId(id);
+    }
+  }, [routeTab, router]);
+  const [_selectedSkillId, _setSelectedSkillId] = useState<string | null>(null);
+  const selectedSkillId = routeSelectedSkillId !== undefined ? routeSelectedSkillId : _selectedSkillId;
+  const setSelectedSkillId = useCallback((id: string | null) => {
+    if (routeTab === 'skills') {
+      router.push(id ? `/skills/${id}` : '/skills');
+    } else {
+      _setSelectedSkillId(id);
+    }
+  }, [routeTab, router]);
+  const [_memoryAgentId, _setMemoryAgentId] = useState<string | null>(null);
+  const memoryAgentId = routeSelectedMemoryAgentId !== undefined ? routeSelectedMemoryAgentId : _memoryAgentId;
+  const setMemoryAgentId = useCallback((id: string | null) => {
+    if (routeTab === 'memory') {
+      router.push(id ? `/memory/${id}` : '/memory');
+    } else {
+      _setMemoryAgentId(id);
+    }
+  }, [routeTab, router]);
+
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('aose-sidebar-selected-agent');
@@ -133,10 +189,15 @@ export function ContentSidebar({
     };
   };
 
-  // Persist sidebar state
+  // Persist sidebar state + notify parent (only when not route-driven)
   useEffect(() => {
-    localStorage.setItem('aose-sidebar-tab', activeSidebarTab);
-  }, [activeSidebarTab]);
+    if (!routeTab) localStorage.setItem('aose-sidebar-tab', activeSidebarTab);
+    onSidebarTabChange?.(activeSidebarTab);
+  }, [activeSidebarTab, routeTab]);
+
+  useEffect(() => { onSelectedTaskChange?.(selectedTaskId); }, [selectedTaskId]);
+  useEffect(() => { onSelectedSkillChange?.(selectedSkillId); }, [selectedSkillId]);
+  useEffect(() => { onSelectedMemoryChange?.(memoryAgentId); }, [memoryAgentId]);
 
   useEffect(() => {
     if (selectedAgentId) {
@@ -490,7 +551,7 @@ export function ContentSidebar({
           {/* ─── Top Navigation ─── */}
           <SidebarTopNav
             activeTab={activeSidebarTab}
-            onTabChange={setActiveSidebarTab}
+            onTabChange={handleTabChange}
             onNotificationsClick={() => {
               setShowMessageMenu(v => !v);
               setShowAgentsMenu(false);
@@ -502,7 +563,8 @@ export function ContentSidebar({
             isElectron={isElectron}
           />
 
-          {/* ─── Search box ─── */}
+          {/* ─── Search box (Docs only) ─── */}
+          {activeSidebarTab === 'files' && (
           <div className="px-2 pt-1 mb-1 shrink-0">
             <div className="flex items-center gap-1">
               <button
@@ -525,6 +587,7 @@ export function ContentSidebar({
               </button>
             </div>
           </div>
+          )}
 
           {/* ─── Tab content ─── */}
           {activeSidebarTab === 'files' ? (
@@ -533,6 +596,12 @@ export function ContentSidebar({
                 {children}
               </div>
             </ScrollArea>
+          ) : activeSidebarTab === 'tasks' ? (
+            <TasksSidebarPanel />
+          ) : activeSidebarTab === 'skills' ? (
+            <SkillsSidebarPanel selectedSkillId={selectedSkillId} onSelectSkill={setSelectedSkillId} />
+          ) : activeSidebarTab === 'memory' ? (
+            <MemorySidebarPanel selectedAgentId={memoryAgentId} onSelectAgent={setMemoryAgentId} />
           ) : (
             <EmptyTabPage tab={activeSidebarTab} />
           )}

@@ -35,8 +35,14 @@ export function buildContextPayload(db, {
 function buildTarget(db, targetType, targetId) {
   let title = null;
   try {
-    const item = db.prepare('SELECT title FROM content_items WHERE id = ?').get(targetId);
-    title = item?.title || null;
+    if (targetType === 'task') {
+      const rawId = targetId.startsWith('task:') ? targetId.slice(5) : targetId;
+      const task = db.prepare('SELECT title FROM tasks WHERE id = ?').get(rawId);
+      title = task?.title || null;
+    } else {
+      const item = db.prepare('SELECT title FROM content_items WHERE id = ?').get(targetId);
+      title = item?.title || null;
+    }
   } catch { /* ignore */ }
 
   return {

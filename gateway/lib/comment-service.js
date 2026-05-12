@@ -57,10 +57,22 @@ export function createUnifiedComment(db, deps, opts) {
   const anchorMetaStr = anchorMeta ? JSON.stringify(anchorMeta) : null;
   const rowIdVal = anchorType === 'row' && anchorId ? anchorId : null;
   const dataJsonStr = dataJson ? JSON.stringify(dataJson) : null;
-  const contentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(targetId);
-  const contentTitle = db.prepare('SELECT title FROM content_items WHERE id = ?').get(targetId)?.title || '';
-  const ownerLang = contentOwner?.owner_actor_id
-    ? (db.prepare('SELECT preferred_language FROM actors WHERE id = ?').get(contentOwner.owner_actor_id)?.preferred_language || 'en')
+  let ownerActorId = null;
+  let contentTitle = '';
+
+  if (targetType === 'task') {
+    const rawTaskId = targetId.startsWith('task:') ? targetId.slice(5) : targetId;
+    const task = db.prepare('SELECT assignee_id, title FROM tasks WHERE id = ?').get(rawTaskId);
+    ownerActorId = task?.assignee_id || null;
+    contentTitle = task?.title || '';
+  } else {
+    const contentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(targetId);
+    ownerActorId = contentOwner?.owner_actor_id || null;
+    contentTitle = db.prepare('SELECT title FROM content_items WHERE id = ?').get(targetId)?.title || '';
+  }
+
+  const ownerLang = ownerActorId
+    ? (db.prepare('SELECT preferred_language FROM actors WHERE id = ?').get(ownerActorId)?.preferred_language || 'en')
     : 'en';
   const contextPayload = buildContextPayload(db, {
     targetType, targetId, anchorType, anchorId, anchorMeta, text, actorName, parentId, lang: ownerLang,
@@ -82,7 +94,7 @@ export function createUnifiedComment(db, deps, opts) {
     parentId,
     actorId,
     actorName,
-    ownerActorId: contentOwner?.owner_actor_id || null,
+    ownerActorId: ownerActorId,
     targetTitle: contentTitle,
     contextPayload,
     genId,
@@ -122,9 +134,17 @@ export function setUnifiedCommentResolved(db, deps, commentId, resolved, actorId
     : db.prepare('UPDATE comments SET resolved_by = NULL, resolved_at = NULL, updated_at = ? WHERE id = ?').run(now, commentId);
   if (result.changes === 0) return null;
   if (comment) {
-    const owner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(comment.target_id);
-    const ownerLang = owner?.owner_actor_id
-      ? (db.prepare('SELECT preferred_language FROM actors WHERE id = ?').get(owner.owner_actor_id)?.preferred_language || 'en')
+    let ownerActorId2 = null;
+    if (comment.target_type === 'task') {
+      const rawTaskId = comment.target_id.startsWith('task:') ? comment.target_id.slice(5) : comment.target_id;
+      const task = db.prepare('SELECT assignee_id FROM tasks WHERE id = ?').get(rawTaskId);
+      ownerActorId2 = task?.assignee_id || null;
+    } else {
+      const owner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(comment.target_id);
+      ownerActorId2 = owner?.owner_actor_id || null;
+    }
+    const ownerLang = ownerActorId2
+      ? (db.prepare('SELECT preferred_language FROM actors WHERE id = ?').get(ownerActorId2)?.preferred_language || 'en')
       : 'en';
     const contextPayload = buildContextPayload(db, {
       targetType: comment.target_type,
@@ -148,7 +168,7 @@ export function setUnifiedCommentResolved(db, deps, commentId, resolved, actorId
       parentId: comment.parent_id || null,
       actorId,
       actorName,
-      ownerActorId: owner?.owner_actor_id || null,
+      ownerActorId: ownerActorId2,
       contextPayload,
       genId,
       pushEvent,

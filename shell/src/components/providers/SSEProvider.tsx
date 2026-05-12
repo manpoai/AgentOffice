@@ -43,6 +43,14 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        if (event.event === 'task.created' || event.event === 'task.updated' || event.event === 'task.deleted') {
+          queryClient.invalidateQueries({ queryKey: ['tasks'] });
+          if (event.data?.task_id) {
+            queryClient.invalidateQueries({ queryKey: ['task', event.data.task_id] });
+            queryClient.invalidateQueries({ queryKey: ['task-activity', event.data.task_id] });
+          }
+        }
+
         if (event.event === 'message.sent') {
           console.log('[SSEProvider] invalidating agent-messages for', event.data?.agent_id);
           queryClient.invalidateQueries({ queryKey: ['agent-messages'] });
@@ -77,6 +85,7 @@ export function SSEProvider({ children }: { children: React.ReactNode }) {
       queryClient.invalidateQueries({ queryKey: ['comments'] });
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
       queryClient.invalidateQueries({ queryKey: ['document'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 

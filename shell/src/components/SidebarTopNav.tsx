@@ -1,9 +1,24 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
 
 export type SidebarTab = 'files' | 'tasks' | 'skills' | 'memory';
+
+const TAB_ROUTES: Record<SidebarTab, string> = {
+  files: '/content',
+  tasks: '/tasks',
+  skills: '/skills',
+  memory: '/memory',
+};
+
+export function tabFromPathname(pathname: string): SidebarTab {
+  if (pathname.startsWith('/tasks')) return 'tasks';
+  if (pathname.startsWith('/skills')) return 'skills';
+  if (pathname.startsWith('/memory')) return 'memory';
+  return 'files';
+}
+
+export { TAB_ROUTES };
 
 interface SidebarTopNavProps {
   activeTab: SidebarTab;
@@ -28,6 +43,28 @@ function TasksIcon({ className }: { className?: string }) {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
       <path fillRule="evenodd" clipRule="evenodd" d="M5.00146 4H9.75347C10.3496 4.00088 10.9211 4.23833 11.3423 4.66019C11.7635 5.08205 12.0001 5.65384 12.0001 6.25V12.5C12.5306 12.5 13.0393 12.2893 13.4143 11.9142C13.7894 11.5391 14.0001 11.0304 14.0001 10.5V4.072C14.0001 3.06867 13.2501 2.198 12.2241 2.112C12.0747 2.09986 11.9251 2.08875 11.7755 2.07867C11.6067 1.75353 11.3519 1.48098 11.0388 1.29076C10.7258 1.10054 10.3665 0.999966 10.0001 1H9.00013C8.63381 0.999966 8.27451 1.10054 7.96144 1.29076C7.64837 1.48098 7.39355 1.75353 7.2248 2.07867C7.0748 2.08867 6.9248 2.1 6.77613 2.112C5.7748 2.19667 5.03613 3.028 5.00146 4ZM9.00013 2C8.73492 2 8.48056 2.10536 8.29302 2.29289C8.10549 2.48043 8.00013 2.73478 8.00013 3H11.0001C11.0001 2.73478 10.8948 2.48043 10.7072 2.29289C10.5197 2.10536 10.2653 2 10.0001 2H9.00013Z" fill="currentColor" fillOpacity="0.3"/>
       <path fillRule="evenodd" clipRule="evenodd" d="M2 6.25C2 5.55933 2.56 5 3.25 5H9.75C10.4407 5 11 5.56 11 6.25V13.75C11 14.44 10.44 15 9.75 15H3.25C2.91848 15 2.60054 14.8683 2.36612 14.6339C2.1317 14.3995 2 14.0815 2 13.75V6.25ZM8.39067 9.31267C8.47359 9.20906 8.51196 9.07675 8.49733 8.94485C8.4827 8.81295 8.41628 8.69226 8.31267 8.60933C8.20906 8.52641 8.07675 8.48804 7.94485 8.50267C7.81295 8.5173 7.69226 8.58372 7.60933 8.68733L5.95867 10.7513L5.35333 10.1467C5.25855 10.0583 5.13319 10.0103 5.00365 10.0125C4.87412 10.0148 4.75053 10.0673 4.65892 10.1589C4.56731 10.2505 4.51484 10.3741 4.51255 10.5037C4.51026 10.6332 4.55835 10.7586 4.64667 10.8533L5.64667 11.8533C5.6964 11.9031 5.75606 11.9417 5.82175 11.9668C5.88744 11.9919 5.95769 12.0029 6.02791 11.999C6.09812 11.9951 6.16672 11.9764 6.22923 11.9442C6.29174 11.912 6.34675 11.8669 6.39067 11.812L8.39067 9.31267Z" fill="currentColor" fillOpacity="0.3"/>
+    </svg>
+  );
+}
+
+function SkillsIcon({ className }: { className?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <path d="M8 1L2 4.5V11.5L8 15L14 11.5V4.5L8 1Z" stroke="currentColor" strokeOpacity="0.3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M8 5V11" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M5 6.5L8 5L11 6.5" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M5 9.5L8 11L11 9.5" stroke="currentColor" strokeOpacity="0.5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function MemoryIcon({ className }: { className?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <path d="M8 1C4.68629 1 2 3.13401 2 5.75C2 7.47589 3.06355 8.98656 4.66667 9.83333V13L7.33333 11.3333H8C11.3137 11.3333 14 9.19929 14 6.58333C14 3.96738 11.3137 1 8 1Z" stroke="currentColor" strokeOpacity="0.3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="5.5" cy="6" r="0.75" fill="currentColor" fillOpacity="0.4"/>
+      <circle cx="8" cy="6" r="0.75" fill="currentColor" fillOpacity="0.4"/>
+      <circle cx="10.5" cy="6" r="0.75" fill="currentColor" fillOpacity="0.4"/>
     </svg>
   );
 }
@@ -100,11 +137,40 @@ export function SidebarTopNav({ activeTab, onTabChange, onNotificationsClick, on
           <DocsIcon className="h-4 w-4" />
         </button>
         <button
-          onClick={() => toast('Coming soon')}
-          className="p-1.5 rounded-md text-foreground/50 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+          onClick={() => onTabChange('tasks')}
+          className={cn(
+            'p-1.5 rounded-md transition-colors',
+            activeTab === 'tasks'
+              ? 'bg-sidebar-primary/10 text-sidebar-primary'
+              : 'text-foreground hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+          )}
           title="Tasks"
         >
           <TasksIcon className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => onTabChange('skills')}
+          className={cn(
+            'p-1.5 rounded-md transition-colors',
+            activeTab === 'skills'
+              ? 'bg-sidebar-primary/10 text-sidebar-primary'
+              : 'text-foreground hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+          )}
+          title="Skills"
+        >
+          <SkillsIcon className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => onTabChange('memory')}
+          className={cn(
+            'p-1.5 rounded-md transition-colors',
+            activeTab === 'memory'
+              ? 'bg-sidebar-primary/10 text-sidebar-primary'
+              : 'text-foreground hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
+          )}
+          title="Memory"
+        >
+          <MemoryIcon className="h-4 w-4" />
         </button>
 
         <div className="w-px h-3 bg-black/10 dark:bg-white/10 mx-1" />

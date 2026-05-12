@@ -794,3 +794,269 @@ export async function listAgentMessages(agentId: string, limit = 50, before?: nu
 export async function getSyncStatus(): Promise<{ sync_enabled: boolean; pending_changes: number; last_sync: number | null; device_id: string | null }> {
   return gwFetch('/sync/status');
 }
+
+// ── Tasks ──
+
+export interface Task {
+  id: string;
+  title: string;
+  text: string | null;
+  status: 'todo' | 'in_progress' | 'done' | 'failed' | 'cancelled';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  assignee_id: string | null;
+  created_by: string | null;
+  due_at: number | null;
+  completed_at: number | null;
+  parent_task_id: string | null;
+  schedule_id: string | null;
+  created_at: number;
+  updated_at: number;
+  attachments?: TaskAttachment[];
+}
+
+export interface TaskAttachment {
+  id: string;
+  task_id: string;
+  attachment_type: 'content' | 'skill' | 'memory';
+  attachment_id: string;
+  created_at: number;
+}
+
+export interface TaskSchedule {
+  id: string;
+  title: string;
+  cron: string;
+  schedule_type: 'once' | 'daily' | 'weekly';
+  timezone: string;
+  template_json: Record<string, unknown>;
+  enabled: boolean;
+  mode: 'create_task' | 'silent_run';
+  last_run_at?: number;
+  next_run_at?: number;
+  created_by?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listTasks(params?: { status?: string; assignee_id?: string; priority?: string; limit?: number; offset?: number }): Promise<{ tasks: Task[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set('status', params.status);
+  if (params?.assignee_id) qs.set('assignee_id', params.assignee_id);
+  if (params?.priority) qs.set('priority', params.priority);
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.offset) qs.set('offset', String(params.offset));
+  return gwFetch(`/tasks?${qs}`);
+}
+
+export async function getTask(taskId: string): Promise<Task> {
+  return gwFetch(`/tasks/${taskId}`);
+}
+
+export async function createTask(data: { title: string; text?: string; status?: string; priority?: string; assignee_id?: string; due_at?: number; parent_task_id?: string }): Promise<{ task_id: string }> {
+  return gwFetch('/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateTask(taskId: string, data: Partial<Pick<Task, 'title' | 'status' | 'priority' | 'assignee_id' | 'due_at' | 'schedule_id'> & { text?: string }>): Promise<{ ok: boolean }> {
+  return gwFetch(`/tasks/${taskId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteTask(taskId: string, opts?: { deleteSchedule?: boolean }): Promise<{ ok: boolean }> {
+  const qs = opts?.deleteSchedule ? '?delete_schedule=true' : '';
+  return gwFetch(`/tasks/${taskId}${qs}`, { method: 'DELETE' });
+}
+
+export async function addTaskAttachment(taskId: string, data: { attachment_type: string; attachment_id: string }): Promise<{ attachment_id: string }> {
+  return gwFetch(`/tasks/${taskId}/attachments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function removeTaskAttachment(taskId: string, attachmentId: string): Promise<{ ok: boolean }> {
+  return gwFetch(`/tasks/${taskId}/attachments/${attachmentId}`, { method: 'DELETE' });
+}
+
+export async function listTaskComments(taskId: string): Promise<Comment[]> {
+  const res = await gwFetch<{ comments: Comment[] }>(`/tasks/${taskId}/comments`);
+  return res.comments;
+}
+
+export async function createTaskComment(taskId: string, text: string, parentId?: string): Promise<Comment> {
+  return gwFetch(`/tasks/${taskId}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, parent_comment_id: parentId }),
+  });
+}
+
+export async function editTaskComment(taskId: string, commentId: string, text: string): Promise<Comment> {
+  return gwFetch(`/tasks/${taskId}/comments/${commentId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
+
+export async function deleteTaskComment(taskId: string, commentId: string): Promise<void> {
+  await gwFetch(`/tasks/${taskId}/comments/${commentId}`, { method: 'DELETE' });
+}
+
+export async function resolveTaskComment(taskId: string, commentId: string): Promise<Comment> {
+  return gwFetch(`/tasks/${taskId}/comments/${commentId}/resolve`, { method: 'POST' });
+}
+
+export async function unresolveTaskComment(taskId: string, commentId: string): Promise<Comment> {
+  return gwFetch(`/tasks/${taskId}/comments/${commentId}/unresolve`, { method: 'POST' });
+}
+
+export interface TaskActivity {
+  type: 'created' | 'status_change' | 'assignee_change' | 'priority_change';
+  actor: string;
+  timestamp: number;
+  detail: Record<string, unknown>;
+}
+
+export async function getTaskActivity(taskId: string): Promise<{ activity: TaskActivity[] }> {
+  return gwFetch(`/tasks/${taskId}/activity`);
+}
+
+export async function createSchedule(data: {
+  title: string;
+  cron: string;
+  schedule_type: string;
+  timezone?: string;
+  template_json: Record<string, unknown>;
+  mode?: string;
+}): Promise<{ schedule_id: string }> {
+  return gwFetch('/schedules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function listSchedules(): Promise<{ schedules: TaskSchedule[] }> {
+  return gwFetch('/schedules');
+}
+
+export async function getSchedule(scheduleId: string): Promise<TaskSchedule> {
+  return gwFetch(`/schedules/${scheduleId}`);
+}
+
+export async function updateSchedule(scheduleId: string, data: Partial<{ title: string; cron: string; schedule_type: string; timezone: string; template_json: Record<string, unknown>; enabled: boolean }>): Promise<{ ok: boolean }> {
+  return gwFetch(`/schedules/${scheduleId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteSchedule(scheduleId: string): Promise<void> {
+  await gwFetch(`/schedules/${scheduleId}`, { method: 'DELETE' });
+}
+
+// ── Skills ──
+
+export interface Skill {
+  id: string;
+  title: string;
+  source: 'builtin' | 'user';
+  text: string;
+  created_by: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listSkills(params?: { source?: string; limit?: number; offset?: number }): Promise<{ skills: Skill[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.source) qs.set('source', params.source);
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.offset) qs.set('offset', String(params.offset));
+  return gwFetch(`/skills?${qs}`);
+}
+
+export async function getSkill(skillId: string): Promise<Skill> {
+  return gwFetch(`/skills/${skillId}`);
+}
+
+export async function createSkill(data: { title: string; text: string }): Promise<{ skill_id: string }> {
+  return gwFetch('/skills', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateSkill(skillId: string, data: { title?: string; text?: string }): Promise<{ ok: boolean }> {
+  return gwFetch(`/skills/${skillId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteSkill(skillId: string): Promise<{ ok: boolean }> {
+  return gwFetch(`/skills/${skillId}`, { method: 'DELETE' });
+}
+
+// ── Memories ──
+
+export interface Memory {
+  id: string;
+  title: string;
+  content: string;
+  agent_id: string | null;
+  source: 'agent' | 'human';
+  related_task_id: string | null;
+  tags: string[];
+  created_by: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function listMemories(params?: { agent_id?: string; source?: string; tag?: string; limit?: number; offset?: number }): Promise<{ memories: Memory[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.agent_id) qs.set('agent_id', params.agent_id);
+  if (params?.source) qs.set('source', params.source);
+  if (params?.tag) qs.set('tag', params.tag);
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.offset) qs.set('offset', String(params.offset));
+  return gwFetch(`/memories?${qs}`);
+}
+
+export async function getMemory(memoryId: string): Promise<Memory> {
+  return gwFetch(`/memories/${memoryId}`);
+}
+
+export async function createMemory(data: { title: string; content: string; agent_id?: string; tags?: string[] }): Promise<{ memory_id: string }> {
+  return gwFetch('/memories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateMemory(memoryId: string, data: { title?: string; content?: string; tags?: string[] }): Promise<{ ok: boolean }> {
+  return gwFetch(`/memories/${memoryId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteMemory(memoryId: string): Promise<{ ok: boolean }> {
+  return gwFetch(`/memories/${memoryId}`, { method: 'DELETE' });
+}
+
+export async function getMemoryAgentsSummary(): Promise<{ agents: Array<{ agent_id: string; display_name: string; username: string; avatar_url: string | null; memory_count: number }> }> {
+  return gwFetch('/memories/agents/summary');
+}

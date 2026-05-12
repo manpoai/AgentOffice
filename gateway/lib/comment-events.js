@@ -8,12 +8,18 @@ import { insertNotification } from './notifications.js';
  * Build a navigation link for a comment notification.
  */
 export function buildCommentLink(targetId, anchorType, anchorId, commentId) {
-  let link = `/content?id=${encodeURIComponent(targetId)}`;
+  let link;
+  if (targetId.startsWith('task:')) {
+    const taskId = targetId.slice(5);
+    link = `/tasks/${encodeURIComponent(taskId)}`;
+  } else {
+    link = `/content?id=${encodeURIComponent(targetId)}`;
+  }
   if (anchorType && anchorId) {
-    link += `&anchor_type=${encodeURIComponent(anchorType)}&anchor_id=${encodeURIComponent(anchorId)}`;
+    link += `${link.includes('?') ? '&' : '?'}anchor_type=${encodeURIComponent(anchorType)}&anchor_id=${encodeURIComponent(anchorId)}`;
   }
   if (commentId) {
-    link += `&comment_id=${encodeURIComponent(commentId)}`;
+    link += `${link.includes('?') ? '&' : '?'}comment_id=${encodeURIComponent(commentId)}`;
   }
   return link;
 }

@@ -33,6 +33,12 @@ import {
   deleteContentComment,
   resolveContentComment,
   unresolveContentComment,
+  listTaskComments,
+  createTaskComment,
+  editTaskComment,
+  deleteTaskComment,
+  resolveTaskComment,
+  unresolveTaskComment,
   listAgents,
   resolveAvatarUrl,
   getSyncStatus,
@@ -41,7 +47,7 @@ import {
 } from '@/lib/api/gateway';
 
 export interface CommentPanelProps {
-  targetType: 'doc' | 'table' | 'presentation' | 'diagram' | 'canvas' | 'video';
+  targetType: 'doc' | 'table' | 'presentation' | 'diagram' | 'canvas' | 'video' | 'task';
   targetId: string;
   rowId?: string;
   anchorType?: string;
@@ -601,10 +607,14 @@ export function CommentPanel({
   // Determine if focusCommentId is in resolved set (set showResolved automatically)
   const focusRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const isTask = targetType === 'task';
+
   const { data: comments = [], isLoading } = useQuery<Comment[]>({
     queryKey,
     queryFn: () =>
-      listContentComments(targetId, rowId ? { anchor_type: 'row', anchor_id: rowId } : undefined),
+      isTask
+        ? listTaskComments(targetId)
+        : listContentComments(targetId, rowId ? { anchor_type: 'row', anchor_id: rowId } : undefined),
     staleTime: 5_000,
   });
 
@@ -658,11 +668,12 @@ export function CommentPanel({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [focusAnchor, comments]);
 
-  // Auto focus input when panel opens
+  // Auto focus input when panel opens (only if autoFocus is true)
   useEffect(() => {
+    if (autoFocus === false) return;
     const timer = setTimeout(() => inputRef.current?.focus(), 300);
     return () => clearTimeout(timer);
-  }, []);
+  }, [autoFocus]);
 
   // Clear typing indicators when agent replies arrive
   useEffect(() => {
@@ -682,6 +693,9 @@ export function CommentPanel({
 
   const createMut = useOptimisticMutation<Comment[], { text: string; parentId?: string }>({
     mutationFn: (vars) => {
+      if (isTask) {
+        return createTaskComment(targetId, vars.text, vars.parentId);
+      }
       const effectiveAnchorType = rowId ? 'row' : anchorType;
       const effectiveAnchorId = rowId || anchorId;
       const effectiveAnchorMeta = rowId ? undefined : anchorMeta;
@@ -714,7 +728,7 @@ export function CommentPanel({
   });
 
   const editMut = useOptimisticMutation<Comment[], { id: string; text: string }>({
-    mutationFn: (vars) => editContentComment(vars.id, vars.text),
+    mutationFn: (vars) => isTask ? editTaskComment(targetId, vars.id, vars.text) : editContentComment(vars.id, vars.text),
     queryKey,
     optimisticUpdate: (old = [], vars) =>
       old.map((c) => (c.id === vars.id ? { ...c, text: vars.text } : c)),
@@ -727,7 +741,7 @@ export function CommentPanel({
   });
 
   const deleteMut = useOptimisticMutation<Comment[], string>({
-    mutationFn: (id) => deleteContentComment(id),
+    mutationFn: (id) => isTask ? deleteTaskComment(targetId, id) : deleteContentComment(id),
     queryKey,
     optimisticUpdate: (old = [], id) => old.filter((c) => c.id !== id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
@@ -735,7 +749,7 @@ export function CommentPanel({
   });
 
   const resolveMut = useOptimisticMutation<Comment[], string>({
-    mutationFn: (id) => resolveContentComment(id),
+    mutationFn: (id) => isTask ? resolveTaskComment(targetId, id) : resolveContentComment(id),
     queryKey,
     optimisticUpdate: (old = [], id) =>
       old.map((c) => (c.id === id ? { ...c, resolved_at: new Date().toISOString(), resolved_by: { id: actor?.id ?? '', name: actor?.display_name ?? 'You' } } : c)),
@@ -747,7 +761,7 @@ export function CommentPanel({
   });
 
   const unresolveMut = useOptimisticMutation<Comment[], string>({
-    mutationFn: (id) => unresolveContentComment(id),
+    mutationFn: (id) => isTask ? unresolveTaskComment(targetId, id) : unresolveContentComment(id),
     queryKey,
     optimisticUpdate: (old = [], id) =>
       old.map((c) => (c.id === id ? { ...c, resolved_at: null, resolved_by: null } : c)),

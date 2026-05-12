@@ -14,6 +14,10 @@ import { registerVideoTools } from './tools/video.js';
 import { registerSearchTools } from './tools/search.js';
 import { registerRevisionTools } from './tools/revisions.js';
 import { registerMessageTools } from './tools/messages.js';
+import { registerTaskTools } from './tools/tasks.js';
+import { registerSkillTools } from './tools/skills.js';
+import { registerMemoryTools } from './tools/memories.js';
+import { registerScheduleTools } from './tools/schedules.js';
 
 /**
  * Build a fully-wired AOSE McpServer instance bound to the given base URL
@@ -59,6 +63,10 @@ export function buildAoseMcpServer({ baseUrl, token, name = 'aose', version = '0
   registerSearchTools(server, gw);
   registerRevisionTools(server, gw);
   registerMessageTools(server, gw);
+  registerTaskTools(server, gw);
+  registerSkillTools(server, gw);
+  registerMemoryTools(server, gw);
+  registerScheduleTools(server, gw);
 
   return { server, gw };
 }

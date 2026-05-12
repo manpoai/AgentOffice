@@ -52,6 +52,23 @@ export function translateEvent(event) {
     case 'message.received':
       return { content: poke(event.event) };
 
+    case 'task.assigned':
+      return {
+        content:
+          `[AOSE] New unread event (task.assigned). ` +
+          `Execute this EXACT sequence of tool calls:\n` +
+          `1. catchup_events — get the event payload with task_id\n` +
+          `2. get_task(task_id) — read the full task: title, text (description), and attachments\n` +
+          `3. For EACH attachment of type "skill": call get_skill(attachment_id) to read the skill content — these are your instructions\n` +
+          `4. update_task_status(task_id, "in_progress")\n` +
+          `5. Execute the task according to the description (text field) and skill instructions from step 3\n` +
+          `6. comment_on_task(task_id, "<your progress/result report>")\n` +
+          `7. update_task_status(task_id, "done")\n` +
+          `8. ack_events\n` +
+          `Do NOT skip any step. Do NOT reply with text only. ` +
+          `Any response without these tool calls is incorrect.`,
+      };
+
     case 'agent.approved':
       return {
         content:

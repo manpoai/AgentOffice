@@ -37,6 +37,7 @@ export function initDatabase(gatewayDir) {
   runMigrations(db);
   runWriteSmokeTest(db);
   seedExampleContent(db, gatewayDir);
+  seedSystemSkills(db, gatewayDir);
 
   return db;
 }
@@ -480,6 +481,101 @@ function runMigrations(db) {
     console.log('[gateway] DB migrated: added unique index on user_select_options(field_id, value)');
   } catch (e) { console.warn('[gateway] user_select_options unique index (may already exist or have duplicates):', e.message); }
 
+  // ─── Tasks / Skills / Memory tables ────────────
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      data_json TEXT,
+      text TEXT,
+      status TEXT NOT NULL DEFAULT 'todo' CHECK(status IN ('todo','in_progress','done','failed','cancelled')),
+      priority TEXT DEFAULT 'medium' CHECK(priority IN ('low','medium','high','urgent')),
+      assignee_id TEXT,
+      created_by TEXT,
+      due_at INTEGER,
+      completed_at INTEGER,
+      parent_task_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
+  } catch { /* already exists */ }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS task_attachments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      attachment_type TEXT NOT NULL CHECK(attachment_type IN ('content','skill','memory')),
+      attachment_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments(task_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_task_attachments_ref ON task_attachments(attachment_type, attachment_id)');
+  } catch { /* already exists */ }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS skills (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      data_json TEXT,
+      text TEXT,
+      source TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('builtin','user')),
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source)');
+  } catch { /* already exists */ }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS memories (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      content TEXT,
+      agent_id TEXT,
+      source TEXT NOT NULL DEFAULT 'human' CHECK(source IN ('agent','human')),
+      related_task_id TEXT,
+      tags TEXT,
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id)');
+  } catch { /* already exists */ }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS task_schedules (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      cron TEXT NOT NULL,
+      timezone TEXT DEFAULT 'UTC',
+      template_json TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      last_run_at INTEGER,
+      next_run_at INTEGER,
+      mode TEXT DEFAULT 'create_task' CHECK(mode IN ('create_task','silent_run')),
+      created_by TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`);
+  } catch { /* already exists */ }
+
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN schedule_id TEXT');
+    console.log('[gateway] DB migrated: added schedule_id column to tasks');
+  } catch { /* already exists */ }
+
+  try {
+    db.exec("ALTER TABLE task_schedules ADD COLUMN schedule_type TEXT DEFAULT 'daily'");
+    console.log('[gateway] DB migrated: added schedule_type column to task_schedules');
+  } catch { /* already exists */ }
+
+  try {
+    db.exec('ALTER TABLE tasks ADD COLUMN notified_at INTEGER');
+    console.log('[gateway] DB migrated: added notified_at column to tasks');
+  } catch { /* already exists */ }
+
   // Backfill description_key on old snapshots that have hardcoded Chinese description text
   try {
     const triggerKeyMap = {
@@ -587,6 +683,11 @@ function migrateTableComments(db) {
     ['agent_messages', 'id'],
     ['notifications', 'id'],
     ['preferences', 'key'],
+    ['tasks', 'id'],
+    ['task_attachments', 'id'],
+    ['skills', 'id'],
+    ['memories', 'id'],
+    ['task_schedules', 'id'],
   ];
 
   for (const [table, pk] of syncableTables) {
@@ -755,6 +856,31 @@ function migrateAgentAccounts(db) {
       console.log('[gateway] Dropped legacy agent_accounts table');
     }
   } catch (e) { console.warn('[gateway] agent_accounts migration:', e.message); }
+}
+
+function seedSystemSkills(db, gatewayDir) {
+  const count = db.prepare('SELECT COUNT(*) as n FROM skills WHERE source = ?').get('builtin').n;
+  if (count > 0) return;
+
+  const skillsDir = path.join(gatewayDir, '..', 'mcp-server', 'skills');
+  if (!fs.existsSync(skillsDir)) return;
+
+  const files = fs.readdirSync(skillsDir).filter(f => f.endsWith('.md')).sort();
+  if (files.length === 0) return;
+
+  const now = Date.now();
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO skills (id, title, text, source, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
+  let seeded = 0;
+  for (const file of files) {
+    const title = file.replace(/\.md$/, '');
+    const text = fs.readFileSync(path.join(skillsDir, file), 'utf8');
+    const id = `skill_builtin_${title.replace(/[^a-z0-9]/g, '_')}`;
+    insert.run(id, title, text, 'builtin', 'system', now, now);
+    seeded++;
+  }
+  if (seeded > 0) console.log(`[gateway] Seeded ${seeded} system skills`);
 }
 
 function seedExampleContent(db, gatewayDir) {

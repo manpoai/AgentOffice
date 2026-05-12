@@ -29,6 +29,10 @@ import { useAuth } from '@/lib/auth';
 import { useTheme } from 'next-themes';
 import { LogOut, Key, Globe, Camera, ChevronRight, Cloud } from 'lucide-react';
 import { ContentDocView, ContentDiagramView } from '@/components/content-views';
+import { TasksMainPanel } from '@/components/TasksMainPanel';
+import { SkillDetailPanel } from '@/components/SkillDetailPanel';
+import { MemoryDetailPanel } from '@/components/MemoryDetailPanel';
+import type { SidebarTab } from '@/components/SidebarTopNav';
 
 const TableEditor = dynamic(
   () => import('@/components/table-editor/TableEditor').then(m => ({ default: m.TableEditor })),
@@ -242,8 +246,23 @@ export default function ContentPage() {
   const [libraryCollapsed, setLibraryCollapsed] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<{ nodeId: string; hasChildren: boolean } | null>(null);
   const [docListVisible, setDocListVisible] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('aose-sidebar-collapsed') === 'true';
+    }
+    return false;
+  });
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      if (saved) return clampSidebarWidth(parseInt(saved, 10));
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  });
+  const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>('files');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [selectedMemoryAgentId, setSelectedMemoryAgentId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [showMobileNotifications, setShowMobileNotifications] = useState(false);
   const [focusCommentId, setFocusCommentId] = useState<string | undefined>(undefined);
@@ -288,12 +307,6 @@ export default function ContentPage() {
 
     setExpandedIds(new Set(loadExpandedState()));
     setTreeState(loadTreeState());
-    const savedCollapsed = localStorage.getItem('aose-sidebar-collapsed');
-    if (savedCollapsed === 'true') setSidebarCollapsed(true);
-    const savedSidebarWidth = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (savedSidebarWidth !== null) {
-      setSidebarWidth(clampSidebarWidth(Number(savedSidebarWidth)));
-    }
     setHydrated(true);
 
     // Listen for popstate events (SPA navigation from ContentLink clicks)
@@ -1142,6 +1155,11 @@ export default function ContentPage() {
         onCreateByType={(type) => handleCreateByType(type)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        onSidebarTabChange={setActiveSidebarTab}
+        onSelectedTaskChange={setSelectedTaskId}
+        onSelectedSkillChange={setSelectedSkillId}
+        onSelectedMemoryChange={setSelectedMemoryAgentId}
+        routeTab="files"
       >
         <>
             {isLoading && (

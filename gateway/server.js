@@ -26,6 +26,12 @@ import eventsRoutes from './routes/events.js';
 import syncRoutes from './routes/sync.js';
 import agentMessagesRoutes from './routes/agent-messages.js';
 import backupRoutes from './routes/backup.js';
+import tasksRoutes from './routes/tasks.js';
+import skillsRoutes from './routes/skills.js';
+import memoriesRoutes from './routes/memories.js';
+import schedulesRoutes from './routes/schedules.js';
+import { createTaskWatcher } from './lib/task-watcher.js';
+import { createScheduleManager } from './lib/schedule-manager.js';
 import { SyncWebSocketServer } from './lib/sync/ws.js';
 import { SyncClient } from './lib/sync/client.js';
 
@@ -87,7 +93,7 @@ const shared = {
   authenticateAny, authenticateAdmin, authenticateAgent,
   genId, hashToken, hashPassword, verifyPassword,
   contentItemsUpsert, syncContentItems, tableEngine,
-  pushEvent, pushHumanEvent, deliverWebhook, sseClients, humanClients, pollComments,
+  pushEvent, pushHumanEvent, broadcastHumanEvent, deliverWebhook, sseClients, humanClients, pollComments,
 };
 
 // ─── Sync client (created early so routes can reference it) ──
@@ -126,6 +132,17 @@ contentRoutes(app, shared);
 eventsRoutes(app, shared);
 agentMessagesRoutes(app, shared);
 backupRoutes(app, shared);
+tasksRoutes(app, shared);
+skillsRoutes(app, shared);
+memoriesRoutes(app, shared);
+schedulesRoutes(app, shared);
+
+const taskWatcher = createTaskWatcher(db, shared);
+const scheduleManager = createScheduleManager(db, { genId: shared.genId, broadcastHumanEvent: shared.broadcastHumanEvent, taskWatcher });
+taskWatcher.setScheduleManager(scheduleManager);
+shared.taskWatcher = taskWatcher;
+shared.scheduleManager = scheduleManager;
+
 const syncAuth = (req, res, next) => {
   const auth = req.headers.authorization;
   if (auth?.startsWith('Bearer ') && auth.slice(7) === ADMIN_TOKEN) return next();
