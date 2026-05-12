@@ -465,46 +465,61 @@ export class SyncClient {
     if (changes.length === 0) return;
 
     let pushed = false;
+    const payload = changes.map(c => ({
+      table_name: c.table_name,
+      row_id: c.row_id,
+      operation: c.operation,
+      data_json: c.data_json,
+      actor_id: c.actor_id,
+      timestamp: c.timestamp,
+    }));
 
-    try {
-      const res = await fetch(`${config.remoteUrl}/sync/push`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.remoteToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          protocol_version: SYNC_PROTOCOL_VERSION,
-          changes: changes.map(c => ({
-            table_name: c.table_name,
-            row_id: c.row_id,
-            operation: c.operation,
-            data_json: c.data_json,
-            actor_id: c.actor_id,
-            timestamp: c.timestamp,
-          })),
-        }),
-      });
-
-      if (res.ok) {
+    // Prefer WebSocket push — avoids TLS issues in some network environments
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ type: 'push', changes: payload }));
         const ids = changes.map(c => c.id);
         this.db.prepare(
           `UPDATE _sync_log SET synced = 1 WHERE id IN (${ids.map(() => '?').join(',')})`
         ).run(...ids);
-
         this.db.prepare(
           "INSERT OR REPLACE INTO _sync_meta (key, value) VALUES ('last_sync_timestamp', ?)"
         ).run(String(Date.now()));
-
         pushed = true;
-        this._authFailCount = 0;
-      } else if (res.status === 401 || res.status === 403) {
-        this._handleAuthFailure();
-      } else {
-        console.error(`[sync-client] HTTP push failed: ${res.status}`);
+      } catch (err) {
+        console.error('[sync-client] WS push failed, falling back to HTTP:', err.message);
       }
-    } catch (err) {
-      console.error('[sync-client] HTTP push failed:', err.message);
+    }
+
+    if (!pushed) {
+      try {
+        const res = await fetch(`${config.remoteUrl}/sync/push`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.remoteToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ protocol_version: SYNC_PROTOCOL_VERSION, changes: payload }),
+        });
+
+        if (res.ok) {
+          const ids = changes.map(c => c.id);
+          this.db.prepare(
+            `UPDATE _sync_log SET synced = 1 WHERE id IN (${ids.map(() => '?').join(',')})`
+          ).run(...ids);
+          this.db.prepare(
+            "INSERT OR REPLACE INTO _sync_meta (key, value) VALUES ('last_sync_timestamp', ?)"
+          ).run(String(Date.now()));
+          pushed = true;
+          this._authFailCount = 0;
+        } else if (res.status === 401 || res.status === 403) {
+          this._handleAuthFailure();
+        } else {
+          console.error(`[sync-client] HTTP push failed: ${res.status}`);
+        }
+      } catch (err) {
+        console.error('[sync-client] HTTP push failed:', err.message);
+      }
     }
 
     if (pushed) {
