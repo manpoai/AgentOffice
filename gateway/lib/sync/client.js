@@ -432,6 +432,7 @@ export class SyncClient {
       if (applyChange(this.db, change)) {
         applied++;
         if (this.onChangeApplied) this.onChangeApplied(change);
+        this._downloadReferencedFiles(change);
       }
     }
 
@@ -634,7 +635,10 @@ export class SyncClient {
 
       let applied = 0;
       for (const change of changes) {
-        if (applyChange(this.db, change)) applied++;
+        if (applyChange(this.db, change)) {
+          applied++;
+          this._downloadReferencedFiles(change);
+        }
       }
 
       if (cursor) {
