@@ -58,13 +58,18 @@ export function createUnifiedComment(db, deps, opts) {
   const rowIdVal = anchorType === 'row' && anchorId ? anchorId : null;
   const dataJsonStr = dataJson ? JSON.stringify(dataJson) : null;
   let ownerActorId = null;
+  let additionalOwnerIds = [];
   let contentTitle = '';
 
   if (targetType === 'task') {
     const rawTaskId = targetId.startsWith('task:') ? targetId.slice(5) : targetId;
-    const task = db.prepare('SELECT assignee_id, title FROM tasks WHERE id = ?').get(rawTaskId);
+    const task = db.prepare('SELECT assignee_id, created_by, title FROM tasks WHERE id = ?').get(rawTaskId);
     ownerActorId = task?.assignee_id || null;
     contentTitle = task?.title || '';
+    if (task?.created_by && task.created_by !== ownerActorId) {
+      const creatorActor = db.prepare('SELECT id FROM actors WHERE username = ? OR display_name = ? OR id = ?').get(task.created_by, task.created_by, task.created_by);
+      if (creatorActor && creatorActor.id !== ownerActorId) additionalOwnerIds.push(creatorActor.id);
+    }
   } else {
     const contentOwner = db.prepare('SELECT owner_actor_id FROM content_items WHERE id = ?').get(targetId);
     ownerActorId = contentOwner?.owner_actor_id || null;
@@ -95,6 +100,7 @@ export function createUnifiedComment(db, deps, opts) {
     actorId,
     actorName,
     ownerActorId: ownerActorId,
+    additionalOwnerIds,
     targetTitle: contentTitle,
     contextPayload,
     genId,

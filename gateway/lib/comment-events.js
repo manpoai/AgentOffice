@@ -72,6 +72,7 @@ export function emitCommentEvent(db, {
   actorId,
   actorName,
   ownerActorId,
+  additionalOwnerIds = [],
   targetTitle,
   contextPayload,
   genId,
@@ -98,52 +99,61 @@ export function emitCommentEvent(db, {
   // Track already-notified actors to avoid duplicate notifications
   const notifiedActors = new Set();
 
-  // ── 0. Notify content owner on new comment/reply ──
-  if ((eventType === 'comment.created' || eventType === 'comment.reply') && ownerActorId && ownerActorId !== actorId) {
-    try {
-      const ownerActor = db.prepare("SELECT * FROM actors WHERE id = ?").get(ownerActorId);
-      if (ownerActor?.type === 'human') {
-        notifiedActors.add(ownerActorId);
-        createNotification(db, {
-          genId,
-          actorId,
-          targetActorId: ownerActorId,
-          type: 'comment_on_content',
-          titleKey: targetTitle
-            ? 'serverNotifications.comments.comment_on_content_titled'
-            : 'serverNotifications.comments.comment_on_content',
-          titleParams: { actor: actorName, title: targetTitle || '' },
-          body: contextPayload?.summary?.comment_text || (text || '').substring(0, 200),
-          link,
-          meta: {
-            target_type: targetType,
-            target_id: targetId,
-            target_title: targetTitle || null,
-          },
-        });
-        if (pushHumanEvent) pushHumanEvent(ownerActorId, { event: 'notification.created', data: { type: 'comment_on_content', target_actor_id: ownerActorId } });
-      } else if (ownerActor?.type === 'agent' && pushEvent) {
-        notifiedActors.add(ownerActorId);
-        const evt = {
-          event: 'comment.on_owned_content',
-          source: 'comments',
-          event_id: genId('evt'),
-          timestamp: nowMs,
-          data: { ...basePayload },
-        };
-        try {
-          db.prepare(
-            `INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
-          ).run(evt.event_id, ownerActor.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), nowMs);
-        } catch (e) {
-          console.error(`[comment-events] Owner event INSERT error: ${e.message}`);
+  // ── 0. Notify content owners on new comment/reply ──
+  // ownerActorId = primary owner (assignee for tasks, content owner for docs)
+  // additionalOwnerIds = secondary owners (e.g. task creator)
+  const allOwnerIds = [ownerActorId, ...additionalOwnerIds].filter(Boolean);
+  const uniqueOwnerIds = [...new Set(allOwnerIds)];
+
+  if (eventType === 'comment.created' || eventType === 'comment.reply') {
+    for (const ownerId of uniqueOwnerIds) {
+      if (ownerId === actorId) continue;
+      if (notifiedActors.has(ownerId)) continue;
+      try {
+        const ownerActor = db.prepare("SELECT * FROM actors WHERE id = ?").get(ownerId);
+        if (ownerActor?.type === 'human') {
+          notifiedActors.add(ownerId);
+          createNotification(db, {
+            genId,
+            actorId,
+            targetActorId: ownerId,
+            type: 'comment_on_content',
+            titleKey: targetTitle
+              ? 'serverNotifications.comments.comment_on_content_titled'
+              : 'serverNotifications.comments.comment_on_content',
+            titleParams: { actor: actorName, title: targetTitle || '' },
+            body: contextPayload?.summary?.comment_text || (text || '').substring(0, 200),
+            link,
+            meta: {
+              target_type: targetType,
+              target_id: targetId,
+              target_title: targetTitle || null,
+            },
+          });
+          if (pushHumanEvent) pushHumanEvent(ownerId, { event: 'notification.created', data: { type: 'comment_on_content', target_actor_id: ownerId } });
+        } else if (ownerActor?.type === 'agent' && pushEvent) {
+          notifiedActors.add(ownerId);
+          const evt = {
+            event: 'comment.on_owned_content',
+            source: 'comments',
+            event_id: genId('evt'),
+            timestamp: nowMs,
+            data: { ...basePayload },
+          };
+          try {
+            db.prepare(
+              `INSERT INTO events (id, agent_id, event_type, source, occurred_at, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            ).run(evt.event_id, ownerActor.id, evt.event, evt.source, evt.timestamp, JSON.stringify(evt), nowMs);
+          } catch (e) {
+            console.error(`[comment-events] Owner event INSERT error: ${e.message}`);
+          }
+          pushEvent(ownerActor.id, evt);
+          if (ownerActor.webhook_url && deliverWebhook) deliverWebhook(ownerActor, evt).catch(() => {});
+          console.log(`[comment-events] comment.on_owned_content → ${ownerActor.username} (${targetId})`);
         }
-        pushEvent(ownerActor.id, evt);
-        if (ownerActor.webhook_url && deliverWebhook) deliverWebhook(ownerActor, evt).catch(() => {});
-        console.log(`[comment-events] comment.on_owned_content → ${ownerActor.username} (${targetId})`);
+      } catch (e) {
+        console.error(`[comment-events] Owner notification error: ${e.message}`);
       }
-    } catch (e) {
-      console.error(`[comment-events] Owner notification error: ${e.message}`);
     }
   }
 
