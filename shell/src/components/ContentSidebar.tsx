@@ -121,7 +121,7 @@ export function ContentSidebar({
   const selectedTaskId = routeSelectedTaskId !== undefined ? routeSelectedTaskId : _selectedTaskId;
   const setSelectedTaskId = useCallback((id: string | null) => {
     if (routeTab === 'tasks') {
-      router.push(id ? `/tasks/${id}` : '/tasks');
+      router.push(id ? `/tasks?id=${id}` : '/tasks');
     } else {
       _setSelectedTaskId(id);
     }
