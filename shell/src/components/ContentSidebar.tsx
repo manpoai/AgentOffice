@@ -130,7 +130,7 @@ export function ContentSidebar({
   const selectedSkillId = routeSelectedSkillId !== undefined ? routeSelectedSkillId : _selectedSkillId;
   const setSelectedSkillId = useCallback((id: string | null) => {
     if (routeTab === 'skills') {
-      router.push(id ? `/skills/${id}` : '/skills');
+      router.push(id ? `/skills?id=${id}` : '/skills');
     } else {
       _setSelectedSkillId(id);
     }
@@ -139,7 +139,7 @@ export function ContentSidebar({
   const memoryAgentId = routeSelectedMemoryAgentId !== undefined ? routeSelectedMemoryAgentId : _memoryAgentId;
   const setMemoryAgentId = useCallback((id: string | null) => {
     if (routeTab === 'memory') {
-      router.push(id ? `/memory/${id}` : '/memory');
+      router.push(id ? `/memory?id=${id}` : '/memory');
     } else {
       _setMemoryAgentId(id);
     }

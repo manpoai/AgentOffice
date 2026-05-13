@@ -11,7 +11,7 @@ export function buildCommentLink(targetId, anchorType, anchorId, commentId) {
   let link;
   if (targetId.startsWith('task:')) {
     const taskId = targetId.slice(5);
-    link = `/tasks/${encodeURIComponent(taskId)}`;
+    link = `/tasks?id=${encodeURIComponent(taskId)}`;
   } else {
     link = `/content?id=${encodeURIComponent(targetId)}`;
   }

@@ -44,6 +44,10 @@ export async function handleNotificationClick({ notif, router, queryClient, isMo
     window.dispatchEvent(new CustomEvent('notification-navigate', {
       detail: { targetId, commentId },
     }));
+  } else if (linkUrl.pathname === '/tasks' && window.location.pathname === '/tasks' && targetId) {
+    window.dispatchEvent(new CustomEvent('notification-navigate-task', {
+      detail: { taskId: targetId, commentId },
+    }));
   } else {
     router.push(notif.link);
   }
