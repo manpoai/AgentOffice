@@ -594,6 +594,37 @@ function runMigrations(db) {
     }
     if (backfilled > 0) console.log(`[gateway] DB migrated: backfilled description_key on ${backfilled} content_snapshots`);
   } catch (e) { console.warn('[gateway] snapshot description_key backfill:', e.message); }
+
+  // OAuth tables for MCP connector agents
+  db.exec(`CREATE TABLE IF NOT EXISTS oauth_codes (
+    code TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    redirect_uri TEXT NOT NULL,
+    code_challenge TEXT NOT NULL,
+    code_challenge_method TEXT DEFAULT 'S256',
+    scope TEXT,
+    resource TEXT,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch())
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS oauth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    token_type TEXT NOT NULL,
+    scope TEXT,
+    resource TEXT,
+    expires_at INTEGER,
+    created_at INTEGER DEFAULT (unixepoch()),
+    FOREIGN KEY (agent_id) REFERENCES actors(id)
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS oauth_clients (
+    client_id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL,
+    redirect_uris TEXT NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch())
+  )`);
 }
 
 function migrateTableComments(db) {
