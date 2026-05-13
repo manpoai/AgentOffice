@@ -100,6 +100,8 @@ export function ContentSidebar({
   const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
   const [showConnectAgents, setShowConnectAgents] = useState(false);
+  const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
+  const [disconnectingConnector, setDisconnectingConnector] = useState<string | null>(null);
 
   // New sidebar state — route-driven when routeTab is provided
   const [_activeSidebarTab, _setActiveSidebarTab] = useState<SidebarTab>(() => {
@@ -922,28 +924,68 @@ export function ContentSidebar({
                           )}
                           <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium text-foreground/40 uppercase tracking-wider">Connectors</div>
                           {connectorList.map(agent => {
+                            const agentId = agent.agent_id || agent.name;
                             const avatarUrl = gw.resolveAvatarUrl(agent.avatar_url);
                             const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
+                            const isExpanded = expandedConnector === agentId;
                             return (
-                              <div
-                                key={agent.name}
-                                className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-left opacity-70"
-                              >
-                                <div className="w-8 h-8 rounded-full bg-muted overflow-hidden shrink-0">
-                                  {avatarUrl ? (
-                                    <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-                                  ) : platformFallback ? (
-                                    <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-foreground/30">
-                                      <Users className="h-4 w-4" />
-                                    </div>
+                              <div key={agentId}>
+                                <button
+                                  onClick={() => setExpandedConnector(isExpanded ? null : agentId)}
+                                  className={cn(
+                                    'w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-left transition-colors',
+                                    isExpanded ? 'bg-black/[0.05] dark:bg-white/[0.05]' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.03]',
                                   )}
-                                </div>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
-                                  <span className="text-xs text-green-500">Connected</span>
-                                </div>
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-muted overflow-hidden shrink-0">
+                                    {avatarUrl ? (
+                                      <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                                    ) : platformFallback ? (
+                                      <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-foreground/30">
+                                        <Users className="h-4 w-4" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
+                                    <span className="text-xs text-green-500">Connected</span>
+                                  </div>
+                                  <ChevronDown className={cn('h-3.5 w-3.5 text-foreground/30 transition-transform', isExpanded && 'rotate-180')} />
+                                </button>
+                                {isExpanded && (
+                                  <div className="mx-2 mb-1 p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-lg space-y-2">
+                                    <div className="text-xs text-foreground/50">
+                                      <span className="font-medium">Platform:</span> {agent.platform}
+                                    </div>
+                                    <div className="text-xs text-foreground/50">
+                                      <span className="font-medium">Agent:</span> {agent.name}
+                                    </div>
+                                    {disconnectingConnector === agentId ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-red-500">{t('actions.confirmDelete')}</span>
+                                        <button
+                                          onClick={async () => {
+                                            try { await gw.deleteAgent(agentId); queryClient.invalidateQueries({ queryKey: ['admin-agents'] }); } catch {}
+                                            setDisconnectingConnector(null);
+                                            setExpandedConnector(null);
+                                          }}
+                                          className="px-2 py-1 text-xs font-medium text-white bg-red-500 rounded hover:bg-red-600"
+                                        >Disconnect</button>
+                                        <button onClick={() => setDisconnectingConnector(null)} className="px-2 py-1 text-xs text-foreground/60 bg-black/[0.05] rounded">{t('common.cancel')}</button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        onClick={() => setDisconnectingConnector(agentId)}
+                                        className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 transition-colors"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                        Disconnect
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
