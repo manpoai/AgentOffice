@@ -604,7 +604,7 @@ export function ContentSidebar({
           ) : activeSidebarTab === 'tasks' ? (
             <TasksSidebarPanel />
           ) : activeSidebarTab === 'skills' ? (
-            <SkillsSidebarPanel selectedSkillId={selectedSkillId} onSelectSkill={setSelectedSkillId} />
+            <SkillsSidebarPanel />
           ) : activeSidebarTab === 'memory' ? (
             <MemorySidebarPanel selectedAgentId={memoryAgentId} onSelectAgent={setMemoryAgentId} />
           ) : (

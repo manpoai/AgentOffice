@@ -17,13 +17,12 @@ const Editor = dynamic(
 interface SkillDetailPanelProps {
   selectedSkillId: string | null;
   onSelectSkill: (id: string | null) => void;
+  sourceFilter?: string;
   docListVisible: boolean;
   onToggleDocList: () => void;
 }
 
-export function SkillDetailPanel({ selectedSkillId, onSelectSkill, docListVisible, onToggleDocList }: SkillDetailPanelProps) {
-  const queryClient = useQueryClient();
-
+export function SkillDetailPanel({ selectedSkillId, onSelectSkill, sourceFilter, docListVisible, onToggleDocList }: SkillDetailPanelProps) {
   if (selectedSkillId) {
     return (
       <SkillEditorView
@@ -37,6 +36,7 @@ export function SkillDetailPanel({ selectedSkillId, onSelectSkill, docListVisibl
 
   return (
     <SkillGridView
+      sourceFilter={sourceFilter}
       onSelectSkill={onSelectSkill}
       docListVisible={docListVisible}
       onToggleDocList={onToggleDocList}
@@ -44,7 +44,8 @@ export function SkillDetailPanel({ selectedSkillId, onSelectSkill, docListVisibl
   );
 }
 
-function SkillGridView({ onSelectSkill, docListVisible, onToggleDocList }: {
+function SkillGridView({ sourceFilter, onSelectSkill, docListVisible, onToggleDocList }: {
+  sourceFilter?: string;
   onSelectSkill: (id: string) => void;
   docListVisible: boolean;
   onToggleDocList: () => void;
@@ -53,8 +54,8 @@ function SkillGridView({ onSelectSkill, docListVisible, onToggleDocList }: {
   const [creating, setCreating] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['skills'],
-    queryFn: () => gw.listSkills({ limit: 200 }),
+    queryKey: ['skills', sourceFilter || ''],
+    queryFn: () => gw.listSkills({ source: sourceFilter || undefined, limit: 200 }),
   });
 
   const skills = data?.skills || [];

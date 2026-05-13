@@ -173,15 +173,28 @@ export default function oauthRoutes(app, shared) {
     ).get(platform);
 
     if (!agent) {
-      const agentId = genId('agt');
-      const agentToken = crypto.randomBytes(32).toString('hex');
-      const displayName = PLATFORM_DISPLAY_NAMES[platform] || platform;
-      db.prepare(
-        `INSERT INTO actors (id, type, username, display_name, platform, agent_kind, token_hash, pending_approval, online, created_at, updated_at)
-         VALUES (?, 'agent', ?, ?, ?, 'connector', ?, 0, 0, ?, ?)`
-      ).run(agentId, `${platform}-connector`, displayName, platform, hashToken(agentToken), Date.now(), Date.now());
-      agent = { id: agentId };
-      console.log(`[oauth] Created connector agent: ${displayName} (${agentId}) for platform ${platform}`);
+      const deleted = db.prepare(
+        "SELECT id FROM actors WHERE type = 'agent' AND agent_kind = 'connector' AND platform = ? AND deleted_at IS NOT NULL"
+      ).get(platform);
+
+      if (deleted) {
+        const agentToken = crypto.randomBytes(32).toString('hex');
+        db.prepare(
+          `UPDATE actors SET deleted_at = NULL, token_hash = ?, updated_at = ? WHERE id = ?`
+        ).run(hashToken(agentToken), Date.now(), deleted.id);
+        agent = { id: deleted.id };
+        console.log(`[oauth] Restored connector agent: ${deleted.id} for platform ${platform}`);
+      } else {
+        const agentId = genId('agt');
+        const agentToken = crypto.randomBytes(32).toString('hex');
+        const displayName = PLATFORM_DISPLAY_NAMES[platform] || platform;
+        db.prepare(
+          `INSERT INTO actors (id, type, username, display_name, platform, agent_kind, token_hash, pending_approval, online, created_at, updated_at)
+           VALUES (?, 'agent', ?, ?, ?, 'connector', ?, 0, 0, ?, ?)`
+        ).run(agentId, `${platform}-connector`, displayName, platform, hashToken(agentToken), Date.now(), Date.now());
+        agent = { id: agentId };
+        console.log(`[oauth] Created connector agent: ${displayName} (${agentId}) for platform ${platform}`);
+      }
     }
 
     // Generate authorization code

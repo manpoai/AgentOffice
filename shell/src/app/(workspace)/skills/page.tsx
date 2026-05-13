@@ -9,17 +9,23 @@ export default function SkillsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedSkillId = searchParams.get('id');
+  const sourceFilter = searchParams.get('source') || '';
   const [docListVisible, setDocListVisible] = useState(true);
 
   const handleSelectSkill = useCallback((id: string | null) => {
-    router.push(id ? `/skills?id=${id}` : '/skills');
-  }, [router]);
+    const params = new URLSearchParams();
+    if (id) params.set('id', id);
+    if (sourceFilter) params.set('source', sourceFilter);
+    const qs = params.toString();
+    router.push(qs ? `/skills?${qs}` : '/skills');
+  }, [router, sourceFilter]);
 
   return (
     <WorkspacePageWrapper routeTab="skills" routeSelectedSkillId={selectedSkillId}>
       <SkillDetailPanel
         selectedSkillId={selectedSkillId}
         onSelectSkill={handleSelectSkill}
+        sourceFilter={sourceFilter}
         docListVisible={docListVisible}
         onToggleDocList={() => setDocListVisible(v => !v)}
       />
