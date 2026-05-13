@@ -100,8 +100,11 @@ export function ContentSidebar({
   const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [showConnections, setShowConnections] = useState(false);
   const [showConnectAgents, setShowConnectAgents] = useState(false);
-  const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
-  const [disconnectingConnector, setDisconnectingConnector] = useState<string | null>(null);
+  const [managingConnector, setManagingConnector] = useState<gw.Agent | null>(null);
+  const [connectorEditName, setConnectorEditName] = useState('');
+  const [connectorEditingName, setConnectorEditingName] = useState(false);
+  const [connectorDeleting, setConnectorDeleting] = useState(false);
+  const connectorAvatarRef = useRef<HTMLInputElement>(null);
 
   // New sidebar state — route-driven when routeTab is provided
   const [_activeSidebarTab, _setActiveSidebarTab] = useState<SidebarTab>(() => {
@@ -924,69 +927,36 @@ export function ContentSidebar({
                           )}
                           <div className="px-2 pt-1 pb-0.5 text-[10px] font-medium text-foreground/40 uppercase tracking-wider">Connectors</div>
                           {connectorList.map(agent => {
-                            const agentId = agent.agent_id || agent.name;
                             const avatarUrl = gw.resolveAvatarUrl(agent.avatar_url);
                             const platformFallback = agent.platform ? `/icons/platform-${agent.platform}.png` : null;
-                            const isExpanded = expandedConnector === agentId;
                             return (
-                              <div key={agentId}>
-                                <button
-                                  onClick={() => setExpandedConnector(isExpanded ? null : agentId)}
-                                  className={cn(
-                                    'w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-left transition-colors',
-                                    isExpanded ? 'bg-black/[0.05] dark:bg-white/[0.05]' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.03]',
+                              <button
+                                key={agent.name}
+                                onClick={() => {
+                                  setShowAgentsMenu(false);
+                                  setManagingConnector(agent);
+                                  setConnectorEditName(agent.display_name || agent.name);
+                                  setConnectorEditingName(false);
+                                  setConnectorDeleting(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg text-left hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors"
+                              >
+                                <div className="w-8 h-8 rounded-full bg-muted overflow-hidden shrink-0">
+                                  {avatarUrl ? (
+                                    <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                                  ) : platformFallback ? (
+                                    <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-foreground/30">
+                                      <Users className="h-4 w-4" />
+                                    </div>
                                   )}
-                                >
-                                  <div className="w-8 h-8 rounded-full bg-muted overflow-hidden shrink-0">
-                                    {avatarUrl ? (
-                                      <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
-                                    ) : platformFallback ? (
-                                      <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                    ) : (
-                                      <div className="w-full h-full flex items-center justify-center text-foreground/30">
-                                        <Users className="h-4 w-4" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex flex-col min-w-0 flex-1">
-                                    <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
-                                    <span className="text-xs text-green-500">Connected</span>
-                                  </div>
-                                  <ChevronDown className={cn('h-3.5 w-3.5 text-foreground/30 transition-transform', isExpanded && 'rotate-180')} />
-                                </button>
-                                {isExpanded && (
-                                  <div className="mx-2 mb-1 p-3 bg-black/[0.03] dark:bg-white/[0.03] rounded-lg space-y-2">
-                                    <div className="text-xs text-foreground/50">
-                                      <span className="font-medium">Platform:</span> {agent.platform}
-                                    </div>
-                                    <div className="text-xs text-foreground/50">
-                                      <span className="font-medium">Agent:</span> {agent.name}
-                                    </div>
-                                    {disconnectingConnector === agentId ? (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-xs text-red-500">{t('actions.confirmDelete')}</span>
-                                        <button
-                                          onClick={async () => {
-                                            try { await gw.deleteAgent(agentId); queryClient.invalidateQueries({ queryKey: ['admin-agents'] }); } catch {}
-                                            setDisconnectingConnector(null);
-                                            setExpandedConnector(null);
-                                          }}
-                                          className="px-2 py-1 text-xs font-medium text-white bg-red-500 rounded hover:bg-red-600"
-                                        >Disconnect</button>
-                                        <button onClick={() => setDisconnectingConnector(null)} className="px-2 py-1 text-xs text-foreground/60 bg-black/[0.05] rounded">{t('common.cancel')}</button>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        onClick={() => setDisconnectingConnector(agentId)}
-                                        className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 transition-colors"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                        Disconnect
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                                </div>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="text-sm font-medium text-foreground truncate">{agent.display_name || agent.name}</span>
+                                  <span className="text-xs text-green-500">Connected</span>
+                                </div>
+                              </button>
                             );
                           })}
                         </>
@@ -1110,6 +1080,140 @@ export function ContentSidebar({
       <ConnectAgentsOverlay open={showConnectAgents} onClose={() => setShowConnectAgents(false)} />
       <SyncSettingsDialog open={showSyncSettings} onClose={() => setShowSyncSettings(false)} />
       <ConnectionsDialog open={showConnections} onClose={() => setShowConnections(false)} />
+
+      {/* ─── Connector Agent management dialog ─── */}
+      {managingConnector && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/30" onClick={() => setManagingConnector(null)} />
+          <div className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] bg-white dark:bg-card border border-black/10 dark:border-border rounded-xl shadow-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-foreground">{managingConnector.display_name || managingConnector.name}</h3>
+              <button onClick={() => setManagingConnector(null)} className="p-1 rounded hover:bg-black/[0.05] dark:hover:bg-white/[0.1] transition-colors">
+                <Trash2 className="h-3.5 w-3.5 text-foreground/40 hidden" />
+                <span className="text-foreground/40 text-lg leading-none">&times;</span>
+              </button>
+            </div>
+
+            {/* Avatar */}
+            <div className="flex flex-col items-center mb-4">
+              <input ref={connectorAvatarRef} type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !managingConnector) return;
+                const agentId = managingConnector.agent_id || managingConnector.name;
+                try {
+                  await gw.adminUploadAgentAvatar(agentId, file);
+                  queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                  const updated = (await gw.listAllAgents())?.find(a => (a.agent_id || a.name) === agentId);
+                  if (updated) setManagingConnector(updated);
+                } catch {}
+                e.target.value = '';
+              }} />
+              <div
+                className="w-16 h-16 rounded-full bg-muted overflow-hidden border border-black/10 relative group cursor-pointer mb-2"
+                onClick={() => connectorAvatarRef.current?.click()}
+              >
+                {(() => {
+                  const avatarUrl = gw.resolveAvatarUrl(managingConnector.avatar_url);
+                  const platformFallback = managingConnector.platform ? `/icons/platform-${managingConnector.platform}.png` : null;
+                  return avatarUrl
+                    ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+                    : platformFallback
+                      ? <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                      : <div className="w-full h-full flex items-center justify-center"><Users className="h-6 w-6 text-foreground/30" /></div>;
+                })()}
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
+                  <Camera className="h-4 w-4 text-white" />
+                </div>
+              </div>
+              <span className="text-[10px] text-foreground/40">Click to change avatar</span>
+            </div>
+
+            {/* Name */}
+            <div className="mb-4">
+              <label className="text-xs font-medium text-foreground/50 mb-1 block">Name</label>
+              {connectorEditingName ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    className="flex-1 text-sm text-foreground bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={connectorEditName}
+                    onChange={e => setConnectorEditName(e.target.value)}
+                    onKeyDown={async e => {
+                      if (e.key === 'Enter') {
+                        const trimmed = connectorEditName.trim();
+                        if (trimmed && trimmed !== (managingConnector.display_name || managingConnector.name)) {
+                          const agentId = managingConnector.agent_id || managingConnector.name;
+                          try {
+                            await gw.adminUpdateAgent(agentId, { display_name: trimmed });
+                            queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                            setManagingConnector({ ...managingConnector, display_name: trimmed });
+                          } catch {}
+                        }
+                        setConnectorEditingName(false);
+                      }
+                      if (e.key === 'Escape') setConnectorEditingName(false);
+                    }}
+                    autoFocus
+                  />
+                  <button onClick={async () => {
+                    const trimmed = connectorEditName.trim();
+                    if (trimmed && trimmed !== (managingConnector.display_name || managingConnector.name)) {
+                      const agentId = managingConnector.agent_id || managingConnector.name;
+                      try {
+                        await gw.adminUpdateAgent(agentId, { display_name: trimmed });
+                        queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                        setManagingConnector({ ...managingConnector, display_name: trimmed });
+                      } catch {}
+                    }
+                    setConnectorEditingName(false);
+                  }} className="px-2 py-1.5 text-xs font-medium text-white bg-sidebar-primary rounded hover:opacity-90 transition-colors shrink-0">{t('common.save')}</button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-foreground">{managingConnector.display_name || managingConnector.name}</span>
+                  <button onClick={() => { setConnectorEditName(managingConnector.display_name || managingConnector.name); setConnectorEditingName(true); }} className="p-1 rounded hover:bg-black/[0.05] dark:hover:bg-white/[0.1] transition-colors">
+                    <Pencil className="h-3.5 w-3.5 text-foreground/40" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Platform info */}
+            <div className="mb-4 text-xs text-foreground/50">
+              <span className="font-medium">Platform: </span>
+              <span className="px-1.5 py-0.5 bg-sidebar-primary/10 text-sidebar-primary rounded text-[10px]">{managingConnector.platform}</span>
+            </div>
+
+            {/* Delete / Disconnect */}
+            <div className="border-t border-black/10 dark:border-border pt-3">
+              {connectorDeleting ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-red-500">{t('actions.confirmDelete') || 'Confirm disconnect?'}</span>
+                  <div className="flex items-center gap-2">
+                    <button onClick={async () => {
+                      const agentId = managingConnector.agent_id || managingConnector.name;
+                      try {
+                        await gw.deleteAgent(agentId);
+                        queryClient.invalidateQueries({ queryKey: ['admin-agents'] });
+                      } catch {}
+                      setManagingConnector(null);
+                      setConnectorDeleting(false);
+                    }} className="px-2.5 py-1 text-xs font-medium text-white bg-red-500 rounded hover:bg-red-600 transition-colors">{t('actions.delete') || 'Delete'}</button>
+                    <button onClick={() => setConnectorDeleting(false)} className="px-2.5 py-1 text-xs font-medium text-foreground/60 bg-black/[0.05] rounded hover:bg-black/[0.1] transition-colors">{t('common.cancel') || 'Cancel'}</button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConnectorDeleting(true)}
+                  className="flex items-center gap-2 text-xs text-red-500 hover:text-red-600 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Disconnect
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
