@@ -161,10 +161,13 @@ export default function oauthRoutes(app, shared) {
       `);
     }
 
-    // Determine platform from client_id
-    const platform = detectPlatform(client_id);
+    // Determine platform from registered client or client_id
+    const registeredClient = db.prepare('SELECT platform FROM oauth_clients WHERE client_id = ?').get(client_id);
+    const platform = registeredClient?.platform && registeredClient.platform !== 'mcp-connector'
+      ? registeredClient.platform
+      : detectPlatform(client_id);
 
-    // Find or create connector agent for this platform
+    // Find or create connector agent for this platform (singleton)
     let agent = db.prepare(
       "SELECT id FROM actors WHERE type = 'agent' AND agent_kind = 'connector' AND platform = ? AND deleted_at IS NULL"
     ).get(platform);
@@ -172,13 +175,13 @@ export default function oauthRoutes(app, shared) {
     if (!agent) {
       const agentId = genId('agt');
       const agentToken = crypto.randomBytes(32).toString('hex');
-      const agentName = `${platform}-connector`;
+      const displayName = PLATFORM_DISPLAY_NAMES[platform] || platform;
       db.prepare(
         `INSERT INTO actors (id, type, username, display_name, platform, agent_kind, token_hash, pending_approval, online, created_at, updated_at)
          VALUES (?, 'agent', ?, ?, ?, 'connector', ?, 0, 0, ?, ?)`
-      ).run(agentId, agentName, platform, platform, hashToken(agentToken), Date.now(), Date.now());
+      ).run(agentId, `${platform}-connector`, displayName, platform, hashToken(agentToken), Date.now(), Date.now());
       agent = { id: agentId };
-      console.log(`[oauth] Created connector agent: ${agentName} (${agentId}) for platform ${platform}`);
+      console.log(`[oauth] Created connector agent: ${displayName} (${agentId}) for platform ${platform}`);
     }
 
     // Generate authorization code
@@ -210,7 +213,7 @@ export default function oauthRoutes(app, shared) {
     db.prepare(
       `INSERT INTO oauth_clients (client_id, platform, redirect_uris, created_at)
        VALUES (?, ?, ?, ?)`
-    ).run(clientId, detectPlatform(client_name || ''), JSON.stringify(redirect_uris), Math.floor(Date.now() / 1000));
+    ).run(clientId, detectPlatform(client_name, redirect_uris?.[0]), JSON.stringify(redirect_uris), Math.floor(Date.now() / 1000));
 
     res.status(201).json({
       client_id: clientId,
@@ -352,11 +355,19 @@ export default function oauthRoutes(app, shared) {
 
   // ── Helpers ────────────────────────────────────────────────────
 
-  function detectPlatform(clientId) {
-    if (!clientId) return 'unknown';
-    const lower = clientId.toLowerCase();
-    if (lower.includes('claude') || lower.includes('anthropic')) return 'claude.ai';
-    if (lower.includes('chatgpt') || lower.includes('openai')) return 'chatgpt';
+  const PLATFORM_DISPLAY_NAMES = {
+    'claude.ai': 'Claude.ai',
+    chatgpt: 'ChatGPT',
+    'mcp-connector': 'MCP Connector',
+  };
+
+  function detectPlatform(...hints) {
+    for (const hint of hints) {
+      if (!hint) continue;
+      const lower = hint.toLowerCase();
+      if (lower.includes('claude') || lower.includes('anthropic')) return 'claude.ai';
+      if (lower.includes('chatgpt') || lower.includes('openai')) return 'chatgpt';
+    }
     return 'mcp-connector';
   }
 
