@@ -49,11 +49,12 @@ export default function mcpRoutes(app, shared) {
   }
 
   async function handleMcp(req, res) {
+    console.log(`[mcp] ${req.method} /mcp from=${req.ip} auth=${req.headers.authorization ? 'yes' : 'no'} method=${req.body?.method || '?'}`);
     const agent = resolveAgent(req);
     if (!agent) {
       res.writeHead(401, {
         'Content-Type': 'application/json',
-        'WWW-Authenticate': `Bearer resource_metadata="${req.protocol}://${req.get('host')}/.well-known/oauth-protected-resource"`,
+        'WWW-Authenticate': `Bearer resource_metadata="${req.get('x-forwarded-proto') || req.protocol}://${req.get('x-forwarded-host') || req.get('host')}/.well-known/oauth-protected-resource"`,
       });
       return res.end(JSON.stringify({ error: 'unauthorized' }));
     }

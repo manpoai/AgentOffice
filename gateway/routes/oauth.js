@@ -44,6 +44,7 @@ export default function oauthRoutes(app, shared) {
       issuer: base,
       authorization_endpoint: `${base}/oauth/authorize`,
       token_endpoint: `${base}/oauth/token`,
+      registration_endpoint: `${base}/oauth/register`,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
       code_challenge_methods_supported: ['S256'],
@@ -194,6 +195,35 @@ export default function oauthRoutes(app, shared) {
     if (state) redirectUrl.searchParams.set('state', state);
     res.redirect(redirectUrl.toString());
   });
+
+  // ── Dynamic Client Registration (RFC 7591) ────────────────────
+  function handleRegister(req, res) {
+    console.log(`[oauth] POST ${req.path} client_name=${req.body?.client_name}`);
+    const { client_name, redirect_uris, grant_types, response_types, token_endpoint_auth_method, scope } = req.body;
+
+    if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+      return res.status(400).json({ error: 'invalid_client_metadata', error_description: 'redirect_uris required' });
+    }
+
+    const clientId = `client_${crypto.randomBytes(16).toString('hex')}`;
+
+    db.prepare(
+      `INSERT INTO oauth_clients (client_id, platform, redirect_uris, created_at)
+       VALUES (?, ?, ?, ?)`
+    ).run(clientId, detectPlatform(client_name || ''), JSON.stringify(redirect_uris), Math.floor(Date.now() / 1000));
+
+    res.status(201).json({
+      client_id: clientId,
+      client_name: client_name || '',
+      redirect_uris,
+      grant_types: grant_types || ['authorization_code', 'refresh_token'],
+      response_types: response_types || ['code'],
+      token_endpoint_auth_method: token_endpoint_auth_method || 'none',
+      scope: scope || 'mcp',
+    });
+  }
+  app.post('/oauth/register', handleRegister);
+  app.post('/register', handleRegister);
 
   // ── Token endpoint ─────────────────────────────────────────────
   app.post('/oauth/token', urlencodedParser, (req, res) => {
