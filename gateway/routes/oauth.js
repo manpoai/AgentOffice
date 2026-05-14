@@ -55,6 +55,7 @@ export default function oauthRoutes(app, shared) {
 
   // ── Authorization endpoint ─────────────────────────────────────
   app.get('/oauth/authorize', (req, res) => {
+    console.log(`[oauth] GET /oauth/authorize client_id=${req.query.client_id} redirect_uri=${req.query.redirect_uri}`);
     const { response_type, client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, resource } = req.query;
 
     if (response_type !== 'code') {
@@ -148,6 +149,7 @@ export default function oauthRoutes(app, shared) {
 
   // ── Authorization POST (form submit) ───────────────────────────
   app.post('/oauth/authorize', urlencodedParser, (req, res) => {
+    console.log(`[oauth] POST /oauth/authorize client_id=${req.body?.client_id} redirect_uri=${req.body?.redirect_uri}`);
     const { username, password, client_id, redirect_uri, state, code_challenge, code_challenge_method, scope, resource } = req.body;
 
     // Authenticate user
@@ -243,6 +245,7 @@ export default function oauthRoutes(app, shared) {
 
   // ── Token endpoint ─────────────────────────────────────────────
   app.post('/oauth/token', urlencodedParser, (req, res) => {
+    console.log(`[oauth] POST /oauth/token grant_type=${req.body?.grant_type} content-type=${req.get('content-type')}`);
     // Accept both form-urlencoded and JSON
     const params = req.body;
 
@@ -260,12 +263,14 @@ export default function oauthRoutes(app, shared) {
     const { code, redirect_uri, code_verifier, client_id } = params;
 
     if (!code || !code_verifier) {
+      console.log(`[oauth] token error: missing code or code_verifier`);
       return res.status(400).json({ error: 'invalid_request', error_description: 'Missing code or code_verifier' });
     }
 
     // Look up code
     const record = db.prepare('SELECT * FROM oauth_codes WHERE code = ?').get(code);
     if (!record) {
+      console.log(`[oauth] token error: invalid code`);
       return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid authorization code' });
     }
 
@@ -274,17 +279,20 @@ export default function oauthRoutes(app, shared) {
 
     // Check expiry
     if (Math.floor(Date.now() / 1000) > record.expires_at) {
+      console.log(`[oauth] token error: code expired`);
       return res.status(400).json({ error: 'invalid_grant', error_description: 'Authorization code expired' });
     }
 
     // Verify redirect_uri matches
     if (redirect_uri && redirect_uri !== record.redirect_uri) {
+      console.log(`[oauth] token error: redirect_uri mismatch stored=${record.redirect_uri} got=${redirect_uri}`);
       return res.status(400).json({ error: 'invalid_grant', error_description: 'redirect_uri mismatch' });
     }
 
     // Verify PKCE
     const challenge = crypto.createHash('sha256').update(code_verifier).digest('base64url');
     if (challenge !== record.code_challenge) {
+      console.log(`[oauth] token error: PKCE verification failed`);
       return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
     }
 
@@ -309,6 +317,7 @@ export default function oauthRoutes(app, shared) {
       Math.floor(Date.now() / 1000) + 30 * 86400, // 30 days
     );
 
+    console.log(`[oauth] token success: agent=${record.agent_id} client=${record.client_id}`);
     res.json({
       access_token: accessToken,
       token_type: 'bearer',
