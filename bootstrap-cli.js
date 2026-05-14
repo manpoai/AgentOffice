@@ -337,7 +337,11 @@ async function updateCommand() {
   if (!process.argv.includes('--yes') && !process.argv.includes('-y')) {
     process.stdout.write('Proceed? [y/N] ');
     const answer = await new Promise((resolve) => {
-      process.stdin.once('data', (d) => resolve(String(d).trim().toLowerCase()));
+      process.stdin.setEncoding('utf8');
+      process.stdin.once('data', (d) => {
+        process.stdin.unref();
+        resolve(String(d).trim().toLowerCase());
+      });
     });
     if (answer !== 'y' && answer !== 'yes') {
       console.log('Aborted.');
