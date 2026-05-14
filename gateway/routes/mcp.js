@@ -6,8 +6,11 @@
  */
 
 import jwt from 'jsonwebtoken';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createRequire } from 'node:module';
 import { buildAoseMcpServer } from '../../mcp-server/src/build-server.js';
+
+const require = createRequire(import.meta.resolve('../../mcp-server/src/build-server.js'));
+const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 
 export default function mcpRoutes(app, shared) {
   const { db, hashToken } = shared;
