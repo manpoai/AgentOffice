@@ -59,34 +59,39 @@ export default function mcpRoutes(app, shared) {
       return res.end(JSON.stringify({ error: 'unauthorized' }));
     }
 
-    // Create a short-lived internal JWT so GatewayClient can authenticate
-    // against the same Gateway. The auth middleware accepts any JWT with a
-    // valid actor_id.
-    const internalToken = jwt.sign(
-      { actor_id: agent.id, type: 'agent' },
-      shared.JWT_SECRET,
-      { expiresIn: '5m' },
-    );
-
-    const { server } = buildAoseMcpServer({
-      baseUrl: GATEWAY_BASE,
-      token: internalToken,
-      name: 'aose-connector',
-      version: '1.0.0',
-    });
-
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
-    });
-
-    await server.connect(transport);
-
     try {
-      await transport.handleRequest(req, res, req.body);
-    } finally {
-      await transport.close();
-      await server.close();
+      const internalToken = jwt.sign(
+        { actor_id: agent.id, type: 'agent' },
+        shared.JWT_SECRET,
+        { expiresIn: '5m' },
+      );
+
+      const { server } = buildAoseMcpServer({
+        baseUrl: GATEWAY_BASE,
+        token: internalToken,
+        name: 'aose-connector',
+        version: '1.0.0',
+      });
+
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+
+      await server.connect(transport);
+
+      try {
+        await transport.handleRequest(req, res, req.body);
+        console.log(`[mcp] response sent status=${res.statusCode} content-type=${res.getHeader('content-type')}`);
+      } finally {
+        await transport.close();
+        await server.close();
+      }
+    } catch (err) {
+      console.error(`[mcp] ERROR:`, err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'internal_error', message: String(err) });
+      }
     }
   }
 
