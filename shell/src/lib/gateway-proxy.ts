@@ -1,0 +1,86 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const GW_URL = process.env.GATEWAY_URL;
+
+/**
+ * Proxy a request to the AOSE Gateway, preserving auth headers and streaming.
+ */
+export async function proxyToGateway(
+  req: NextRequest,
+  gwPath: string,
+  opts?: { hasBody?: boolean; streaming?: boolean },
+) {
+  if (!GW_URL) {
+    return NextResponse.json({ error: 'GATEWAY_URL_NOT_CONFIGURED' }, { status: 500 });
+  }
+
+  const url = new URL(gwPath, GW_URL);
+  req.nextUrl.searchParams.forEach((v, k) => url.searchParams.set(k, v));
+
+  const headers: Record<string, string> = {
+    'X-Forwarded-Host': req.headers.get('x-forwarded-host') || req.headers.get('host') || '',
+    'X-Forwarded-Proto': req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(':', '') || 'https',
+  };
+
+  const clientAuth = req.headers.get('authorization');
+  if (clientAuth) headers['Authorization'] = clientAuth;
+
+  const ct = req.headers.get('content-type') || '';
+  let body: BodyInit | undefined;
+  if (opts?.hasBody) {
+    body = await req.arrayBuffer();
+    if (ct) headers['Content-Type'] = ct;
+  }
+
+  const resp = await fetch(url.toString(), {
+    method: req.method,
+    headers,
+    body,
+    // @ts-expect-error Node fetch supports duplex
+    ...(opts?.hasBody && { duplex: 'half' }),
+  });
+
+  if (opts?.streaming && resp.body) {
+    const respCt = resp.headers.get('content-type') || '';
+    if (respCt.includes('text/event-stream')) {
+      const upstream = resp.body.getReader();
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            while (true) {
+              const { done, value } = await upstream.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+          } catch {
+          } finally {
+            controller.close();
+          }
+        },
+        cancel() {
+          try { upstream.cancel(); } catch {}
+        },
+      });
+      return new NextResponse(stream, {
+        status: resp.status,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
+  }
+
+  const data = await resp.arrayBuffer();
+  const contentType = resp.headers.get('Content-Type') || 'application/json';
+  const respHeaders: Record<string, string> = { 'Content-Type': contentType };
+  const origin = req.headers.get('origin');
+  if (origin) {
+    respHeaders['Access-Control-Allow-Origin'] = origin;
+    respHeaders['Access-Control-Allow-Credentials'] = 'true';
+  }
+
+  return new NextResponse(data, { status: resp.status, headers: respHeaders });
+}
