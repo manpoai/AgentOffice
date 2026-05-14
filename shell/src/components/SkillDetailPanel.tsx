@@ -235,7 +235,7 @@ function SkillEditorView({ skillId, onBack, docListVisible, onToggleDocList }: {
       </div>
 
       {/* Editor — same as Doc editing experience */}
-      <div className="flex-1 min-h-0 px-6 max-w-3xl mx-auto w-full">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 max-w-3xl mx-auto w-full">
         <Editor
           key={skillId}
           defaultValue={skill.text || ''}
