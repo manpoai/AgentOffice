@@ -19,7 +19,12 @@ cp -R gateway/server.js gateway/routes gateway/middleware gateway/lib gateway/lo
 # Copy mcp-server source (gateway/routes/mcp.js imports ../../mcp-server/src/build-server.js)
 mkdir -p "$DIST_DIR/mcp-server"
 cp -R mcp-server/src "$DIST_DIR/mcp-server/src"
-cp mcp-server/package.json "$DIST_DIR/mcp-server/"
+cp mcp-server/package.json mcp-server/package-lock.json "$DIST_DIR/mcp-server/"
+
+# Install mcp-server dependencies (ESM resolves from importing file's location)
+cd "$DIST_DIR/mcp-server"
+npm install --omit=dev
+cd "$ROOT_DIR"
 
 # Copy agent skills into gateway so /api/agent-skills works in deployed runtime
 cp -R mcp-server/skills "$DIST_DIR/gateway/skills"
