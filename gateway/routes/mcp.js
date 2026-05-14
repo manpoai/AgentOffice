@@ -77,6 +77,7 @@ export default function mcpRoutes(app, shared) {
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
+      enableJsonResponse: true,
     });
 
     await server.connect(transport);
