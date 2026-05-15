@@ -871,14 +871,14 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
                 commentQuotes={commentHighlightQuotes}
               />
             )}
-            {!previewRevision && !isMobile && wordCount.chars > 0 && (
-              <div className="absolute bottom-3 right-4 text-xs text-muted-foreground/50 select-none pointer-events-none tabular-nums">
-                {t('editor.charCount', { count: wordCount.chars })}
-              </div>
-            )}
           </div>
         </div>
 
+      {!previewRevision && !isMobile && wordCount.chars > 0 && (
+        <div className="absolute bottom-2 right-3 text-xs text-muted-foreground/50 select-none pointer-events-none tabular-nums z-10">
+          {t('editor.charCount', { count: wordCount.chars })}
+        </div>
+      )}
       </div>
 
     {/* Mobile: comment bar (preview mode only) + EditFAB */}
