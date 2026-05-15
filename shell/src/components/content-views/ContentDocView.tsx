@@ -45,6 +45,33 @@ const DOC_SHORTCUTS: ShortcutRegistration[] = [
   { id: 'doc-strikethrough', key: 's', modifiers: { meta: true, shift: true }, handler: () => {}, label: 'Strikethrough', category: 'Document', priority: 0 },
 ];
 
+function useWordCount(getView: () => any) {
+  const [counts, setCounts] = useState({ words: 0, chars: 0 });
+  useEffect(() => {
+    let raf = 0;
+    let prevSize = -1;
+    const update = () => {
+      const view = getView();
+      if (view) {
+        const doc = view.state.doc;
+        if (doc.content.size !== prevSize) {
+          prevSize = doc.content.size;
+          const text = doc.textContent || '';
+          const chars = text.length;
+          const cjk = (text.match(/[一-鿿㐀-䶿　-〿＀-￯぀-ゟ゠-ヿ가-힯]/g) || []).length;
+          const latin = text.replace(/[一-鿿㐀-䶿　-〿＀-￯぀-ゟ゠-ヿ가-힯]/g, ' ');
+          const latinWords = latin.split(/\s+/).filter(Boolean).length;
+          setCounts({ words: cjk + latinWords, chars });
+        }
+      }
+      raf = requestAnimationFrame(update);
+    };
+    raf = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(raf);
+  }, [getView]);
+  return counts;
+}
+
 function DocMenuToggle({ icon: Icon, label, checked, onChange }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -579,6 +606,12 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
 
   const mobileReadOnly = isMobile && !mobileEditMode;
 
+  const getEditorViewStable = useCallback(() => {
+    const mount = document.querySelector('.doc-editor-mount') as any;
+    return mount?.__pmView || null;
+  }, []);
+  const wordCount = useWordCount(getEditorViewStable);
+
   const getEditorView = useCallback(() => {
     const mount = document.querySelector('.doc-editor-mount') as any;
     return mount?.__pmView || null;
@@ -837,6 +870,11 @@ export function ContentDocView({ doc, customIcon, breadcrumb, onBack, onSaved, o
                 onSearchOpen={(withReplace) => { setShowSearch(true); setSearchWithReplace(withReplace); }}
                 commentQuotes={commentHighlightQuotes}
               />
+            )}
+            {!previewRevision && !isMobile && wordCount.chars > 0 && (
+              <div className="absolute bottom-3 right-4 text-xs text-muted-foreground/50 select-none pointer-events-none tabular-nums">
+                {t('editor.charCount', { count: wordCount.chars })}
+              </div>
             )}
           </div>
         </div>

@@ -1,80 +1,23 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import * as gw from '@/lib/api/gateway';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ChevronLeft, Plus, ChevronDown, Pencil, Trash2, Check, X } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Link2, Pencil, Check, X } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils/time';
+import { getPublicOrigin } from '@/lib/remote-access';
 
 interface MemoryDetailPanelProps {
   selectedAgentId: string | null;
+  selectedMemoryId: string | null;
+  onSelectMemory: (id: string | null) => void;
   docListVisible: boolean;
   onToggleDocList: () => void;
 }
 
-export function MemoryDetailPanel({ selectedAgentId, docListVisible, onToggleDocList }: MemoryDetailPanelProps) {
-  const queryClient = useQueryClient();
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newContent, setNewContent] = useState('');
-  const [editTitle, setEditTitle] = useState('');
-  const [editContent, setEditContent] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['memories', selectedAgentId],
-    queryFn: () => gw.listMemories({
-      agent_id: selectedAgentId || undefined,
-      limit: 200,
-    }),
-    enabled: !!selectedAgentId,
-  });
-
-  const memories = data?.memories || [];
-
-  const handleCreate = async () => {
-    if (!newTitle.trim() || !newContent.trim()) return;
-    setSaving(true);
-    try {
-      await gw.createMemory({
-        title: newTitle.trim(),
-        content: newContent.trim(),
-        agent_id: selectedAgentId || undefined,
-      });
-      setCreating(false);
-      setNewTitle('');
-      setNewContent('');
-      queryClient.invalidateQueries({ queryKey: ['memories'] });
-      queryClient.invalidateQueries({ queryKey: ['memory-agents-summary'] });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveEdit = async (memoryId: string) => {
-    if (!editTitle.trim() || !editContent.trim()) return;
-    setSaving(true);
-    try {
-      await gw.updateMemory(memoryId, { title: editTitle.trim(), content: editContent.trim() });
-      setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ['memories'] });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDelete = async (memoryId: string) => {
-    if (!confirm('Delete this memory?')) return;
-    await gw.deleteMemory(memoryId);
-    if (expandedId === memoryId) setExpandedId(null);
-    queryClient.invalidateQueries({ queryKey: ['memories'] });
-    queryClient.invalidateQueries({ queryKey: ['memory-agents-summary'] });
-  };
-
+export function MemoryDetailPanel({ selectedAgentId, selectedMemoryId, onSelectMemory, docListVisible, onToggleDocList }: MemoryDetailPanelProps) {
   if (!selectedAgentId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-2 bg-card md:rounded-lg md:shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] md:overflow-hidden">
@@ -84,9 +27,81 @@ export function MemoryDetailPanel({ selectedAgentId, docListVisible, onToggleDoc
     );
   }
 
+  if (selectedMemoryId) {
+    return (
+      <MemoryDetailView
+        agentId={selectedAgentId}
+        memoryId={selectedMemoryId}
+        onBack={() => onSelectMemory(null)}
+        docListVisible={docListVisible}
+        onToggleDocList={onToggleDocList}
+      />
+    );
+  }
+
+  return (
+    <MemoryGridView
+      agentId={selectedAgentId}
+      onSelectMemory={onSelectMemory}
+      docListVisible={docListVisible}
+      onToggleDocList={onToggleDocList}
+    />
+  );
+}
+
+function MemoryGridView({ agentId, onSelectMemory, docListVisible, onToggleDocList }: {
+  agentId: string;
+  onSelectMemory: (id: string) => void;
+  docListVisible: boolean;
+  onToggleDocList: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newContent, setNewContent] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyLink = (e: React.MouseEvent, memoryId: string) => {
+    e.stopPropagation();
+    const origin = getPublicOrigin() || window.location.origin;
+    const url = new URL('/memory', origin);
+    url.searchParams.set('id', agentId);
+    url.searchParams.set('mem', memoryId);
+    navigator.clipboard.writeText(url.toString());
+    setCopiedId(memoryId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['memories', agentId],
+    queryFn: () => gw.listMemories({ agent_id: agentId, limit: 200 }),
+  });
+
+  const memories = data?.memories || [];
+
+  const handleCreate = async () => {
+    if (!newTitle.trim() || !newContent.trim()) return;
+    setSaving(true);
+    try {
+      const res = await gw.createMemory({
+        title: newTitle.trim(),
+        content: newContent.trim(),
+        agent_id: agentId,
+      });
+      setCreating(false);
+      setNewTitle('');
+      setNewContent('');
+      queryClient.invalidateQueries({ queryKey: ['memories'] });
+      queryClient.invalidateQueries({ queryKey: ['memory-agents-summary'] });
+      onSelectMemory(res.memory_id);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-card md:rounded-lg md:shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] md:overflow-hidden">
-      {/* Header */}
       <div className="flex items-center h-12 px-4 border-b border-border/50 shrink-0">
         {!docListVisible && (
           <button onClick={onToggleDocList} className="mr-2 p-1 rounded hover:bg-accent">
@@ -94,20 +109,12 @@ export function MemoryDetailPanel({ selectedAgentId, docListVisible, onToggleDoc
           </button>
         )}
         <h2 className="text-sm font-semibold flex-1">Memory</h2>
-        <button
-          onClick={() => { setCreating(true); setNewTitle(''); setNewContent(''); }}
-          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sidebar-primary hover:bg-sidebar-primary/10 rounded-md transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New
-        </button>
       </div>
 
       <ScrollArea className="flex-1 min-h-0">
-        <div className="p-4 space-y-2 max-w-2xl mx-auto">
-          {/* Inline create form */}
-          {creating && (
-            <div className="rounded-lg border border-sidebar-primary/30 bg-background p-4">
+        <div className="p-4">
+          {creating ? (
+            <div className="rounded-lg border border-sidebar-primary/30 bg-background p-4 mb-4 max-w-2xl mx-auto">
               <input
                 autoFocus
                 value={newTitle}
@@ -135,107 +142,232 @@ export function MemoryDetailPanel({ selectedAgentId, docListVisible, onToggleDoc
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
 
-          {isLoading ? (
-            <div className="text-xs text-foreground/40 text-center py-8">Loading...</div>
-          ) : memories.length === 0 && !creating ? (
-            <div className="text-xs text-foreground/40 text-center py-8">No memories for this agent</div>
-          ) : (
-            memories.map(memory => {
-              const isExpanded = expandedId === memory.id;
-              const isEditing = editingId === memory.id;
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <button
+              onClick={() => { setCreating(true); setNewTitle(''); setNewContent(''); }}
+              className="flex flex-col items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed border-border/50 hover:border-sidebar-primary/40 text-foreground/40 hover:text-sidebar-primary transition-colors min-h-[140px]"
+            >
+              <Plus className="h-6 w-6" />
+              <span className="text-xs font-medium">New Memory</span>
+            </button>
 
-              return (
-                <div key={memory.id} className="rounded-lg border border-border/50 bg-background overflow-hidden">
-                  {/* Memory row header — always visible */}
-                  <button
-                    onClick={() => {
-                      if (isEditing) return;
-                      setExpandedId(isExpanded ? null : memory.id);
-                    }}
-                    className="w-full text-left flex items-center gap-3 px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
-                  >
-                    <ChevronDown className={cn('h-3.5 w-3.5 text-foreground/30 shrink-0 transition-transform', isExpanded && 'rotate-0', !isExpanded && '-rotate-90')} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{memory.title}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className={cn(
-                          'text-[10px] font-medium px-1.5 py-px rounded',
-                          memory.source === 'agent'
-                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                            : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                        )}>
-                          {memory.source === 'agent' ? 'Agent' : 'Human'}
-                        </span>
-                        <span className="text-[10px] text-foreground/40">{formatRelativeTime(memory.updated_at)}</span>
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* Expanded content */}
-                  {isExpanded && (
-                    <div className="px-4 pb-4 border-t border-border/30">
-                      {isEditing ? (
-                        <div className="pt-3">
-                          <input
-                            value={editTitle}
-                            onChange={e => setEditTitle(e.target.value)}
-                            className="w-full text-sm font-medium bg-transparent outline-none border-b border-border/50 pb-1 mb-2"
-                          />
-                          <textarea
-                            value={editContent}
-                            onChange={e => setEditContent(e.target.value)}
-                            rows={5}
-                            className="w-full text-sm bg-transparent outline-none resize-y text-foreground/70 mb-3"
-                          />
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleSaveEdit(memory.id)}
-                              disabled={saving}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-sidebar-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
-                            >
-                              <Check className="h-3 w-3" />
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditingId(null)}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs text-foreground/60 rounded-md hover:bg-accent"
-                            >
-                              <X className="h-3 w-3" />
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="pt-3">
-                          <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-foreground/70 mb-3">{memory.content}</pre>
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => { setEditingId(memory.id); setEditTitle(memory.title); setEditContent(memory.content); }}
-                              className="flex items-center gap-1 px-2 py-1 text-xs text-foreground/50 hover:text-foreground rounded-md hover:bg-accent transition-colors"
-                            >
-                              <Pencil className="h-3 w-3" />
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(memory.id)}
-                              className="flex items-center gap-1 px-2 py-1 text-xs text-foreground/50 hover:text-red-500 rounded-md hover:bg-accent transition-colors"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+            {isLoading ? (
+              [...Array(4)].map((_, i) => (
+                <div key={i} className="animate-pulse rounded-lg border border-border/50 p-4 min-h-[140px]">
+                  <div className="h-4 bg-muted rounded w-3/4 mb-3" />
+                  <div className="space-y-1.5">
+                    <div className="h-3 bg-muted rounded w-full" />
+                    <div className="h-3 bg-muted rounded w-2/3" />
+                  </div>
                 </div>
-              );
-            })
+              ))
+            ) : (
+              memories.map(memory => (
+                <div
+                  key={memory.id}
+                  onClick={() => onSelectMemory(memory.id)}
+                  className="text-left p-4 rounded-lg border border-border/50 bg-background hover:border-border hover:shadow-sm transition-all min-h-[140px] flex flex-col cursor-pointer"
+                >
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <SourceBadge source={memory.source} />
+                    <span className="text-sm font-medium truncate flex-1">{memory.title}</span>
+                  </div>
+                  <p className="text-xs text-foreground/50 line-clamp-5 leading-relaxed flex-1">
+                    {memory.content}
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-foreground/30">{formatRelativeTime(memory.updated_at)}</span>
+                    <button
+                      onClick={(e) => handleCopyLink(e, memory.id)}
+                      className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-foreground/40 hover:text-foreground rounded hover:bg-accent transition-colors"
+                    >
+                      <Link2 className="h-3 w-3" />
+                      {copiedId === memory.id ? 'Copied!' : 'Copy Link'}
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+function MemoryDetailView({ agentId, memoryId, onBack, docListVisible, onToggleDocList }: {
+  agentId: string;
+  memoryId: string;
+  onBack: () => void;
+  docListVisible: boolean;
+  onToggleDocList: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const { data: memory } = useQuery({
+    queryKey: ['memory', memoryId],
+    queryFn: () => gw.getMemory(memoryId),
+  });
+
+  const handleStartEdit = useCallback(() => {
+    if (!memory) return;
+    setEditTitle(memory.title);
+    setEditContent(memory.content);
+    setEditing(true);
+  }, [memory]);
+
+  const handleSaveEdit = async () => {
+    if (!editTitle.trim() || !editContent.trim()) return;
+    setSaving(true);
+    try {
+      await gw.updateMemory(memoryId, { title: editTitle.trim(), content: editContent.trim() });
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ['memory', memoryId] });
+      queryClient.invalidateQueries({ queryKey: ['memories'] });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm('Delete this memory?')) return;
+    await gw.deleteMemory(memoryId);
+    queryClient.invalidateQueries({ queryKey: ['memories'] });
+    queryClient.invalidateQueries({ queryKey: ['memory-agents-summary'] });
+    onBack();
+  };
+
+  const handleCopyLink = () => {
+    const origin = getPublicOrigin() || window.location.origin;
+    const url = new URL('/memory', origin);
+    url.searchParams.set('id', agentId);
+    url.searchParams.set('mem', memoryId);
+    navigator.clipboard.writeText(url.toString());
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
+
+  if (!memory) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-card md:rounded-lg md:shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)]">
+        <div className="text-sm text-foreground/40">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 bg-card md:rounded-lg md:shadow-[0px_0px_20px_0px_rgba(0,0,0,0.08)] md:overflow-hidden">
+      <div className="flex items-center h-12 px-4 border-b border-border/50 shrink-0">
+        {!docListVisible && (
+          <button onClick={onToggleDocList} className="mr-2 p-1 rounded hover:bg-accent">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
+        <button onClick={onBack} className="mr-2 p-1 rounded hover:bg-accent text-foreground/60 hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <SourceBadge source={memory.source} />
+        <span className="text-xs text-foreground/30 mx-1.5">{saving ? 'Saving...' : ''}</span>
+        <div className="flex-1" />
+        <button
+          onClick={handleCopyLink}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-foreground/60 hover:text-foreground rounded-md hover:bg-accent transition-colors"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          {linkCopied ? 'Copied!' : 'Copy Link'}
+        </button>
+        {!editing && (
+          <button
+            onClick={handleStartEdit}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-foreground/60 hover:text-foreground rounded-md hover:bg-accent transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        )}
+        <button
+          onClick={handleDelete}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs text-foreground/50 hover:text-red-500 rounded-md hover:bg-accent transition-colors"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </button>
+      </div>
+
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="px-6 pt-6 pb-2 max-w-3xl mx-auto w-full">
+          {editing ? (
+            <>
+              <input
+                autoFocus
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                className="text-2xl font-bold w-full bg-transparent outline-none mb-4"
+                placeholder="Memory title..."
+              />
+              <textarea
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                rows={12}
+                className="w-full text-sm bg-transparent outline-none resize-y text-foreground/70 leading-relaxed mb-4"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={saving || !editTitle.trim() || !editContent.trim()}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-sidebar-primary text-white rounded-md hover:opacity-90 disabled:opacity-50"
+                >
+                  <Check className="h-3 w-3" />
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs text-foreground/60 rounded-md hover:bg-accent"
+                >
+                  <X className="h-3 w-3" />
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold mb-2">{memory.title}</h1>
+              <div className="flex items-center gap-2 mb-6 text-xs text-foreground/40">
+                <span>{formatRelativeTime(memory.updated_at)}</span>
+                {memory.tags.length > 0 && (
+                  <>
+                    <span>·</span>
+                    {memory.tags.map(tag => (
+                      <span key={tag} className="px-1.5 py-px rounded bg-accent text-foreground/60">{tag}</span>
+                    ))}
+                  </>
+                )}
+              </div>
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed font-sans text-foreground/70">{memory.content}</pre>
+            </>
           )}
         </div>
       </ScrollArea>
     </div>
+  );
+}
+
+function SourceBadge({ source }: { source: string }) {
+  return (
+    <span className={cn(
+      'text-[9px] font-medium px-1.5 py-0.5 rounded shrink-0',
+      source === 'agent'
+        ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+        : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+    )}>
+      {source === 'agent' ? 'AGENT' : 'HUMAN'}
+    </span>
   );
 }

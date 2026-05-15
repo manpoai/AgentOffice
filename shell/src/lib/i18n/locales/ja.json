@@ -330,7 +330,9 @@
       "delete": "削除",
       "altText": "代替テキスト",
       "comment": "コメント"
-    }
+    },
+    "wordCount": "{count} 単語",
+    "charCount": "{count} 文字"
   },
   "comments": {
     "title": "コメント",

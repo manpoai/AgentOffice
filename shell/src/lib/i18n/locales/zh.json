@@ -351,7 +351,9 @@
       "delete": "删除",
       "altText": "替代文本",
       "comment": "评论"
-    }
+    },
+    "wordCount": "{count} 字",
+    "charCount": "{count} 字符"
   },
   "comments": {
     "title": "评论",

@@ -350,7 +350,9 @@
       "delete": "Delete",
       "altText": "Alt text",
       "comment": "Comment"
-    }
+    },
+    "wordCount": "{count} words",
+    "charCount": "{count} chars"
   },
   "comments": {
     "title": "Comments",
