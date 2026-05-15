@@ -206,15 +206,7 @@ function TaskCard({ task, agent, scheduleType, onClick }: { task: Task; agent: g
         )}
         <div className="flex-1" />
         {agent && (
-          <div className="w-5 h-5 rounded-full bg-muted overflow-hidden shrink-0 border border-black/10" title={agent.display_name || agent.name}>
-            {agent.avatar_url ? (
-              <img src={resolveAvatarUrl(agent.avatar_url) || ''} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-[9px] font-medium text-muted-foreground">
-                {(agent.display_name || agent.name || '?')[0].toUpperCase()}
-              </div>
-            )}
-          </div>
+          <AgentAvatar agent={agent} size={20} />
         )}
       </div>
     </button>
@@ -311,13 +303,17 @@ function StatusPicker({ value, onChange }: { value: string; onChange: (v: string
 
 function AgentAvatar({ agent, size = 20 }: { agent: gw.Agent | null | undefined; size?: number }) {
   if (!agent) return null;
+  const avatarUrl = resolveAvatarUrl(agent.avatar_url);
+  const platformFallback = !avatarUrl && agent.platform ? `/icons/platform-${agent.platform}.png` : null;
   return (
     <div
       className="rounded-full bg-muted overflow-hidden shrink-0 border border-black/10 dark:border-white/10"
       style={{ width: size, height: size }}
     >
-      {agent.avatar_url ? (
-        <img src={resolveAvatarUrl(agent.avatar_url) || ''} alt="" className="w-full h-full object-cover" />
+      {avatarUrl ? (
+        <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+      ) : platformFallback ? (
+        <img src={platformFallback} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       ) : (
         <div className="w-full h-full flex items-center justify-center text-[9px] font-medium text-muted-foreground">
           {(agent.display_name || agent.name || '?')[0].toUpperCase()}
